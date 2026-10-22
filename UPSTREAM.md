@@ -53,7 +53,6 @@ fichero entra en `fpga/build_v9990_xtal.tcl`.
 | `fpga/src/peripheral/flash.sv` | igual | sí | lo instancia el top |
 | `fpga/src/peripheral/spi.sv` | igual | sí | SPI de la flash y de la TF |
 | `fpga/src/peripheral/led.sv` | igual | sí | |
-| `fpga/src/peripheral/uart.sv` | igual | sí | interfaces del UART (desactivado en la wt200b) |
 | `fpga/src/peripheral/msx/bus.sv` | igual | sí | `BUS_IF`, filtros de pin |
 | `fpga/src/peripheral/msx/expansion_slot.sv` | igual | sí | slot expandido |
 | `fpga/src/peripheral/msx/megarom_configure.sv`, `megarom_controller.sv` | igual | no | para el hito 8 |
@@ -76,8 +75,20 @@ fichero entra en `fpga/build_v9990_xtal.tcl`.
   dentro de bloques `if(CONFIG::ENABLE_*)` que la configuración `v9990` deja sin
   elaborar, así que no hacen falta en la build. Si la variante opcional con Nextor
   llega a construirse, sus ficheros se traen entonces del mismo commit.
+- El **UART** (`uart.sv`): la wt200b lo tiene desactivado
+  (`CONFIG_BOARD::ENABLE_UART_MODULE = 0`) y el top solo lo instancia dentro de
+  ese `if`; la salida `UART_TX` queda a 1.
+- `video_dummy.sv`, `dac_1bit.sv`, `dac_i2s.sv`: no los usa la wt200b.
 - Los tops y placas de tnCart rev1/rev2 y de las WonderTANG 1.01c/1.02d, el
   KiCad, las ROMs y las herramientas MSX de tnCart.
+
+## Fines de línea
+
+Los ficheros se copiaron desde los objetos de git (`git show d3a54f1:...` para la
+carcasa y `git show 8714731:...` para el core), no desde la copia de trabajo del
+clon, que tenía `core.autocrlf=true`. El hash de blob de cada fichero copiado
+coincide con el del objeto de upstream, así que un `git diff` contra tnCart o
+tnCartWonder solo enseña cambios reales. `.gitattributes` los guarda byte a byte.
 
 ## Bootloader y flash
 
