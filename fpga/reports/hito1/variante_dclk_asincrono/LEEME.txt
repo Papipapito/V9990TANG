@@ -1,0 +1,26 @@
+Variante de comparacion del hito 1: NO es la build del hito.
+
+Mismo RTL y mismo script que fpga/build_v9990_xtal.tcl (sin SDF), con un .sdc
+que solo cambia el trato de DCLK respecto a fpga/constraints/v9990_xtal.sdc:
+
+  - DCLK con el modelo de tnCart (-divide_by 15 -multiply_by 2 -duty_cycle 10
+    -offset 9.25) y en un grupo asincrono propio, como en board_wt200b_27M.sdc
+  - sin el set_false_path de reset_n hacia DCLK ni los informes de DCLK
+
+Los comentarios de v9990_xtal_dclk_asincrono.sdc se copiaron del .sdc del hito
+tal como estaba al compilar la variante, con una cabecera (linea 2) que la
+identifica; algunos han cambiado despues en el del hito (por ejemplo, la
+linea 84 dice "in_vs_n (sincronizado)" y lo correcto es "un flop efectivo").
+No describen esta variante: las ordenes son las de arriba.
+
+Su check_build.txt es una puerta PARCIAL que FALLA a proposito: no hay
+informe de la carrera CLK_BASE -> DCLK ni del camino DCLK -> CLK_BASE, y sin
+.sdf el modelo de DCLK no se comprueba. El resto (recursos, timing, Fmax)
+pasa.
+
+Para que sirve: muestra que la Fmax de CLK_BASE depende de la colocacion y no
+de la logica. Con la misma logica (14 140) y los mismos CLS (8 679) da
+120,32 MHz frente a los 109,08 de la build del hito, y en las dos el peor
+camino es del blitter (u_blit/state_3 -> work_5/CE aqui, -> ENQUEUE_DATA_17/CE
+en la del hito). Esta variante no vigila la carrera CLK_BASE -> DCLK
+(ver docs/ARCHITECTURE.md): por eso no es la del hito.

@@ -1,0 +1,41 @@
+PASA   .rpt.txt y .tr de la misma build (2026-10-22 09:15:11 / 2026-10-22 09:15:12)
+PASA   Logic: 14140/20736 (68.2 %), referencia 14140, desviacion +0.00 % (tolerancia 1.0 %)
+PASA   CLS: 8679/10368 (83.7 %), referencia 8696, desviacion -0.20 % (tolerancia 1.0 %)
+PASA   BSRAM: 24/46 (52.2 %), referencia 24, desviacion +0.00 % (tolerancia 1.0 %)
+       Register: 6173/15915
+PASA   CLS <= 9331
+       CLS por debajo del aviso (9250)
+PASA   PRIMARY: 8/8 (maximo 8)
+PASA   rPLL: 2/2 (esperado 2)
+       LW: 7/8
+       CLKDIV: 3/8
+       GCLK_PIN: 4/5
+PASA   set_clock_groups (TC_CLOCK_GROUP): Actived
+PASA   ordenes no activas: 0 de 12
+       ordenes en el .tr: TC_CLOCK x2, TC_GENERATED_CLOCK x7, TC_CLOCK_GROUP x1, TC_REPORT_TIMING x2
+PASA   excepciones sobre DCLK o CLK_BASE fuera de las permitidas: 0
+PASA   el .tr tiene exactamente las ordenes del .sdc (12 en el .sdc, 12 en el .tr)
+PASA   endpoints de setup violados (global): 0
+PASA   endpoints de hold violados (global): 0
+PASA   peor slack de setup: 0.948 ns  [1 informe(s): report_timing -setup -max_paths 25 -max_common_paths 1]
+PASA   peor slack de hold: 0.074 ns  [1 informe(s): report_timing -hold -max_paths 25 -max_common_paths 1]
+PASA   peor slack de recovery: 6.001 ns  [1 informe(s): report_timing -recovery -max_paths 25 -max_common_paths 1]
+PASA   peor slack de removal: 0.450 ns  [1 informe(s): report_timing -removal -max_paths 25 -max_common_paths 1]
+FALLA  carrera CLK_BASE -> DCLK analizada en setup: sin informe o sin caminos
+FALLA  carrera CLK_BASE -> DCLK analizada en hold: sin informe o sin caminos
+FALLA  informe de setup DCLK -> CLK_BASE presente: falta en el .sdc
+PASA   caminos lanzados desde DCLK hacia otro reloj: 0
+PASA   Fmax CLK_BASE: 120.324 MHz (minimo 109)
+       Fmax DCLK: 168.169 MHz
+       Fmax CLK_TMDS_P: 65.609 MHz
+       Fmax CLK_DAC: 228.587 MHz
+NO COMPROBADO  6 modelo de DCLK: falta fpga/reports/hito1/variante_dclk_asincrono/v9990_xtal.sdf (set_option -gen_sdf 1)
+PASA   log de sintesis fpga/reports/hito1/variante_dclk_asincrono/gwsynthesis.log completo
+PASA   errores en el log de sintesis: 0
+         avisos (leerlos a mano): CV0016 x2, NL0002 x6
+PASA   log de P&R fpga/reports/hito1/variante_dclk_asincrono/pnr.log completo
+PASA   log de P&R de esta build (2026-10-22 09:15:12 / .tr 2026-10-22 09:15:12)
+PASA   errores en el log de P&R: 0
+         avisos (leerlos a mano): PR1014 x1
+
+PUERTA PARCIAL: FALLA

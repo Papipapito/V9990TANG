@@ -1,0 +1,6 @@
+v9990_xtal.fs, build del Thu Oct 22 10:00:00 2026
+CheckSum: 0x69C5
+md5 del fichero: b1381b6e2cd0d2e35abd0b8631f67d2c
+md5 sin las lineas de cabecera (//): 20cc64253da48b8d24bcfea4c23338c1
+comparado con v9990_xtal_0922.fs (build del Thu Oct 22 09:22:07 2026, CheckSum 0x69C5): cuerpo IDENTICO
+comparado con v9990_xtal.fs (build del Thu Oct 22 08:27:09 2026, CheckSum 0x69C5): cuerpo IDENTICO
