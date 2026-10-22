@@ -11,11 +11,22 @@ port. Los avisos de copyright de cada fichero copiado se conservan sin cambios.
 | [herraa1/tnCartWonder](https://github.com/herraa1/tnCartWonder) | `d3a54f1b0df9e56c0d27ce1d0460f79f593d5568` (2025-10-02, "readme: make links for .fs files") | Albert Herranz, sobre el tnCart de Shinobu Hashimoto | BSD 3-Clause | la carcasa de la WonderTANG 2.00b/2.02b (`wt200b`): top, relojes, pines, `.sdc` de referencia, bus multiplexado, SDRAM + UMA, upscan, DVI, bootloader, flash, LED, DAC y los cartuchos V9990 y megaROM |
 | [buppu3/tnCart](https://github.com/buppu3/tnCart) | `87147318e94f9c1714bb793093769dbe42abea7a` (2024-10-19, "Fix VRAM mask in V9990 P1 mode") | Shinobu Hashimoto (buppu3) | BSD 3-Clause | el core **tiny9990** (`fpga/v9990/tiny9990/`), sin parches |
 
-El tiny9990 se copió del clon de tnCartWonder, pero es el de tnCart: el último
-commit que toca `rtl/src/peripheral/video/tiny9990/` en esa historia es
-`8714731` de buppu3, y `git diff 8714731 d3a54f1 -- rtl/src/peripheral/video/tiny9990`
-está vacío. tnCartWonder es un fork de tnCart; los commits de herraa1 posteriores
-a `8714731` añaden la placa wt200b y no tocan el core.
+tnCartWonder es un fork lineal de tnCart: `d3a54f1` = tnCart `9bbefbe`
+(2024-10-26, buppu3, "fix #23 Generation of Bus.CLK_EN_21M fails when using
+onboard 27MHz oscillator") más cuatro commits de herraa1 que añaden la placa
+wt200b, su README y su bitstream. Entre `8714731` y `9bbefbe` buppu3 añadió la
+placa rev2 (`481a2d8` y `d230d90`, que toca `main.sv` y `config.sv`:
+`ENABLE_DAC_I2S`, `ENABLE_DAC_STEREO`) y el fix #23 (`9bbefbe`, en
+`board_rev1_bus.sv`). Así que los ficheros comunes de la carcasa (`main.sv`,
+`config.sv`, `board_rev1_bus.sv` y los demás) están al nivel de tnCart `9bbefbe`,
+llegados a través de tnCartWonder, que solo les añade una línea en
+`board_id.sv`.
+
+El tiny9990 se copió del clon de tnCartWonder, pero es el de tnCart `8714731`:
+es el último commit que toca `rtl/src/peripheral/video/tiny9990/` en esa
+historia, y `git diff 8714731 d3a54f1 -- rtl/src/peripheral/video/tiny9990`
+está vacío. Ninguno de los commits posteriores, de buppu3 o de herraa1, toca el
+core.
 
 **tiny9990**: emulación del V9990 de Yamaha escrita por Shinobu Hashimoto, © 2024,
 BSD 3-Clause (aviso en la cabecera de cada fichero de `fpga/v9990/tiny9990/`).
@@ -42,7 +53,7 @@ fichero entra en `fpga/build_v9990_xtal.tcl`.
 | `fpga/src/bootloader.sv` | igual | sí | ver "Bootloader y flash" abajo |
 | `fpga/src/cartridge_megarom.sv` | igual | no | para el hito 8 (MegaRAM) |
 | `fpga/src/board/board_id.sv` | igual | sí | |
-| `fpga/src/board/rev1/board_rev1_bus.sv` | igual | sí | bus multiplexado de 9 estados |
+| `fpga/src/board/rev1/board_rev1_bus.sv` | igual | sí | bus multiplexado de 9 estados y filtros de pin (`PIN_FILTER`) |
 | `fpga/src/board/rev1/board_rev1_tmds.sv` | igual | sí | envoltorio del DVI_TX |
 | `fpga/src/board/rev1/dvi_tx/dvi_tx.{v,ipc,vo}` | igual | `.v` sí | IP cifrado de Gowin |
 | `fpga/src/board/wt200b/board_wt200b_clock.sv` | igual | sí | rPLL 108 MHz (xtal) o 107,386 MHz (sync) |
@@ -53,7 +64,7 @@ fichero entra en `fpga/build_v9990_xtal.tcl`.
 | `fpga/src/peripheral/flash.sv` | igual | sí | lo instancia el top |
 | `fpga/src/peripheral/spi.sv` | igual | sí | SPI de la flash y de la TF |
 | `fpga/src/peripheral/led.sv` | igual | sí | |
-| `fpga/src/peripheral/msx/bus.sv` | igual | sí | `BUS_IF`, filtros de pin |
+| `fpga/src/peripheral/msx/bus.sv` | igual | sí | `BUS_IF` (y `EXPANSION_BUS`, que no se instancia) |
 | `fpga/src/peripheral/msx/expansion_slot.sv` | igual | sí | slot expandido |
 | `fpga/src/peripheral/msx/megarom_configure.sv`, `megarom_controller.sv` | igual | no | para el hito 8 |
 | `fpga/src/peripheral/ram/ram.sv`, `sdram.sv`, `uma.sv` | igual | sí | SDRAM + UMA, sin tocar la cadencia |
@@ -65,6 +76,10 @@ fichero entra en `fpga/build_v9990_xtal.tcl`.
 | `fpga/config/v9990.sv` | `config.sv` | sí | solo cambian los `ENABLE_*`: V9990 y su VDP de comandos activos, el resto desactivado |
 | `fpga/constraints/v9990_xtal.sdc` | propio | sí | relojes del `board_wt200b_27M.sdc` presentes en esta configuración y grupos asíncronos propios |
 | `fpga/build_v9990_xtal.tcl` | propio, a partir de `tnCart_board_wt200b.gprj` | — | |
+| `tools/check_build.py`, `tools/archive_build.py` | propios | — | la puerta de cada build y el archivado de su evidencia (BSD 3-Clause, cabecera propia) |
+| `fpga/reports/hito1/v9990_xtal.rpt.txt`, `.tr`, `.sdf`, `gwsynthesis.log`, `pnr.log` | generados por `gw_sh` 1.9.12.03 en la build del hito 1 | — | evidencia de la build. El `.rpt.txt` y el `.tr` van sin modificar y con la cabecera de Gowin; el `.sdf` es un extracto que conserva esa cabecera y copia celdas y líneas sin cambiar ningún valor; los logs no llevan cabecera. Ninguno es BSD (ver `LICENSE`) |
+| `fpga/reports/hito1/v9990_xtal.sdc`, `check_build.txt`, `v9990_xtal.fs.txt` | propios | — | copia del `.sdc` con el que se hizo la build, salida de la puerta y sumas del bitstream |
+| `fpga/reports/hito1/variante_dclk_asincrono/` | `gw_sh` (informes y logs) y propios (`.sdc`, `LEEME.txt`, `check_build.txt`) | — | variante de comparación de la Fmax, no es la build del hito |
 
 ## Lo que no se copia
 
@@ -87,8 +102,20 @@ fichero entra en `fpga/build_v9990_xtal.tcl`.
 Los ficheros se copiaron desde los objetos de git (`git show d3a54f1:...` para la
 carcasa y `git show 8714731:...` para el core), no desde la copia de trabajo del
 clon, que tenía `core.autocrlf=true`. El hash de blob de cada fichero copiado
-coincide con el del objeto de upstream, así que un `git diff` contra tnCart o
-tnCartWonder solo enseña cambios reales. `.gitattributes` los guarda byte a byte.
+coincide con el del objeto de upstream, así que un `git diff` de `fpga/src/`
+contra tnCartWonder `d3a54f1` y de `fpga/v9990/tiny9990/` contra tnCart `8714731`
+solo enseña cambios reales. `.gitattributes` los guarda byte a byte.
+
+## Estudio
+
+El plan de hitos, las medidas de partida y las decisiones de este port salen de
+un estudio que vive en el repositorio de la MSXimus Z (Papipapito/MSXimus_zynq):
+`docs/estudios/v9990-wondertang.md`, rama `claude/v9990-wondertang-port-b2a930`,
+commit `ac25ca6` (22 de octubre de 2026). Esa rama no está publicada todavía;
+las cifras del estudio que se usan aquí están copiadas en `docs/`. Una
+corrección: la sección 3 del estudio dice que Gowin descarta en silencio una
+orden del `.sdc` que nombra un reloj inexistente; en realidad el P&R aborta con
+`ERROR (TA2004)` (comprobado en el hito 1, ver `docs/ARCHITECTURE.md`).
 
 ## Bootloader y flash
 
