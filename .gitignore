@@ -1,0 +1,19 @@
+# Gowin build artifacts (gw_sh writes them next to the build script)
+fpga/impl/
+fpga/*.log
+fpga/build_*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.bak
+*~
+
+# simulation build products
+tools/sim/build/
+tools/sim/**/build/
+*.vcd
+*.fst
+
+# Python bytecode
+__pycache__/

@@ -1,0 +1,16 @@
+# Gowin build scripts: always LF, also on a Windows checkout
+*.tcl text eol=lf
+# scripts run in WSL / Linux: always LF
+*.sh  text eol=lf
+*.py  text eol=lf
+# HDL and constraints copied from upstream: keep them byte for byte, so that a
+# diff against tnCart / tnCartWonder shows only real changes
+*.sv  -text
+*.v   -text
+*.vo  -text
+*.cst -text
+*.sdc -text
+*.ipc -text
+# Gowin bitstreams (.fs): text files, but stored byte for byte, so that the md5
+# of the file in the repository is the md5 of the delivered bitstream
+*.fs  -text
