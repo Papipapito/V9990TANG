@@ -222,9 +222,25 @@ end
     wire [$bits(Primary.DIN)-1:0]      req_din[0:COUNT-1];       // Primary へ渡す DIN 値
     wire [$bits(Primary.DIN_SIZE)-1:0] req_din_size[0:COUNT-1];  // Primary へ渡す DIN_SIZE 値
 
+    // V9990TANG (hito 4): que se emite en cada ranura. sdram.sv solo ejecuta
+    // una operacion por ranura y, si ve R/W y RFSH a la vez, hace el R/W
+    // (sdram.sv: STATE_ACTIVE); tnCart presentaba los dos y borraba save_rfsh
+    // igualmente: el refresco se perdia. Ahora el R/W gana la ranura y el RFSH
+    // sigue pendiente hasta una ranura sin R/W del mismo canal.
+    wire                               rw_req[0:COUNT-1];        // OE o WE pendiente (o detectado ahora)
+    wire                               defer_rw[0:COUNT-1];      // el R/W cede la ranura (escalacion del refresco interno, solo canal 0)
+    wire                               grant_rw[0:COUNT-1];      // esta ranura emite el R/W del canal
+    wire                               grant_rf[0:COUNT-1];      // esta ranura emite el RFSH del canal (sin R/W)
+    wire                               grant_any[0:COUNT-1];     // esta ranura emite una operacion del cliente
+    reg                                proc_rw[0:COUNT-1];       // la operacion en curso es un R/W (DOUT se captura solo entonces)
+
     reg [1:0]                          exec_timing_buff[0:COUNT-1];
     assign exec_timing[0] = exec_timing_buff[0][MRAM_EXEC_DELAY-1]; // MainRam は 1CLK 遅延
     assign exec_timing[1] = exec_timing_buff[1][VRAM_EXEC_DELAY-1]; // VideoRam は 2CLK 遅延
+
+    // refresco interno: todavia no
+    wire                               int_esc   = 1'b0;
+    wire                               int_issue = 1'b0;
 
     generate
         genvar process_ch;
@@ -277,20 +293,40 @@ end
             // OE, WE, RFSH いずれかの要求フラグ
             assign req_any[process_ch] = req_we[process_ch] || req_oe[process_ch] || req_rfsh[process_ch];
 
+            // V9990TANG: R/W o RFSH que emite esta ranura. El R/W tiene prioridad;
+            // el RFSH solo sale en una ranura sin R/W (si no, se queda en save_rfsh).
+            assign rw_req[process_ch]    = req_oe[process_ch] || req_we[process_ch];
+            assign defer_rw[process_ch]  = (process_ch == 0) ? int_esc : 1'b0;
+            assign grant_rw[process_ch]  = exec_timing[process_ch] && rw_req[process_ch] && !defer_rw[process_ch];
+            assign grant_rf[process_ch]  = exec_timing[process_ch] && req_rfsh[process_ch] && !grant_rw[process_ch];
+            assign grant_any[process_ch] = grant_rw[process_ch] || grant_rf[process_ch];
+
             // 各 ch の処理完了フラグ
             assign done_ch[process_ch] = done && processing[process_ch];
 
             // 処理中フラグ更新
+            // V9990TANG: solo con una operacion emitida (tnCart: exec_timing && req_any)
             always_ff @(posedge CLK or negedge RESET_n) begin
-                if(!RESET_n)                                            processing[process_ch] <= 0;
-                else if(exec_timing[process_ch] && req_any[process_ch]) processing[process_ch] <= 1;
-                else if(done_ch[process_ch])                            processing[process_ch] <= 0;
+                if(!RESET_n)                    processing[process_ch] <= 0;
+                else if(grant_any[process_ch])  processing[process_ch] <= 1;
+                else if(done_ch[process_ch])    processing[process_ch] <= 0;
+            end
+
+            // V9990TANG: tipo de la operacion en curso
+            always_ff @(posedge CLK or negedge RESET_n) begin
+                if(!RESET_n)                    proc_rw[process_ch] <= 0;
+                else if(grant_any[process_ch])  proc_rw[process_ch] <= grant_rw[process_ch];
             end
 
             // DOUT 格納
+            // V9990TANG: solo tras un R/W. Un RFSH no trae dato: tnCart copiaba aqui
+            // Primary.DOUT igualmente, que tras un refresco es la ultima lectura del
+            // otro canal. Con el RFSH aplazado (arriba) esa copia caeria en mitad
+            // de la lectura siguiente del cliente (la megaROM pasa DOUT al bus del
+            // Z80 mientras su /RD esta bajo, megarom_controller.sv).
             always_ff @(posedge CLK or negedge RESET_n) begin
-                if(!RESET_n)                 Secondary[process_ch].DOUT <= 0;
-                else if(done_ch[process_ch]) Secondary[process_ch].DOUT <= Primary.DOUT;
+                if(!RESET_n)                                         Secondary[process_ch].DOUT <= 0;
+                else if(done_ch[process_ch] && proc_rw[process_ch]) Secondary[process_ch].DOUT <= Primary.DOUT;
             end
 
             // ACK_n 更新
@@ -301,24 +337,28 @@ end
             end
 
             // OE_n の保持
+            // V9990TANG: se borra cuando el R/W sale de verdad (grant_rw), no en
+            // cualquier exec_timing con peticion
             always_ff @(posedge CLK or negedge RESET_n) begin
-                if(!RESET_n)                                           save_oe[process_ch] <= 0;
-                else if(exec_timing[process_ch] && req_oe[process_ch]) save_oe[process_ch] <= 0;        // Primary.OE_n 更新のタイミングでクリア
-                else if(det_oe[process_ch])                            save_oe[process_ch] <= 1;        // Secondary.OE_n の立下り検出でセット
+                if(!RESET_n)                                        save_oe[process_ch] <= 0;
+                else if(grant_rw[process_ch] && req_oe[process_ch]) save_oe[process_ch] <= 0;        // Primary.OE_n 更新のタイミングでクリア
+                else if(det_oe[process_ch])                         save_oe[process_ch] <= 1;        // Secondary.OE_n の立下り検出でセット
             end
 
             // WE_n の保持
             always_ff @(posedge CLK or negedge RESET_n) begin
-                if(!RESET_n)                                           save_we[process_ch] <= 0;
-                else if(exec_timing[process_ch] && req_we[process_ch]) save_we[process_ch] <= 0;        // Primary.WE_n 更新のタイミングでクリア
-                else if(det_we[process_ch]                           ) save_we[process_ch] <= 1;        // Secondary.WE_n の立下り検出でセット
+                if(!RESET_n)                                        save_we[process_ch] <= 0;
+                else if(grant_rw[process_ch] && req_we[process_ch]) save_we[process_ch] <= 0;        // Primary.WE_n 更新のタイミングでクリア
+                else if(det_we[process_ch]                        ) save_we[process_ch] <= 1;        // Secondary.WE_n の立下り検出でセット
             end
 
             // RFSH_n の保持
+            // V9990TANG: se borra solo si el RFSH se emitio (grant_rf); tnCart lo
+            // borraba aunque la ranura la hubiera ocupado un R/W
             always_ff @(posedge CLK or negedge RESET_n) begin
-                if(!RESET_n)                                             save_rfsh[process_ch] <= 0;
-                else if(exec_timing[process_ch] && req_rfsh[process_ch]) save_rfsh[process_ch] <= 0;    // Primary.RFSH_n 更新のタイミングでクリア
-                else if(det_rfsh[process_ch])                            save_rfsh[process_ch] <= 1;    // Secondary.RFSH_n の立下り検出でセット
+                if(!RESET_n)                    save_rfsh[process_ch] <= 0;
+                else if(grant_rf[process_ch])   save_rfsh[process_ch] <= 0;    // Primary.RFSH_n 更新のタイミングでクリア
+                else if(det_rfsh[process_ch])   save_rfsh[process_ch] <= 1;    // Secondary.RFSH_n の立下り検出でセット
             end
 
             // ADDR の保持
@@ -361,21 +401,23 @@ end
             Primary.WE_n     <= 1;
             Primary.RFSH_n   <= 1;
         end
-        else if(exec_timing[0] && req_any[0]) begin
-            Primary.ADDR     <= (req_oe[0] || req_we[0]) ? ((req_addr[0] + Uma.ADDR[0]) & 24'hFFFFFF) : 0;
-            Primary.DIN      <= (req_oe[0] || req_we[0]) ? req_din[0] : 0;
-            Primary.DIN_SIZE <= (req_oe[0] || req_we[0]) ? req_din_size[0] : 0;
-            Primary.OE_n     <= !req_oe[0];
-            Primary.WE_n     <= !req_we[0];
-            Primary.RFSH_n   <= !req_rfsh[0];
+        // V9990TANG: R/W o RFSH, nunca los dos (grant_rw / grant_rf); en el
+        // canal 0 tambien el AUTO REFRESH interno (int_issue)
+        else if(grant_any[0] || int_issue) begin
+            Primary.ADDR     <= grant_rw[0] ? ((req_addr[0] + Uma.ADDR[0]) & 24'hFFFFFF) : 0;
+            Primary.DIN      <= grant_rw[0] ? req_din[0] : 0;
+            Primary.DIN_SIZE <= grant_rw[0] ? req_din_size[0] : 0;
+            Primary.OE_n     <= !(grant_rw[0] && req_oe[0]);
+            Primary.WE_n     <= !(grant_rw[0] && req_we[0]);
+            Primary.RFSH_n   <= !(grant_rf[0] || int_issue);
         end
-        else if(exec_timing[1] && req_any[1]) begin
-            Primary.ADDR     <= (req_oe[1] || req_we[1]) ? ((req_addr[1] + Uma.ADDR[1]) & 24'hFFFFFF) : 0;
-            Primary.DIN      <= (req_oe[1] || req_we[1]) ? req_din[1] : 0;
-            Primary.DIN_SIZE <= (req_oe[1] || req_we[1]) ? req_din_size[1] : 0;
-            Primary.OE_n     <= !req_oe[1];
-            Primary.WE_n     <= !req_we[1];
-            Primary.RFSH_n   <= !req_rfsh[1];
+        else if(grant_any[1]) begin
+            Primary.ADDR     <= grant_rw[1] ? ((req_addr[1] + Uma.ADDR[1]) & 24'hFFFFFF) : 0;
+            Primary.DIN      <= grant_rw[1] ? req_din[1] : 0;
+            Primary.DIN_SIZE <= grant_rw[1] ? req_din_size[1] : 0;
+            Primary.OE_n     <= !(grant_rw[1] && req_oe[1]);
+            Primary.WE_n     <= !(grant_rw[1] && req_we[1]);
+            Primary.RFSH_n   <= !grant_rf[1];
         end
     end
 
