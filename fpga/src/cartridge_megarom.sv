@@ -36,6 +36,11 @@
 /***************************************************************
  * MEGA ROM カードリッジ
  ***************************************************************/
+//
+// V9990TANG: con el modo PLAIN0 activo (Megarom.Plain) el SCC no contesta y
+// su registro de modo (BFFEh/BFFFh) no se escribe: la ROM plana ocupa
+// 0000h-BFFFh entera (docs/notas/megaram.md).
+//
 module CARTRIDGE_MEGAROM #(
     parameter [23:0]    FLASH_FS_ADDR               = 0,
     parameter [23:0]    FLASH_FS_SIZE               = 0,
@@ -189,7 +194,7 @@ module CARTRIDGE_MEGAROM #(
                     WriteProtect_SCC[2] <= 0;
                     WriteProtect_SCC[3] <= 0;
                 end
-                else if(ExtBus[BUS_SCC].ADDR[15:1] == 15'b1011_1111_1111_111 && !ExtBus[BUS_SCC].SLTSL_n && !ExtBus[BUS_SCC].WR_n) begin
+                else if(ExtBus[BUS_SCC].ADDR[15:1] == 15'b1011_1111_1111_111 && !ExtBus[BUS_SCC].SLTSL_n && !ExtBus[BUS_SCC].WR_n && !Megarom.Plain) begin
                     // SCC/SCC-I の切り替え
                     scc_mode_scci <= ExtBus[BUS_SCC].DIN[5];
                     // バンクレジスタ更新許可フラグ
@@ -250,7 +255,7 @@ module CARTRIDGE_MEGAROM #(
             always_ff @(posedge ExtBus[BUS_SCC].CLK_21M) begin
                 rst_n <= RESET_n && ExtBus[BUS_SCC].RESET_n;
                 clk_en <= !ExtBus[BUS_SCC].CLK_EN_21M;              // CLK_EN も1クロック遅らせる
-                cs_n <= ExtBus[BUS_SCC].SLTSL_n || !SCC_ENA;
+                cs_n <= ExtBus[BUS_SCC].SLTSL_n || !SCC_ENA || Megarom.Plain;   // V9990TANG: PLAIN0 (cuasi-estatico)
                 rd_n <= ExtBus[BUS_SCC].RD_n;
                 wr_n <= ExtBus[BUS_SCC].WR_n;
                 // WR_n, RD_n の立ち下がりでアドレス更新
@@ -306,7 +311,7 @@ module CARTRIDGE_MEGAROM #(
                 .CLK_EN     (ExtBus[BUS_SCC].CLK_EN),
                 .MODE_SCC_I (scc_mode_scci),
                 .ADDR       (ExtBus[BUS_SCC].ADDR[7:0]),
-                .CS_n       (scc_cs_n || ExtBus[BUS_SCC].SLTSL_n || ExtBus[BUS_SCC].MERQ_n || !SCC_ENA || scc_bank_n),
+                .CS_n       (scc_cs_n || ExtBus[BUS_SCC].SLTSL_n || ExtBus[BUS_SCC].MERQ_n || !SCC_ENA || scc_bank_n || Megarom.Plain),
                 .RD_n       (ExtBus[BUS_SCC].RD_n),
                 .WR_n       (ExtBus[BUS_SCC].WR_n),
                 .DIN        (ExtBus[BUS_SCC].DIN),

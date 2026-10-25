@@ -64,7 +64,34 @@
 //  001Ch   BANK#3 レジスタアドレス下位
 //  001Dh   BANK#3 レジスタアドレス上位
 //  001Eh   BANK#3 初期値
-//  001Fh   予約
+//  001Fh   予約 -> V9990TANG: modo
+//              b0  PLAIN0 (1 = ROM plana en 0000h-BFFFh; ver abajo)
+//              b1-b7 reservados (se guardan, sin efecto)
+//
+//  V9990TANG, modo PLAIN0 (para las demos V9990 planas de Edd Biddulph: ROM
+//  de 16-48 KB con "AB" en 4000h e ISR en 0038h). El registro de flags 0Ch no
+//  tiene bits libres (b0-b7 en uso), por eso el flag va en el bit 0 del byte
+//  "reservado" del banco 3 (1Fh), que tncrom escribe siempre con el resto del
+//  atributo (rom_attr_xfer, 0Ch-1Fh): cualquier tipo que no sea PLAIN0 lo deja
+//  a 0. El modo esta ACTIVO cuando 1Fh.b0 = 1, la llave esta cerrada
+//  (reg_protect) y FLAGS.ENABLE = 1. Activo:
+//    - el controlador responde a SLTSL & MERQ en 0000h-BFFFh leyendo lineal
+//      desde el inicio de la ventana (offset = direccion), sin bancos, sin
+//      escritura (ni a la RAM ni a los registros de banco), sin mascaras CS,
+//      y el SCC no contesta ni se reconfigura (cartridge_megarom.sv);
+//    - las lecturas de 0000h-003Fh devuelven la ROM (los registros ya estaban
+//      ocultos con la llave cerrada) y se ignoran TODAS las escrituras a la
+//      configuracion, llave 0000h-0003h incluida: una escritura casual de la
+//      demo no la desbloquea. Solo el /RESET del MSX sale del modo;
+//    - con el /RESET del MSX se borran 1Fh.b0 y FLAGS.ENABLE, sea cual sea
+//      FLAGS.ENABLE_CONTINUOUS (que en este modo se ignora). Para arrancar la
+//      ROM sin /RESET, tncrom -R reinicia por software (CALSLT a 0000h).
+//  Lectura de 3Eh (tamano de la ventana en la SDRAM, en bancos de 16 KB): se
+//  deja como en tnCart, RAM_SIZE[21:14], y se DEFINE 00h = 256 bancos = 4 MB
+//  (la ventana nunca mide 0 y los registros de banco de 8 bits no pasan de
+//  4 MB en 16 KB). Asi 3 MB sigue leyendo C0h, como en el firmware de tnCart,
+//  y el tncrom de V9990TANG lee bien los dos. RAM_SIZE tiene que ser multiplo
+//  de 16 KB y no pasar de 4 MB (comprobado en simulacion, abajo).
 
 module MEGAROM_CONFIGURE #(
     parameter [23:0]    FLASH_FS_ADDR               = 0,
@@ -178,6 +205,21 @@ module MEGAROM_CONFIGURE #(
     localparam [3:0]    BIT_FLAGS_ENABLE_CONTINUOUS = 3'h6; // BIT_FLAGS_ENABLE ビットはハードウェアリセットの影響を受けない
     localparam [3:0]    BIT_FLAGS_ENABLE            = 3'h7; // ROM を有効にする
 
+    // V9990TANG: registro de modo (1Fh)
+    localparam [4:0]    ADDR_MODE                   = ADDR_BANK3_RESERVED;
+    localparam [3:0]    BIT_MODE_PLAIN0             = 3'h0; // ROM plana en 0000h-BFFFh
+
+`ifndef SYNTHESIS
+    // synthesis translate_off
+    // V9990TANG: la lectura de 3Eh (RAM_SIZE[21:14], 00h = 4 MB) solo vale
+    // para ventanas de 16 KB a 4 MB en multiplos de 16 KB
+    initial begin
+        if(RAM_SIZE == 0 || RAM_SIZE > 24'h40_0000 || RAM_SIZE[13:0] != 0)
+            $error("MEGAROM_CONFIGURE: RAM_SIZE = %h no es un multiplo de 16 KB entre 16 KB y 4 MB", RAM_SIZE);
+    end
+    // synthesis translate_on
+`endif
+
     /***************************************************************
      * コントロールレジスタ
      ***************************************************************/
@@ -222,10 +264,19 @@ module MEGAROM_CONFIGURE #(
                         (ctrl_reg[ADDR_KEY_3] != KEY_3);
 
     /***************************************************************
+     * V9990TANG: modo PLAIN0 activo (flag + llave cerrada + ENABLE)
+     ***************************************************************/
+    wire plain_flag   = ctrl_reg[ADDR_MODE][BIT_MODE_PLAIN0];
+    wire plain_active = plain_flag && reg_protect && ctrl_reg[ADDR_FLAGS][BIT_FLAGS_ENABLE];
+
+    /***************************************************************
      * アドレスデコード
      ***************************************************************/
+    // Con PLAIN0 activo reg_protect ya vale 1: las lecturas quedan ocultas y
+    // las escrituras (llave incluida) se ignoran.
     wire cs_reg_rd_n = reg_protect || (Bus.ADDR[15:6] != BASE_ADDR[15:6]);
-    wire cs_reg_wr_n = reg_protect ? (Bus.ADDR[15:2] != BASE_ADDR[15:2]) : (Bus.ADDR[15:6] != BASE_ADDR[15:6]);
+    wire cs_reg_wr_n = plain_active ? 1'b1 :
+                       reg_protect ? (Bus.ADDR[15:2] != BASE_ADDR[15:2]) : (Bus.ADDR[15:6] != BASE_ADDR[15:6]);
 
     /***************************************************************
      * レジスタリード
@@ -308,10 +359,13 @@ module MEGAROM_CONFIGURE #(
         else if(!Bus.RESET_n) begin
             // BIT_FLAGS_ENABLE_CONTINUOUS が無効なら BIT_FLAGS_ENABLE を無効にする
             // (リセットボタンでメガロムを無効にする)
-            if(!ctrl_reg[ADDR_FLAGS][BIT_FLAGS_ENABLE_CONTINUOUS])
+            // V9990TANG: con PLAIN0 se ignora ENABLE_CONTINUOUS y el /RESET
+            // borra ENABLE y el flag del modo plano.
+            if(!ctrl_reg[ADDR_FLAGS][BIT_FLAGS_ENABLE_CONTINUOUS] || plain_flag)
             begin
                 ctrl_reg[ADDR_FLAGS][BIT_FLAGS_ENABLE] <= 0;
             end
+            ctrl_reg[ADDR_MODE][BIT_MODE_PLAIN0] <= 0;
 
             ctrl_reg[ADDR_KEY_0         ] <= ~KEY_0;
             ctrl_reg[ADDR_KEY_1         ] <= ~KEY_1;
@@ -413,6 +467,7 @@ module MEGAROM_CONFIGURE #(
         SCC_ENA                 =   ctrl_reg[ADDR_FLAGS         ][BIT_FLAGS_SCC          ];
         SCC_I_ENA               =   ctrl_reg[ADDR_FLAGS         ][BIT_FLAGS_SCC_I        ];
         Megarom.MemoryTopAddr   = RAM_ADDR[$bits(Megarom.MemoryTopAddr)-1:0];
+        Megarom.Plain           =   plain_active;
     end
 
 endmodule

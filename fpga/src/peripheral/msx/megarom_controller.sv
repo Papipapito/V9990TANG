@@ -42,6 +42,7 @@ interface MEGAROM_IF #(parameter ADDR_BIT_WIDTH=24, BANK_COUNT = 4);
     logic                       is_16k_bank;                    // banksize 0:8KB / 1:16KB
     logic                       CS1_Mask;                       // 0:PAGE1 を使用する / 1:PAGE1 を使用しない
     logic                       CS2_Mask;                       // 0:PAGE2 を使用する / 1:PAGE2 を使用しない
+    logic                       Plain;                          // V9990TANG: 1 = ROM plana en 0000h-BFFFh (PLAIN0)
 
     logic [15:0]                BankRegAddrMask;
     logic [15:0]                BankRegAddr[0:BANK_COUNT-1];
@@ -52,7 +53,7 @@ interface MEGAROM_IF #(parameter ADDR_BIT_WIDTH=24, BANK_COUNT = 4);
 
     // ホスト側ポート
     modport HOST(
-                    output MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask,
+                    output MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask, Plain,
 
                     output BankRegAddrMask, BankRegAddr, BankRegMask, BankRegInit,
                     input  BankReg, BankRegRaw
@@ -60,7 +61,7 @@ interface MEGAROM_IF #(parameter ADDR_BIT_WIDTH=24, BANK_COUNT = 4);
 
     // メガロムコントローラ側ポート
     modport DEVICE (
-                    input  MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask,
+                    input  MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask, Plain,
 
                     input  BankRegAddrMask, BankRegAddr, BankRegMask, BankRegInit,
                     inout  BankReg, BankRegRaw
@@ -70,6 +71,13 @@ endinterface
 /***************************************************************
  * メガロムコントローラ
  ***************************************************************/
+//
+// V9990TANG:
+//  - Megarom.Plain (modo PLAIN0, ver megarom_configure.sv): responde en
+//    0000h-BFFFh con offset = direccion, sin bancos, sin escritura y sin
+//    mascaras CS. Todo HOST de MEGAROM_IF tiene que conducir Plain (0 si no
+//    usa el modo).
+//
 module MEGAROM_CONTROLLER #(
     parameter               COUNT = 1,
     parameter               USE_FF = 0
@@ -205,6 +213,10 @@ module MEGAROM_CONTROLLER #(
     wire cs2_n  = ~Bus.ADDR[15] ||  Bus.ADDR[14] || Megarom.CS2_Mask;
     wire cs12_n = (cs1_n && cs2_n);
 
+    // V9990TANG: PLAIN0 responde en 0000h-BFFFh (las mascaras CS no cuentan)
+    wire cs_plain_n = (Bus.ADDR[15:14] == 2'b11);
+    wire cs_mem_n   = Megarom.Plain ? cs_plain_n : cs12_n;
+
     /***************************************************************
      * バンク毎のライトプロテクト
      ***************************************************************/
@@ -215,8 +227,8 @@ module MEGAROM_CONTROLLER #(
      ***************************************************************/
     wire wr_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.WR_n;
     wire rd_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.RD_n;
-    wire wr_mem_n  = cs12_n || wr_n || Megarom.WriteProtect || bank_write_protect;
-    wire rd_mem_n  = cs12_n || rd_n;
+    wire wr_mem_n  = cs_mem_n || wr_n || Megarom.WriteProtect || bank_write_protect || Megarom.Plain;
+    wire rd_mem_n  = cs_mem_n || rd_n;
 
     /***************************************************************
      * ライト検出
@@ -244,7 +256,7 @@ module MEGAROM_CONTROLLER #(
                     Megarom.BankReg[bank_num] <= Megarom.BankRegInit[bank_num];
                     Megarom.BankRegRaw[bank_num] <= Megarom.BankRegInit[bank_num];
                 end
-                else if(det_wr && ((Bus.ADDR & Megarom.BankRegAddrMask) == Megarom.BankRegAddr[bank_num]) && BankEnable[bank_num]) begin
+                else if(det_wr && ((Bus.ADDR & Megarom.BankRegAddrMask) == Megarom.BankRegAddr[bank_num]) && BankEnable[bank_num] && !Megarom.Plain) begin
                     Megarom.BankReg[bank_num] <= Bus.DIN & Megarom.BankRegMask;
                     Megarom.BankRegRaw[bank_num] <= Bus.DIN;
                 end
@@ -259,7 +271,8 @@ module MEGAROM_CONTROLLER #(
     wire [ 7:0] bank_8;
     wire [23:0] addr_16 = Megarom.MemoryTopAddr + { 2'h0, bank_16, Bus.ADDR[13:0] };
     wire [23:0] addr_8  = Megarom.MemoryTopAddr + { 3'h0, bank_8 , Bus.ADDR[12:0] };
-    wire [23:0] addr = Megarom.is_16k_bank ? addr_16 : addr_8;
+    wire [23:0] addr_plain = Megarom.MemoryTopAddr + { 8'h00, Bus.ADDR[15:0] };   // V9990TANG: PLAIN0
+    wire [23:0] addr = Megarom.Plain ? addr_plain : Megarom.is_16k_bank ? addr_16 : addr_8;
 
     if(Megarom.BANK_COUNT >= 4) begin
         assign bank_16 = Megarom.BankReg[Bus.ADDR[15]];
