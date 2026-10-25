@@ -261,7 +261,11 @@ module SDRAM #(
                 STATE_INIT_REF1, STATE_INIT_REF2:
                 begin
                     // SDRAM へ AUTO REFRESH コマンドを送信
-                    SDRAM_CMD <= CMD_PRE;
+                    // V9990TANG: tnCart enviaba aqui CMD_PRE (dos PRECHARGE mas), no
+                    // el AUTO REFRESH que dice el comentario; JEDEC pide al menos dos
+                    // AUTO REFRESH entre el PRECHARGE ALL y el MODE REGISTER SET.
+                    // Mismos estados y ciclos: 8 ciclos REF->REF y REF->MRS (>= tRC).
+                    SDRAM_CMD <= CMD_REF;
                     SDRAM_BA <= 0;
                     SDRAM_A <= 11'b10000000000;
                 end
