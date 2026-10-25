@@ -56,8 +56,11 @@ interface VIDEO_IF;
     logic       HSCAN;      // 0=normal / 1=400,480ラインモード
     logic       INTERLACE;  // 0=normal / 1=縦方向を2倍
     logic       FIELD;      // 0=1st field / 1=2nd field
-    modport IN  ( input  RESOLUTION, R, G, B, HS_n, VS_n, DCLK, HSCAN, INTERLACE, FIELD );
-    modport OUT ( output RESOLUTION, R, G, B, HS_n, VS_n, DCLK, HSCAN, INTERLACE, FIELD );
+    logic       PAL;        // 0=NTSC (cuadro de 262 lineas) / 1=PAL (cuadro de 313 lineas): el cuadro que llega
+                            // V9990TANG: lo da el T9990 (R#7 bit 3, fijado al empezar cada cuadro como en openMSX);
+                            // el upscan lo pasa a su salida y BOARD_REV1_TMDS_OUT elige con el la ventana de DE
+    modport IN  ( input  RESOLUTION, R, G, B, HS_n, VS_n, DCLK, HSCAN, INTERLACE, FIELD, PAL );
+    modport OUT ( output RESOLUTION, R, G, B, HS_n, VS_n, DCLK, HSCAN, INTERLACE, FIELD, PAL );
 
     // ダミー出力
     function automatic void connect_dummy();
@@ -68,6 +71,7 @@ interface VIDEO_IF;
         VS_n = 1;
         RESOLUTION = VIDEO::RESOLUTION_720_480;
         DCLK = 0;
+        PAL = 0;        // V9990TANG: sin V9990, salida NTSC (720x480)
     endfunction
 endinterface
 
