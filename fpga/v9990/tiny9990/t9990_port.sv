@@ -385,7 +385,7 @@ module T9990_PORT (
     assign REG.DCKM =  vdp_reg[ 6][5:4];
     assign REG.XIMM =  vdp_reg[ 6][3:2];
     assign REG.CLRM =  vdp_reg[ 6][1:0];
-    assign REG.C25M =  vdp_reg[ 7][  7];
+    assign REG.C25M =  vdp_reg[ 7][  6];    // MSXimus Z 20/09/2026: C25M es el bit 6 de R#7 (era [7]; GNF)
     assign REG.EO   =  vdp_reg[ 7][  2];
     assign REG.ILM  =  vdp_reg[ 7][  1];
     assign REG.HSCN =  vdp_reg[ 7][  0];

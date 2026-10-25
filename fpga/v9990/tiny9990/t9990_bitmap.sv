@@ -391,7 +391,10 @@ module TINY9990_BITMAP_GEN (
                 end
             end
             else begin
-                PRI <= 0;
+                // BD16 (MSXimus Z 22/09/2026): la capa de paleta tiene que ser TRANSPARENTE (PRI=1) para
+                // que el selector coja el color directo; con PRI=0 ganaba la entrada 0 de la paleta
+                // (negro opaco) y la pantalla salia negra (Dream Puzzle, B3 a 16 bpp).
+                PRI <= 1;
                 PA <= 0;
                 CLR <= R_DATA[15:0];
             end
@@ -507,9 +510,12 @@ module T9990_BITMAP_BUFFER (
             endcase
         end
         else begin
+            // BD16: el pixel es little-endian en la VRAM (byte bajo en la direccion par, alto con YS
+            // en la impar; openMSX rasterBD16). r_data lleva los bytes en orden de direccion (byte 0
+            // arriba), asi que hay que cruzarlos (MSXimus Z 22/09/2026).
             case (R_POS[0])
-                5'd 0:  R_DATA <= r_data[31:16];
-                5'd 1:  R_DATA <= r_data[15: 0];
+                5'd 0:  R_DATA <= { r_data[23:16], r_data[31:24] };
+                5'd 1:  R_DATA <= { r_data[ 7: 0], r_data[15: 8] };
             endcase
         end
     end

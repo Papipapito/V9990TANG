@@ -143,7 +143,7 @@ module T9990_PALETTE_REG (
     reg [4:0] r_data_g;
     reg [4:0] r_data_b;
     assign R_DATA = (ptr == T9990_REG::PLTP_R) ? r_data_r :
-                    (ptr == T9990_REG::PLTP_R) ? {1'b0, r_data_g} : {1'b0,r_data_b};
+                    (ptr == T9990_REG::PLTP_G) ? {1'b0, r_data_g} : {1'b0,r_data_b};    // MSXimus Z 18/10/2026: era PLTP_R dos veces (leer G por P#1 devolvia B)
 
     always_ff @(posedge CLK) begin
         if(!RESET_n) begin

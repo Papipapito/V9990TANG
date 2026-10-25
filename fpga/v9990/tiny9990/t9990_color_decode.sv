@@ -228,7 +228,9 @@ module T9990_COLOR_DECODE (
         // BD16
         //
         else if(REG.CLRM == T9990_REG::CLRM_16BPP) begin
-            if(DCLK_EN) OUT <= delay;
+            // YS (bit 15) solo cuenta al superponer video externo; sin el, el pixel se ve igual
+            // (openMSX rasterBD16 sin superimpose enmascara el bit). MSXimus Z 22/09/2026.
+            if(DCLK_EN) OUT <= { 1'b0, delay[14:0] };
         end
 
         //

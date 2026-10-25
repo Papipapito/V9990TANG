@@ -227,6 +227,17 @@ wire srch_edge_right = work.srch.edge_left;
 
     wire [31:0] cmd_mem_dout_be = { CMD_MEM.DOUT[7:0], CMD_MEM.DOUT[15:8], CMD_MEM.DOUT[23:16], CMD_MEM.DOUT[31:24]};   // 転送元 VRAM 読み出しデータ(ビッグエンディアン)
 
+    // MSXimus Z 20/09/2026: LMCM / POINT entregaban al P#2 siempre WRT_DATA[31:24] (el 4o byte del
+    // grupo de 32 bits), asi que solo salia bien 1 pixel de cada 4 (8 bpp). El byte del pixel es el
+    // de su posicion dentro de la palabra (WRT_DATA es little-endian: [7:0] = direccion menor):
+    // 8 bpp DST_X[1:0], 4 bpp DST_X[2:1] (2 px por byte), 2 bpp DST_X[3:2] (4 px por byte);
+    // 16 bpp: los dos bytes del pixel, direccion menor primero (mismo orden que antes).
+    wire [1:0] cpu_lane_sel = (DST_CLRM == T9990_REG::CLRM_2BPP) ? DST_X[3:2] :
+                              (DST_CLRM == T9990_REG::CLRM_4BPP) ? DST_X[2:1] : DST_X[1:0];
+    wire [7:0] cpu_lane    = WRT_DATA[cpu_lane_sel*8 +: 8];
+    wire [7:0] cpu_lane_lo = DST_X[0] ? WRT_DATA[23:16] : WRT_DATA[ 7:0];
+    wire [7:0] cpu_lane_hi = DST_X[0] ? WRT_DATA[31:24] : WRT_DATA[15:8];
+
     wire [4:0] SRC_OUT_COUNT = SRC_COUNT;
     wire [4:0] SRC_POS_COUNT = SRC_COUNT;
     wire [4:0] DST_IN_COUNT = DST_COUNT;
@@ -1063,11 +1074,11 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                 P2_VDP_TO_CPU.REQ <= 1;
                 STATUS.TR <= 1;
                 if(DST_CLRM == T9990_REG::CLRM_16BPP) begin
-                    P2_VDP_TO_CPU.DATA <= WRT_DATA[23:16];
+                    P2_VDP_TO_CPU.DATA <= cpu_lane_lo;
                     state <= STATE_DST_WRITE_CPU_H_WAIT_ACK;
                 end
                 else begin
-                    P2_VDP_TO_CPU.DATA <= WRT_DATA[31:24];
+                    P2_VDP_TO_CPU.DATA <= cpu_lane;
                     state <= STATE_DST_WRITE_CPU_WAIT_ACK;
                 end
             end
@@ -1103,7 +1114,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_DST_WRITE_CPU_H_WAIT_BUSY) begin
             if(!P2_VDP_TO_CPU.ACK) begin
                 P2_VDP_TO_CPU.REQ <= 1;
-                P2_VDP_TO_CPU.DATA <= WRT_DATA[31:24];
+                P2_VDP_TO_CPU.DATA <= cpu_lane_hi;
                 STATUS.TR <= 1;
                 state <= STATE_DST_WRITE_CPU_WAIT_ACK;
             end
