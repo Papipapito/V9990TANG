@@ -21,13 +21,16 @@
 //            flops y una linea de FE_DELAY ciclos (filtro y mux del bus).
 //            2 = cliente al 100 %: R/W de 8/16/32 bits encadenados por ACK_n
 //            (como el bootloader), uno en cada ranura del canal 0.
+//            3 = R/W y RFSH pedidos en el mismo ciclo, o RFSH solo, con
+//            handshake por ACK_n.
 //            0 = nada.
 //
-// Plusargs: +MHZ=108000|107386 (kHz)  +CH0=0|1|2  +Z80KHZ=3580|7160
+// Plusargs: +MHZ=108000|107386 (kHz)  +CH0=0|1|2|3  +Z80KHZ=3580|7160
 //           +Z80RFSH=0|1  +V99=0|1  +US=<us simulados>  +SEED=<n>
 //           +PHASE0=1 (control: reloj de la SDRAM sin desfase)
-//           +NEG=gap|init|window (control negativo: se espera que falle esa
-//           comprobacion; el resto se informa sin contar)
+//           +NEG=<comprobacion> (control negativo: se espera que falle esa
+//           comprobacion, p. ej. gap, init, window, slot, rfsh o z80; el
+//           resto se informa sin contar)
 // Defines:  HITO1 = UMA y sdram.sv de main (hito 1), sin los puertos nuevos.
 // Parametro: INT_REFRESH (-GINT_REFRESH=0 para el control sin temporizador).
 // ============================================================================
@@ -681,6 +684,26 @@ module tb_uma_sdram;
         if (!rst_mem_n && !rst_cmd_seen) begin rst_cmd <= pin_cmd; rst_cmd_seen <= 1'b1; end
     end
 
+    // cadencia: en cada exec_timing (de los dos canales) la operacion anterior
+    // ha terminado: sdram.sv vuelve a estar en STATE_IDLE (= 32: los 9 estados
+    // del acceso y la captura del dato en STATE_FETCH_RDATA_1/2 ya pasaron),
+    // su ACK_n esta alto y el UMA ya no presenta OE/WE/RFSH. Es la regla del
+    // estudio "ciclo del controlador + 1 <= ranura" (9 + 1 <= 10): sin ese
+    // ciclo de holgura el sistema aun funciona (control slack0), con uno
+    // menos el done_ch capturaria un dato a medias o el UMA perderia la
+    // ranura, porque Primary.ACK_n bajo tiene prioridad en uma.sv (control slow).
+    longint n_slot_chk = 0, n_slot_err = 0;
+    always @(posedge clk) begin
+        if (sys_rst_n && (u_uma.exec_timing[0] || u_uma.exec_timing[1])) begin
+            n_slot_chk <= n_slot_chk + 1;
+            if (u_sdram.state != 7'd32 || !Ram.ACK_n || !Ram.OE_n || !Ram.WE_n || !Ram.RFSH_n) begin
+                n_slot_err <= n_slot_err + 1;
+                if (n_slot_err < 5) $display("  [SLOT %0t] state=%0d ACK_n=%b OE_n=%b WE_n=%b RFSH_n=%b",
+                                             $time, u_sdram.state, Ram.ACK_n, Ram.OE_n, Ram.WE_n, Ram.RFSH_n);
+            end
+        end
+    end
+
     // el refresco interno solo sale en una ranura del canal 0, y sin cliente en
     // el canal 0 su ACK_n y su DOUT no se mueven aunque haya refrescos internos
     int   n_int_slot_err = 0, n_ch0_ack_low = 0, n_ch0_dout_chg = 0, n_int_issue = 0;
@@ -766,6 +789,8 @@ module tb_uma_sdram;
         check("ch1",    v_lost == 0 && v_derr == 0 && (v99_mode == 0 || (v_lat_min == v_lat_max && v_lat_max < 20)),
               $sformatf("canal 1 sin ranuras perdidas ni datos malos, latencia fija < 20 (%0d..%0d)", v_lat_min, v_lat_max));
         check("rfsh_rw", n_both == 0, "el UMA nunca presenta RFSH junto a OE/WE");
+        check("slot",   n_slot_err == 0 && n_slot_chk > 1000,
+              $sformatf("en cada exec_timing la SDRAM ha terminado el acceso anterior (%0d ranuras, %0d mal)", n_slot_chk, n_slot_err));
 `ifndef HITO1
         check("dbg",    16'(dbg_int + dbg_ch0 + dbg_ch1) == 16'(n_ref_rt),
               $sformatf("contadores del UMA (%0d) = AUTO REFRESH en los pines (%0d)", dbg_int + dbg_ch0 + dbg_ch1, n_ref_rt));
@@ -815,8 +840,10 @@ module tb_uma_sdram;
             end
             check("ch0",  f_derr == 0, "datos del canal 0 correctos");
 `ifndef HITO1
-            check("esc",  lat_ok && n_def == longint'(dbg_esc) && (INT_REFRESH == 0 || dbg_esc > 0),
-                  $sformatf("cada escalacion aplaza un R/W exactamente una ranura (aplazados=%0d escalaciones=%0d)", n_def, dbg_esc));
+            // con el canal 0 lleno no hay ranura libre: cada refresco interno es
+            // una escalacion y aplaza exactamente un R/W
+            check("esc",  lat_ok && n_def == longint'(dbg_esc) && (INT_REFRESH == 0 || (dbg_esc > 0 && dbg_esc == dbg_int)),
+                  $sformatf("cada refresco interno aplaza un R/W exactamente una ranura (aplazados=%0d escalaciones=%0d internos=%0d)", n_def, dbg_esc, dbg_int));
 `endif
         end
         if (neg != "") begin
