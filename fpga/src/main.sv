@@ -149,7 +149,13 @@ module MAIN #(
          * en lo que hubiera en la SDRAM)
          ***********************************************************/
 `ifdef HAVE_MEGAROM_CLEAR
-        MEGAROM_CLEAR u_megarom_clear (
+        // la ventana empieza en CONFIG::RAM_ADDR_MEGAROM y el canal 0 del
+        // UMA tiene base 0 (Uma.ADDR[0] = 0 en el top); 32 KB como el
+        // MEGAROM_CLEAR_SIZE del bootloader
+        MEGAROM_CLEAR #(
+            .CLEAR_ADDR     (CONFIG::RAM_ADDR_MEGAROM),
+            .CLEAR_SIZE     (24'd32768)
+        ) u_megarom_clear (
             .RESET_n,
             .CLK,
             .Ram            (ExpRam[RAM_BOOTLOADER]),
