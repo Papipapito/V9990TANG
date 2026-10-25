@@ -39,19 +39,26 @@
 /***********************************************************************
  *
  ***********************************************************************/
+// V9990TANG: el rPLL base deja de tener RESET_n = 1'b1 constante y, en sync,
+// lock pegajoso en un flop de CLK_IN. Su RESET lo da PLL_RESET y su LOCK sale
+// crudo por CLK_BASE_LOCK: el POR, el filtro del LOCK, el detector de perdida
+// de enganche y los reintentos estan en BOARD_WT200B_GUARD (dominio CLK_27M),
+// que entrega PLL_OK; SYSTEM_RESET lo pasa a CLK_BASE como BASE_READY, que
+// vuelve aqui como reset del rPLL TMDS y del CLKDIV de 21 MHz. Los CLKDIV del
+// DAC cuelgan del cristal y siguen sin reset (antes RESET_n = 1).
 module BOARD_WT200B_CLOCK /* synthesis syn_preserve=1 */ (
-    input wire      RESET_n,
+    input wire      PLL_RESET,          // reset del rPLL base (BOARD_WT200B_GUARD, CLK_27M)
+    input wire      BASE_READY,         // CLK_BASE estable (SYSTEM_RESET, CLK_BASE)
     input wire      CLK_IN,
     input wire      CLK_27M,
 
     output wire     CLK_BASE,
     output wire     CLK_21M,
     output wire     CLK_DAC,
-    output wire     CLK_BASE_READY,
+    output wire     CLK_BASE_LOCK,      // LOCK crudo del rPLL base
 
     output wire     CLK_MEM,
     output wire     CLK_MEM_P,
-    output wire     CLK_MEM_READY,
 
     output wire     CLK_TMDS_S,
     output wire     CLK_TMDS_P,
@@ -61,12 +68,11 @@ module BOARD_WT200B_CLOCK /* synthesis syn_preserve=1 */ (
      * 基本クロック
      ***************************************************************/
     assign CLK_BASE = CLK_MEM;
-    assign CLK_BASE_READY = CLK_MEM_READY;
 
     /***************************************************************
      * 107.4MHz * 44 / 35 = 134.25MHz
      ***************************************************************/
-    assign CLK_TMDS_READY = RESET_n && lock_135m;
+    assign CLK_TMDS_READY = BASE_READY && lock_135m;
     wire lock_135m;
     rPLL u_pll_tmds (
         .CLKOUT(CLK_TMDS_S),
@@ -74,7 +80,7 @@ module BOARD_WT200B_CLOCK /* synthesis syn_preserve=1 */ (
         .CLKOUTP(),
         .CLKOUTD(),
         .CLKOUTD3(),
-        .RESET(!CLK_MEM_READY),
+        .RESET(!BASE_READY),
         .RESET_P(1'b0),
         .CLKIN(CLK_MEM),
         .CLKFB(1'b0),
@@ -124,26 +130,23 @@ module BOARD_WT200B_CLOCK /* synthesis syn_preserve=1 */ (
     /***************************************************************
      * 3.58MHz * 30 = 107.4MHz
      ***************************************************************/
-    wire CLK_MEM_LOCK;
-    assign CLK_MEM_READY = RESET_n && CLK_MEM_LOCK;
+    // FCLKIN 3,58, IDIV_SEL 0 (/1), FBDIV_SEL 29 (x30), ODIV_SEL 8:
+    // CLKOUT = 3,579545 x 30 = 107,386 MHz, PFD = 3,58 MHz, VCO = CLKOUT x 8
+    // = 859 MHz. Limites del GW2AR-18 C8/I7 (DS226-2.7E, tabla 3-20): entrada
+    // y PFD 3-500 MHz, VCO 500-1250 MHz, jitter de periodo de la entrada
+    // < 20 % o 1 ns, ciclo de trabajo de la entrada >= 25 % (3-49 MHz). Con
+    // x30 y ODIV 8 el reloj del slot vale entre 3,0 y 5,2 MHz para el rPLL;
+    // BOARD_WT200B_GUARD solo lo suelta con 3,579545 MHz +-1,5 %. UG286-2.0.2E
+    // (nota a la tabla 5-2): si el reloj de entrada cambia o es inestable, el
+    // rPLL se resetea cuando vuelva a ser estable (lo hace la guardia).
 if(CONFIG_BOARD::SYNC_CPU_CLK) begin
-
-    //
-    wire w_clk_mem_lock;
-    reg ff_clk_mem_lock = 0;
-    assign CLK_MEM_LOCK = ff_clk_mem_lock;
-    always_ff @(posedge CLK_IN) begin
-        if(!RESET_n)            ff_clk_mem_lock <= 0;
-        else if(w_clk_mem_lock) ff_clk_mem_lock <= 1;
-    end
-
     rPLL u_pll_base (
         .CLKOUT(CLK_MEM),
-        .LOCK(w_clk_mem_lock),
+        .LOCK(CLK_BASE_LOCK),
         .CLKOUTP(CLK_MEM_P),
         .CLKOUTD(),
         .CLKOUTD3(),
-        .RESET(!RESET_n),
+        .RESET(PLL_RESET),
         .RESET_P(1'b0),
         .CLKIN(CLK_IN),
         .CLKFB(1'b0),
@@ -179,13 +182,14 @@ if(CONFIG_BOARD::SYNC_CPU_CLK) begin
     defparam u_pll_base.DEVICE = "GW2AR-18C";
 end
 else begin
+    // 27 MHz x 4 = 108 MHz: PFD 27 MHz, VCO 864 MHz
     rPLL u_pll_base (
         .CLKOUT(CLK_MEM),
-        .LOCK(CLK_MEM_LOCK),
+        .LOCK(CLK_BASE_LOCK),
         .CLKOUTP(CLK_MEM_P),
         .CLKOUTD(),
         .CLKOUTD3(),
-        .RESET(!RESET_n),
+        .RESET(PLL_RESET),
         .RESET_P(1'b0),
         .CLKIN(CLK_IN),
         .CLKFB(1'b0),
@@ -227,7 +231,7 @@ end
     CLKDIV u_div_21m (
         .CLKOUT(CLK_21M),
         .HCLKIN(CLK_BASE),
-        .RESETN(CLK_BASE_READY),
+        .RESETN(BASE_READY),
         .CALIB(1'b0)
     );
     defparam u_div_21m.DIV_MODE = "5";
@@ -240,7 +244,7 @@ end
     CLKDIV u_div_5p4m (
         .CLKOUT(CLK_5_4M),
         .HCLKIN(CLK_27M),
-        .RESETN(RESET_n),
+        .RESETN(1'b1),
         .CALIB(1'b0)
     );
     defparam u_div_5p4m.DIV_MODE = "5";
@@ -252,7 +256,7 @@ end
     CLKDIV u_div_dac (
         .CLKOUT(CLK_DAC),
         .HCLKIN(CLK_5_4M),
-        .RESETN(RESET_n),
+        .RESETN(1'b1),
         .CALIB(1'b0)
     );
     defparam u_div_dac.DIV_MODE = "3.5";
