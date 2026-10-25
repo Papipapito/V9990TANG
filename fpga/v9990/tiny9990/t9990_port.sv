@@ -484,6 +484,11 @@ module T9990_PORT (
         else if(det_r && MODE == 4'h3 && port4_regnum[5:0] == 6'd53) CD_OUT <= STATUS.BX[7:0];  // R#53 read
         else if(det_r && MODE == 4'h3 && port4_regnum[5:0] == 6'd54) CD_OUT <= {5 'b00000, STATUS.BX[10:8]}; // R#54 read
         else if(det_r && MODE == 4'h3 && port4_regnum[5:0] <= 6'd27) CD_OUT <= vdp_reg[port4_regnum[5:0]];     // R#n read
+        // V9990TANG: P#8-P#11 (68h-6Bh, ROM kanji) y P#12-P#15 leen FFh, como openMSX (V9990.cc peekIO:
+        // KANJI_ROM_0..3 "not used in Gfx9000" y default -> 0xFF). P#4 y P#7 (solo escritura) tambien
+        // dan FFh por la rama por defecto de abajo. Ya era asi en el tiny9990 (rama por defecto); se
+        // deja explicito para que no dependa de ella.
+        else if(det_r && MODE[3])                                    CD_OUT <= 8'hFF;           // P#8-P#15 read
 /*
         else if(det_r && MODE == 4'h3 && port4_regnum[5:0] == 6'd 6) CD_OUT <= vdp_reg[ 6];     // R#6 read
         else if(det_r && MODE == 4'h3 && port4_regnum[5:0] == 6'd 7) CD_OUT <= vdp_reg[ 7];     // R#7 read
