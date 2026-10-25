@@ -97,7 +97,7 @@ wire srch_edge_right = work.srch.edge_left;
 
     // LINE / SEARCH 用ワーク
     union {
-        char_work_t char;
+        char_work_t chr;  // MSXimus Z: era "char" (Vivado 2019.2 lo trata como palabra reservada)
         line_work_t line;
         srch_work_t srch;
     } work;
@@ -414,8 +414,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
 
                 src_enable <= 1;
 
-                work.char.decode_data <= 0;
-                work.char.decode_count <= 0;
+                work.chr.decode_data <= 0;
+                work.chr.decode_count <= 0;
 
                 // SRC_NX, SRC_NY, DST_NX, DST_NY
                 if(REG.OP == T9990_REG::CMD_BMLL) begin
@@ -564,7 +564,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
             ENQUEUE_COUNT <= SRC_OUT_COUNT;
 
             // キャラクタデータが残ってるならデコード
-            if(src_is_rom && work.char.decode_count != 0) begin
+            if(src_is_rom && work.chr.decode_count != 0) begin
                 state <= STATE_SRC_DECODE;
             end
 
@@ -597,8 +597,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
 
                 // ROM
                 else if(src_is_rom) begin
-                    work.char.decode_data <= 0;
-                    work.char.decode_count <= 6'd32;
+                    work.chr.decode_data <= 0;
+                    work.chr.decode_count <= 6'd32;
                     state <= STATE_SRC_IN;  // ToDo: 漢字 ROM から読み出す
                 end
 
@@ -697,12 +697,12 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         //
         else if(state == STATE_SRC_READ_VRAM_CONV_8C) begin
             case (SRC_X[1:0])
-                2'd0:   work.char.decode_data <= ENQUEUE_DATA;
-                2'd1:   work.char.decode_data <= {ENQUEUE_DATA[23:0],  8'b0};
-                2'd2:   work.char.decode_data <= {ENQUEUE_DATA[15:0], 16'b0};
-                2'd3:   work.char.decode_data <= {ENQUEUE_DATA[ 7:0], 24'b0};
+                2'd0:   work.chr.decode_data <= ENQUEUE_DATA;
+                2'd1:   work.chr.decode_data <= {ENQUEUE_DATA[23:0],  8'b0};
+                2'd2:   work.chr.decode_data <= {ENQUEUE_DATA[15:0], 16'b0};
+                2'd3:   work.chr.decode_data <= {ENQUEUE_DATA[ 7:0], 24'b0};
             endcase
-            work.char.decode_count <= {SRC_OUT_COUNT[2:0], 3'b000};
+            work.chr.decode_count <= {SRC_OUT_COUNT[2:0], 3'b000};
             state <= STATE_SRC_DECODE;
         end
 
@@ -723,8 +723,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_SRC_READ_CPU_WAIT_BUSY) begin
             if(!P2_CPU_TO_VDP.ACK) begin
                 if(src_is_char) begin
-                    work.char.decode_data <= {P2_CPU_TO_VDP.DATA, 24'b0};
-                    work.char.decode_count <= 6'd8;
+                    work.chr.decode_data <= {P2_CPU_TO_VDP.DATA, 24'b0};
+                    work.chr.decode_count <= 6'd8;
                     state <= STATE_SRC_DECODE;
                 end
                 else if(SRC_CLRM == T9990_REG::CLRM_16BPP) begin
@@ -767,57 +767,57 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         // キャラクタデータをデコード
         //
         else if(state == STATE_SRC_DECODE) begin
-            work.char.decode_count <= work.char.decode_count - 1'd1;
+            work.chr.decode_count <= work.chr.decode_count - 1'd1;
 
             if(DST_CLRM == T9990_REG::CLRM_2BPP) begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15:14] : REG.BC[15:14],
-                                    work.char.decode_data[30] ? REG.FC[13:12] : REG.BC[13:12],
-                                    work.char.decode_data[29] ? REG.FC[11:10] : REG.BC[11:10],
-                                    work.char.decode_data[28] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
-                                    work.char.decode_data[27] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
-                                    work.char.decode_data[26] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
-                                    work.char.decode_data[25] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
-                                    work.char.decode_data[24] ? REG.FC[ 1: 0] : REG.BC[ 1: 0],
-                                    work.char.decode_data[23] ? REG.FC[15:14] : REG.BC[15:14],
-                                    work.char.decode_data[22] ? REG.FC[13:12] : REG.BC[13:12],
-                                    work.char.decode_data[21] ? REG.FC[11:10] : REG.BC[11:10],
-                                    work.char.decode_data[20] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
-                                    work.char.decode_data[19] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
-                                    work.char.decode_data[18] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
-                                    work.char.decode_data[17] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
-                                    work.char.decode_data[16] ? REG.FC[ 1: 0] : REG.BC[ 1: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15:14] : REG.BC[15:14],
+                                    work.chr.decode_data[30] ? REG.FC[13:12] : REG.BC[13:12],
+                                    work.chr.decode_data[29] ? REG.FC[11:10] : REG.BC[11:10],
+                                    work.chr.decode_data[28] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
+                                    work.chr.decode_data[27] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
+                                    work.chr.decode_data[26] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
+                                    work.chr.decode_data[25] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
+                                    work.chr.decode_data[24] ? REG.FC[ 1: 0] : REG.BC[ 1: 0],
+                                    work.chr.decode_data[23] ? REG.FC[15:14] : REG.BC[15:14],
+                                    work.chr.decode_data[22] ? REG.FC[13:12] : REG.BC[13:12],
+                                    work.chr.decode_data[21] ? REG.FC[11:10] : REG.BC[11:10],
+                                    work.chr.decode_data[20] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
+                                    work.chr.decode_data[19] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
+                                    work.chr.decode_data[18] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
+                                    work.chr.decode_data[17] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
+                                    work.chr.decode_data[16] ? REG.FC[ 1: 0] : REG.BC[ 1: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[15:0], work.char.decode_data[31:16]};
+                work.chr.decode_data <= {work.chr.decode_data[15:0], work.chr.decode_data[31:16]};
             end
             else if(DST_CLRM == T9990_REG::CLRM_4BPP) begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15:12] : REG.BC[15:12],
-                                    work.char.decode_data[30] ? REG.FC[11: 8] : REG.BC[11: 8],
-                                    work.char.decode_data[29] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
-                                    work.char.decode_data[28] ? REG.FC[ 3: 0] : REG.BC[ 3: 0],
-                                    work.char.decode_data[27] ? REG.FC[15:12] : REG.BC[15:12],
-                                    work.char.decode_data[26] ? REG.FC[11: 8] : REG.BC[11: 8],
-                                    work.char.decode_data[25] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
-                                    work.char.decode_data[24] ? REG.FC[ 3: 0] : REG.BC[ 3: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15:12] : REG.BC[15:12],
+                                    work.chr.decode_data[30] ? REG.FC[11: 8] : REG.BC[11: 8],
+                                    work.chr.decode_data[29] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
+                                    work.chr.decode_data[28] ? REG.FC[ 3: 0] : REG.BC[ 3: 0],
+                                    work.chr.decode_data[27] ? REG.FC[15:12] : REG.BC[15:12],
+                                    work.chr.decode_data[26] ? REG.FC[11: 8] : REG.BC[11: 8],
+                                    work.chr.decode_data[25] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
+                                    work.chr.decode_data[24] ? REG.FC[ 3: 0] : REG.BC[ 3: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[23:0], work.char.decode_data[31:24]};
+                work.chr.decode_data <= {work.chr.decode_data[23:0], work.chr.decode_data[31:24]};
             end
             else if(DST_CLRM == T9990_REG::CLRM_8BPP) begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15: 8] : REG.BC[15: 8],
-                                    work.char.decode_data[30] ? REG.FC[ 7: 0] : REG.BC[ 7: 0],
-                                    work.char.decode_data[29] ? REG.FC[15: 8] : REG.BC[15: 8],
-                                    work.char.decode_data[28] ? REG.FC[ 7: 0] : REG.BC[ 7: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15: 8] : REG.BC[15: 8],
+                                    work.chr.decode_data[30] ? REG.FC[ 7: 0] : REG.BC[ 7: 0],
+                                    work.chr.decode_data[29] ? REG.FC[15: 8] : REG.BC[15: 8],
+                                    work.chr.decode_data[28] ? REG.FC[ 7: 0] : REG.BC[ 7: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[27:0], work.char.decode_data[31:28]};
+                work.chr.decode_data <= {work.chr.decode_data[27:0], work.chr.decode_data[31:28]};
             end
             else begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15: 0] : REG.BC[15: 0],
-                                    work.char.decode_data[30] ? REG.FC[15: 0] : REG.BC[15: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15: 0] : REG.BC[15: 0],
+                                    work.chr.decode_data[30] ? REG.FC[15: 0] : REG.BC[15: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[29:0], work.char.decode_data[31:30]};
+                work.chr.decode_data <= {work.chr.decode_data[29:0], work.chr.decode_data[31:30]};
             end
 
             case (DST_CLRM)
