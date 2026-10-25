@@ -54,10 +54,15 @@
 //    (Primary.WAIT_n <= 0) no llega al pin porque DRIVE_EN_27 sigue a 0
 //    hasta que SYS_RESET_n sube
 //  - la megaROM sigue recibiendo un XFER_IF (sus ordenes de flash, que
-//    servia el bootloader) con el lado del dispositivo fijo: Busy = 0 y
-//    RData = FFh. Las ordenes de flash de tncrom acaban al instante sin
-//    hacer nada. XFER_IF y su paquete viven en bootloader.sv, que la
-//    configuracion MegaRAM compila solo por eso (build_common.tcl)
+//    servia el bootloader) con el lado del dispositivo fijo
+//    (system/megarom_xfer_tie.sv: Busy = 0 y RData = FFh). Las ordenes de
+//    flash de tncrom acaban al instante sin hacer nada. XFER_IF y su paquete
+//    viven en bootloader.sv, que la configuracion MegaRAM compila solo por
+//    eso (build_common.tcl)
+//  - en la configuracion v9990 todo lo de la MegaRAM queda en ramas de
+//    generate muertas que solo nombran modulos e interfaces sin definir (sin
+//    referencias con punto): asi elabora tambien en Verilator sin
+//    bootloader.sv (tb/integ/lint_top.sh)
 //
 // Hueco para la fusion con hito/megaram: MEGAROM_CLEAR (megarom_clear.sv:
 // RESET_n, CLK, RAM_IF.HOST Ram, output DONE) va tras HAVE_MEGAROM_CLEAR,
@@ -205,13 +210,15 @@ module MAIN #(
         localparam [0:0]     DEFAULT_ENABLE              = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 1'b1     : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 1'b1     : 1'b0;
         // V9990TANG: el XFER_IF era la transferencia flash <-> SDRAM que
         // servia el bootloader. Sin bootloader, el lado del dispositivo queda
-        // fijo (ninguna orden de flash esta nunca ocupada; se leen FFh). Si
-        // hito/megaram quita el puerto Xfer de CARTRIDGE_MEGAROM, quitar
-        // tambien este XFER_IF y bootloader.sv de la lista MegaRAM
+        // fijo (MEGAROM_XFER_TIE: ninguna orden de flash esta nunca ocupada;
+        // se leen FFh). Si hito/megaram quita el puerto Xfer de
+        // CARTRIDGE_MEGAROM, quitar tambien este XFER_IF, MEGAROM_XFER_TIE y
+        // bootloader.sv, flash.sv y spi.sv de la lista MegaRAM
         // (build_common.tcl).
         XFER_IF Xfer();
-        assign Xfer.Busy  = 1'b0;
-        assign Xfer.RData = 8'hFF;
+        MEGAROM_XFER_TIE u_xfer_tie (
+            .Xfer           (Xfer)
+        );
         CARTRIDGE_MEGAROM #(
             .FLASH_FS_ADDR          (0),
             .FLASH_FS_SIZE          (24'h10_0000),
