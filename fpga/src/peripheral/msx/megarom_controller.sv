@@ -236,7 +236,12 @@ module MEGAROM_CONTROLLER #(
      * memory read / write strobe
      ***************************************************************/
     wire wr_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.WR_n;
-    wire rd_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.RD_n;
+    // V9990TANG: con !RFSH_n un ciclo de refresco no cuenta como lectura. En el
+    // camino retrasado el RD_n del M1 sigue bajo unos ciclos (linea de 9) cuando
+    // MERQ_n ya ha vuelto a bajar con la direccion de refresco (I:R); MERQ_n y
+    // RFSH_n se muestrean juntos (grupo 2 del mux), asi que el refresco se
+    // descarta entero y no lanza una lectura de la SDRAM ni un /WAIT espurios.
+    wire rd_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.RD_n || !Bus.RFSH_n;
     wire wr_mem_n  = cs_mem_n || wr_n || Megarom.WriteProtect || bank_write_protect || Megarom.Plain;
     wire rd_mem_n  = cs_mem_n || rd_n;
 
