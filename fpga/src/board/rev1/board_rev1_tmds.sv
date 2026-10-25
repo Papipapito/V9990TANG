@@ -35,11 +35,24 @@
 
 /***********************************************************************
  * rev1 基板用 TMDS 出力モジュール
+ *
+ * V9990TANG: con IN.PAL = 0 la salida es la de tnCart (720x480 visibles en
+ * 855 x 524 a 27 MHz, DE en las lineas 35-514). Con IN.PAL = 1 (cuadro de
+ * 313 lineas del V9990, 626 lineas de salida) la ventana de DE pasa a 576
+ * lineas (V_ACTIVE_PAL) a partir de la linea V_SYNC + V_BACKPORCH_PAL = 42:
+ * la zona de imagen del V9990 PAL (lineas 18-307 de entrada, openMSX
+ * displayPAL_MCLK/XTAL: 3 de sincronismo + 15 de blanking, 290 de borde e
+ * imagen) sale en las lineas 40-619 de salida (el upscan muestra la linea k
+ * de entrada en las 2(k+2) y 2(k+2)+1), y la ventana 42-617 la centra
+ * quitando 2 lineas arriba y 2 abajo. Ver docs/notas/video.md.
+ * IN.PAL se toma una vez por cuadro, en el flanco de VSYNC.
  ***********************************************************************/
 module BOARD_REV1_TMDS_OUT #(
     parameter           V_ACTIVE = 480,
     parameter           V_SYNC = 2,
     parameter           V_BACKPORCH = 33,
+    parameter           V_ACTIVE_PAL = 576,
+    parameter           V_BACKPORCH_PAL = 40,
     parameter           H_ACTIVE = 720,
     parameter           H_SYNC = 62,
     parameter           H_BACKPORCH = 7
@@ -63,6 +76,7 @@ module BOARD_REV1_TMDS_OUT #(
     logic [$bits(IN.B)-1:0]  in_b;
     logic                    in_hs_n;
     logic                    in_vs_n;
+    logic                    in_pal;
 
     always_ff @(posedge IN.DCLK) begin
         in_r <= IN.R;
@@ -70,6 +84,7 @@ module BOARD_REV1_TMDS_OUT #(
         in_b <= IN.B;
         in_hs_n <= IN.HS_n;
         in_vs_n <= IN.VS_n;
+        in_pal <= IN.PAL;
     end
 
     /***************************************************************
@@ -131,12 +146,26 @@ module BOARD_REV1_TMDS_OUT #(
     BOARD_REV1_TMDS_OUT_DELAY u_dly0_b (.CLK(CLK_P), .IN(in_b), .OUT(delay_b[0]));
 
     /***************************************************************
+     * PAL del cuadro: se toma en el flanco de VSYNC, junto con el
+     * reinicio de v_cnt, y no cambia hasta el cuadro siguiente
+     ***************************************************************/
+    logic frame_pal;
+    always_ff @(posedge CLK_P or negedge TMDS_READY) begin
+        if(!TMDS_READY)               frame_pal <= 0;
+        else if(prev_vs && !in_vs_n)  frame_pal <= in_pal;
+    end
+
+    // Ventana vertical de DE: NTSC [V_SYNC+V_BACKPORCH, +V_ACTIVE) como en tnCart; PAL [V_SYNC+V_BACKPORCH_PAL, +V_ACTIVE_PAL)
+    wire [9:0] v_de_start = frame_pal ? 10'(V_SYNC+V_BACKPORCH_PAL) : 10'(V_SYNC+V_BACKPORCH);
+    wire [9:0] v_de_end   = frame_pal ? 10'(V_SYNC+V_BACKPORCH_PAL+V_ACTIVE_PAL) : 10'(V_SYNC+V_BACKPORCH+V_ACTIVE);
+
+    /***************************************************************
      * DE 信号の生成
      ***************************************************************/
     logic de;
     always_ff @(posedge CLK_P or negedge TMDS_READY) begin
         if(!TMDS_READY) de <= 00;
-        else            de <= (v_cnt >= V_SYNC+V_BACKPORCH) && (v_cnt < V_SYNC+V_BACKPORCH+V_ACTIVE) &&
+        else            de <= (v_cnt >= v_de_start) && (v_cnt < v_de_end) &&
                               (h_cnt >= H_SYNC+H_BACKPORCH-1'd1) && (h_cnt < H_SYNC+H_BACKPORCH+H_ACTIVE-1'd1);
     end
 

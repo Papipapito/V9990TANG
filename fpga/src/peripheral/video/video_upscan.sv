@@ -38,6 +38,13 @@
 
 /***********************************************************************
  * アップスキャンモジュール
+ *
+ * V9990TANG:
+ *  - OUT.PAL: IN.PAL pasado al dominio de DCLK (dos flops) y fijado en el
+ *    flanco de VSYNC de entrada, el mismo que reinicia los contadores de
+ *    salida: vale para todo el cuadro que empieza. Con 313 lineas de entrada
+ *    salen 626 (out_v_rst sigue a 0: el contador vertical solo lo reinicia el
+ *    VSYNC de entrada).
  ***********************************************************************/
 module VIDEO_UPSCAN #(
     parameter ENABLE_SCANLINE = 0,
@@ -236,6 +243,24 @@ module VIDEO_UPSCAN #(
         if(!RESET_n) out_prev_in_vs_n <= 1;
         else         out_prev_in_vs_n <= out_in_vs_n;
     end
+
+    /***************************************************************
+     * PAL (V9990TANG): IN.PAL viene de CLK_BASE y es cuasi estatico
+     * (R#7 bit 3); dos flops en el dominio de salida y se fija en el
+     * flanco de VSYNC de entrada para todo el cuadro que empieza
+     ***************************************************************/
+    logic [1:0] out_pal_sync;
+    always_ff @(posedge DCLK or negedge RESET_n) begin
+        if(!RESET_n) out_pal_sync <= 0;
+        else         out_pal_sync <= {out_pal_sync[0], IN.PAL};
+    end
+
+    logic out_pal;
+    always_ff @(posedge DCLK or negedge RESET_n) begin
+        if(!RESET_n)                              out_pal <= 0;
+        else if(out_prev_in_vs_n && !out_in_vs_n) out_pal <= out_pal_sync[1];   // IN.VSYNC
+    end
+    assign OUT.PAL = out_pal;
 
     /***************************************************************
      * 出力タイミング生成
