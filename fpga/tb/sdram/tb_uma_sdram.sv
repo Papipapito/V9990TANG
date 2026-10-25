@@ -474,7 +474,7 @@ module tb_uma_sdram;
     logic        c_isrd = 1'b0;
     logic [31:0] c_exp = 0;
     logic [31:0] c_rs = 32'h0C0F_FEE1;
-    int          c_ops = 0, c_rfsh = 0, c_derr = 0, c_gap = 0;
+    int          c_ops = 0, c_rfsh = 0, c_derr = 0, c_gap = 0, c_rfsh_only = 0;
 
     initial c_rs = 32'h0C0F_FEE1 ^ (seed * 32'h0100_0193);
 
@@ -493,7 +493,11 @@ module tb_uma_sdram;
                 c_addr <= 24'(a);
                 c_rfsh_n <= 1'b0;                           // RFSH en el mismo ciclo que el R/W
                 c_rfsh <= c_rfsh + 1;
-                if (r[0]) begin
+                if (r[2:1] == 2'b00) begin                  // solo RFSH, con ACK, como el bootloader
+                    c_addr <= 0; c_din <= 0; c_isrd <= 1'b0;    // (bootloader.sv: SUB_STATE_*_RFSH_REQ)
+                    c_rfsh_only <= c_rfsh_only + 1;
+                end
+                else if (r[0]) begin
                     c_oe_n <= 1'b0; c_din <= 0; c_isrd <= 1'b1;
                     c_exp <= exp_read(a, 3'b000);
                     if (touches_written(a, 3'b000)) n_rd_hit_c <= n_rd_hit_c + 1;
@@ -744,7 +748,7 @@ module tb_uma_sdram;
             $display("canal 0 Z80: M1=%0d MR=%0d MW=%0d lecturas=%0d escrituras=%0d tarde=%0d inestables=%0d cambio_malo=%0d err_dato=%0d captura_max=%0d ciclos refrescos_internos_tras_captura=%0d",
                      z_m1, z_mr, z_mw, z_reads, z_writes, z_late, z_unstable, z_badchg, z_derr, z_cap_max, z_int_cov);
         if (ch0_mode == 3)
-            $display("canal 0 R/W+RFSH: ops=%0d rfsh_pedidos=%0d err_dato=%0d", c_ops, c_rfsh, c_derr);
+            $display("canal 0 R/W+RFSH: ops=%0d rfsh_pedidos=%0d (solo_rfsh=%0d) err_dato=%0d", c_ops, c_rfsh, c_rfsh_only, c_derr);
         if (ch0_mode == 2) begin
             $write("canal 0 100%%: ops=%0d err_dato=%0d latencias:", f_ops, f_derr);
             foreach (f_lat_hist[l]) $write(" %0d:%0d", l, f_lat_hist[l]);
