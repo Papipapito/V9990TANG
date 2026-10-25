@@ -31,6 +31,44 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+//
+// V9990TANG: recorte de la carcasa (hito 3 del estudio). Frente al main.sv de
+// tnCartWonder d3a54f1:
+//  - fuera el BOOTLOADER (y con el la flash, sus SPI y la TF): SYS_RESET_n ya
+//    no lo retiene BOOT_n sino RESET_n (PLL base enganchado y SDRAM lista, ver
+//    system/system_reset.sv) y, en la configuracion MegaRAM, el borrado de 32 KB
+//    de la ventana de la megaROM (MEGAROM_CLEAR); MAIN lo saca por SYS_READY
+//    hacia la guardia de lock del top. Ya no baja con el /RESET del MSX (el
+//    bootloader lo bajaba): cada cartucho ve Bus.RESET_n por su cuenta
+//  - fuera FM, Nextor, mapper y PSG (sus modulos no estan en ninguna build);
+//    si una configuracion los activa, la elaboracion falla a proposito
+//  - configuracion v9990 (sin megaROM): el V9990 va directo al bus, sin
+//    EXPANSION_SLOT, como un GFX9000 (solo los puertos 60h-6Fh; el slot no
+//    tiene registro FFFFh ni subranuras). Con megaROM se mantiene el slot
+//    expandido de tnCart: megaROM en la subranura 0 y el V9990 como puerto
+//    solo de E/S (Secondary[5], SLTSL_n fijo a 1)
+//  - el slot expandido recibe en WAIT_n el DONE del borrado (antes el
+//    BOOT_WAIT_n del bootloader); como SYS_RESET_n tambien espera a DONE, en
+//    la practica vale 1. El /WAIT de arranque que ve el MSX lo saca la
+//    guardia del top (BOOT_HOLD_27); el que EXPANSION_SLOT pone en reset
+//    (Primary.WAIT_n <= 0) no llega al pin porque DRIVE_EN_27 sigue a 0
+//    hasta que SYS_RESET_n sube
+//  - la megaROM sigue recibiendo un XFER_IF (sus ordenes de flash, que
+//    servia el bootloader) con el lado del dispositivo fijo: Busy = 0 y
+//    RData = FFh. Las ordenes de flash de tncrom acaban al instante sin
+//    hacer nada. XFER_IF y su paquete viven en bootloader.sv, que la
+//    configuracion MegaRAM compila solo por eso (build_common.tcl)
+//
+// Hueco para la fusion con hito/megaram: MEGAROM_CLEAR (megarom_clear.sv:
+// RESET_n, CLK, RAM_IF.HOST Ram, output DONE) va tras HAVE_MEGAROM_CLEAR,
+// conectado a ExpRam[RAM_BOOTLOADER], el mismo canal que usaba el borrado del
+// bootloader. Sin la macro, la configuracion MegaRAM no elabora (un modulo
+// MEGAROM_CLEAR_FALTA_HASTA_LA_FUSION que no existe). En la fusion:
+// descomentar la linea siguiente.
+//
+// `define HAVE_MEGAROM_CLEAR
+//
+
 `default_nettype none
 
 module MAIN #(
@@ -42,14 +80,19 @@ module MAIN #(
     RAM_IF.HOST             Ram,                // RAM I/F
     RAM_IF                  VideoRam,           // VRAM I/F
     UMA_IF.CLK              UmaClock,           // UMA クロック
-    SPI_IF                  TF,                 // TF カード I/F
-    LED_IF                  LedNextor,          // Nextor 用 LED
-    FLASH_IF.HOST           Flash,              // フラッシュメモリ
-    LED_IF.HOST             LedBoot,            // Bootloader 用 LED
     VIDEO_IF                Video,              // ビデオ出力
     SOUND_IF.OUT            SoundExternal[0:EXT_SOUND_CH_COUNT-1],  // 外部サウンド出力
-    SOUND_IF.OUT            SoundInternal       // カートリッジサウンド出力
+    SOUND_IF.OUT            SoundInternal,      // カートリッジサウンド出力
+    output  wire            SYS_READY           // V9990TANG: SYS_RESET_n (sistema listo), hacia la guardia del top
 );
+    /***************************************************************
+     * V9990TANG: configuraciones soportadas
+     ***************************************************************/
+    if(CONFIG::ENABLE_FM || CONFIG::ENABLE_NEXTOR || CONFIG::ENABLE_RAM || CONFIG::ENABLE_PSG || !CONFIG::ENABLE_V9990) begin
+        // FM, Nextor, mapper y PSG no estan en V9990TANG; el V9990 es obligatorio
+        MAIN_CONFIGURACION_NO_SOPORTADA_EN_V9990TANG u_config_no_soportada ();
+    end
+
     /***************************************************************
      * サウンド信号格納用
      ***************************************************************/
@@ -59,16 +102,16 @@ module MAIN #(
     localparam SOUND_PSG     = 3;
     localparam SOUND_COUNT   = 4;
     SOUND_IF #(.BIT_WIDTH(CONFIG::SOUND_BIT_WIDTH)) Sound[0:SOUND_COUNT-1]();
+    always_comb Sound[SOUND_FM_INT].connect_dummy();
+    always_comb Sound[SOUND_FM_EXT].connect_dummy();
+    always_comb Sound[SOUND_PSG].connect_dummy();
 
     /***************************************************************
      * RAM I/F を複数に拡張
      ***************************************************************/
     localparam RAM_MEGAROM    = 0;
-    localparam RAM_FM         = 1;
-    localparam RAM_NEXTOR     = 2;
-    localparam RAM_RAM        = 3;
-    localparam RAM_BOOTLOADER = 4;
-    localparam RAM_COUNT      = 5;
+    localparam RAM_BOOTLOADER = 1;      // V9990TANG: el canal del borrado de la megaROM (antes del bootloader)
+    localparam RAM_COUNT      = 2;
     RAM_IF ExpRam[0:RAM_COUNT-1]();
     EXPANSION_RAM #(
         .COUNT          (RAM_COUNT),
@@ -81,32 +124,67 @@ module MAIN #(
     );
 
     /***************************************************************
-     * スロットの拡張
+     * V9990TANG: reset de los cartuchos (POR en lugar del bootloader)
      ***************************************************************/
-    localparam BUS_MEGAROM = 0;
-    localparam BUS_FM      = 1;
-    localparam BUS_NEXTOR  = 2;
-    localparam BUS_RAM     = 3;
-    localparam BUS_PSG     = 4;     // SLTSL_n 信号なし(I/Oのみ)
-    localparam BUS_V9990   = 5;     // SLTSL_n 信号なし(I/Oのみ)
-    localparam BUS_COUNT   = 6;
-    BUS_IF  ExpBus[0:BUS_COUNT-1]();
-    EXPANSION_SLOT #(
-        .COUNT          (BUS_COUNT),
-        .USE_FF         (CONFIG::SLOT_EXPANSION_USES_FF)
-    ) u_sltexp (
-        .RESET_n        (SYS_RESET_n),
-        .CLK,
-        .Primary        (Bus),
-        .Secondary      (ExpBus),
-        .WAIT_n         (BOOT_WAIT_n)
-    );
+    logic SYS_RESET_n;
+    logic clear_done;
 
-    /***************************************************************
-     * MEGAROM カートリッジ
-     ***************************************************************/
-    XFER_IF Xfer();
+    SYSTEM_RESET_HOLD u_sysrst (
+        .CLK,
+        .RESET_n,
+        .HOLD           (!clear_done),
+        .SYS_RESET_n
+    );
+    assign SYS_READY = SYS_RESET_n;
+
     if(CONFIG::ENABLE_MEGAROM) begin
+        /***********************************************************
+         * MegaRAM: borrado de 32 KB de la ventana de la megaROM
+         * (arranca habilitada: sin el borrado la BIOS buscaria "AB"
+         * en lo que hubiera en la SDRAM)
+         ***********************************************************/
+`ifdef HAVE_MEGAROM_CLEAR
+        MEGAROM_CLEAR u_megarom_clear (
+            .RESET_n,
+            .CLK,
+            .Ram            (ExpRam[RAM_BOOTLOADER]),
+            .DONE           (clear_done)
+        );
+`else
+        MEGAROM_CLEAR_FALTA_HASTA_LA_FUSION u_megarom_clear_falta ();
+        assign clear_done = 1'b0;
+        always_comb ExpRam[RAM_BOOTLOADER].connect_dummy();
+`endif
+
+        /***********************************************************
+         * スロットの拡張 (como en tnCart)
+         ***********************************************************/
+        localparam BUS_MEGAROM = 0;
+        localparam BUS_FM      = 1;
+        localparam BUS_NEXTOR  = 2;
+        localparam BUS_RAM     = 3;
+        localparam BUS_PSG     = 4;     // SLTSL_n 信号なし(I/Oのみ)
+        localparam BUS_V9990   = 5;     // SLTSL_n 信号なし(I/Oのみ)
+        localparam BUS_COUNT   = 6;
+        BUS_IF  ExpBus[0:BUS_COUNT-1]();
+        EXPANSION_SLOT #(
+            .COUNT          (BUS_COUNT),
+            .USE_FF         (CONFIG::SLOT_EXPANSION_USES_FF)
+        ) u_sltexp (
+            .RESET_n        (SYS_RESET_n),
+            .CLK,
+            .Primary        (Bus),
+            .Secondary      (ExpBus),
+            .WAIT_n         (clear_done)    // V9990TANG: antes BOOT_WAIT_n del bootloader
+        );
+        always_comb ExpBus[BUS_FM].connect_dummy();
+        always_comb ExpBus[BUS_NEXTOR].connect_dummy();
+        always_comb ExpBus[BUS_RAM].connect_dummy();
+        always_comb ExpBus[BUS_PSG].connect_dummy();
+
+        /***********************************************************
+         * MEGAROM カートリッジ
+         ***********************************************************/
         localparam [7:0]     DEFAULT_BANK_REG_INIT_0     = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 0        : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 0        : 0;
         localparam [7:0]     DEFAULT_BANK_REG_INIT_1     = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 1        : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 1        : 0;
         localparam [7:0]     DEFAULT_BANK_REG_INIT_2     = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 2        : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 2        : 0;
@@ -125,6 +203,15 @@ module MAIN #(
         localparam [0:0]     DEFAULT_SCC_I_ENA           = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 1'b1     : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 1'b0     : 1'b0;
         localparam [0:0]     DEFAULT_ENABLE_CONTINUOUS   = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 1'b1     : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 1'b1     : 1'b0;
         localparam [0:0]     DEFAULT_ENABLE              = (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC_I) ? 1'b1     : (CONFIG::ENABLE_MEGAROM == CONFIG::ENABLE_MEGA_SCC) ? 1'b1     : 1'b0;
+        // V9990TANG: el XFER_IF era la transferencia flash <-> SDRAM que
+        // servia el bootloader. Sin bootloader, el lado del dispositivo queda
+        // fijo (ninguna orden de flash esta nunca ocupada; se leen FFh). Si
+        // hito/megaram quita el puerto Xfer de CARTRIDGE_MEGAROM, quitar
+        // tambien este XFER_IF y bootloader.sv de la lista MegaRAM
+        // (build_common.tcl).
+        XFER_IF Xfer();
+        assign Xfer.Busy  = 1'b0;
+        assign Xfer.RData = 8'hFF;
         CARTRIDGE_MEGAROM #(
             .FLASH_FS_ADDR          (0),
             .FLASH_FS_SIZE          (24'h10_0000),
@@ -164,103 +251,10 @@ module MAIN #(
             .Xfer           (Xfer),
             .Sound          (Sound[SOUND_MEGAROM])
         );
-        end
-    else begin
-        always_comb ExpBus[BUS_MEGAROM].connect_dummy();
-        always_comb ExpRam[RAM_MEGAROM].connect_dummy();
-        always_comb Sound[SOUND_MEGAROM].connect_dummy();
-        always_comb Xfer.connect_dummy();
-    end
 
-    /***************************************************************
-     * FM 音源カートリッジ
-     ***************************************************************/
-    PAC_IF PAC();
-    if(CONFIG::ENABLE_FM) begin
-        wire FM_Sound_Enable;
-        CARTRIDGE_FM #(
-            .MIRROR         (1),
-            .RAM_ADDR_BIOS  (CONFIG::RAM_ADDR_BIOS_FM),
-            .RAM_ADDR_PAC   (CONFIG::RAM_ADDR_PAC)
-        ) u_fm (
-            .RESET_n        (SYS_RESET_n),
-            .CLK,
-            .Bus            (ExpBus[BUS_FM]),
-            .Ram            (ExpRam[RAM_FM]),
-            .PAC            (PAC),
-            .Sound          (Sound[SOUND_FM_EXT]),
-            .Output_En      (FM_Sound_Enable)
-        );
-        assign Sound[SOUND_FM_INT].Signal = FM_Sound_Enable ? Sound[SOUND_FM_EXT].Signal : 0;
-    end
-    else begin
-        always_comb PAC.connect_dummy();
-        always_comb ExpBus[BUS_FM].connect_dummy();
-        always_comb ExpRam[RAM_FM].connect_dummy();
-        always_comb Sound[SOUND_FM_EXT].connect_dummy();
-        always_comb Sound[SOUND_FM_INT].connect_dummy();
-    end
-
-    /***************************************************************
-     * NEXTOR カートリッジ
-     ***************************************************************/
-    if(CONFIG::ENABLE_NEXTOR) begin
-        CARTRIDGE_NEXTOR #(
-            .RAM_ADDR       (CONFIG::RAM_ADDR_BIOS_NEXTOR)
-        ) u_nextor (
-            .RESET_n        (SYS_RESET_n),
-            .CLK,
-            .Bus            (ExpBus[BUS_NEXTOR]),
-            .Ram            (ExpRam[RAM_NEXTOR]),
-            .TF,
-            .Led            (LedNextor)
-        );
-    end
-    else begin
-        always_comb ExpBus[BUS_NEXTOR].connect_dummy();
-        always_comb ExpRam[RAM_NEXTOR].connect_dummy();
-        always_comb LedNextor.connect_dummy();
-        always_comb TF.connect_dummy();
-    end
-
-    /***************************************************************
-     * RAM カートリッジ
-     ***************************************************************/
-    if(CONFIG::ENABLE_RAM) begin
-        CARTRIDGE_RAM #(
-            .RAM_ADDR       (CONFIG::RAM_ADDR_RAM)
-        ) u_ram (
-            .RESET_n        (SYS_RESET_n),
-            .CLK,
-            .Bus            (ExpBus[BUS_RAM]),
-            .Ram            (ExpRam[RAM_RAM])
-        );
-    end
-    else begin
-        always_comb ExpBus[BUS_RAM].connect_dummy();
-        always_comb ExpRam[RAM_RAM].connect_dummy();
-    end
-
-    /***************************************************************
-     * PSG カートリッジ
-     ***************************************************************/
-    if(CONFIG::ENABLE_PSG) begin
-        CARTRIDGE_PSG u_psg (
-            .RESET_n        (SYS_RESET_n),
-            .CLK,
-            .Bus            (ExpBus[BUS_PSG]),
-            .Sound          (Sound[SOUND_PSG])
-        );
-    end
-    else begin
-        always_comb ExpBus[BUS_PSG].connect_dummy();
-        always_comb Sound[SOUND_PSG].connect_dummy();
-    end
-
-    /***************************************************************
-     * V9990 カートリッジ
-     ***************************************************************/
-    if(CONFIG::ENABLE_V9990) begin
+        /***********************************************************
+         * V9990 カートリッジ (puerto solo de E/S del slot expandido)
+         ***********************************************************/
         CARTRIDGE_V9990 u_v9990 (
             .RESET_n        (SYS_RESET_n),
             .CLK,
@@ -271,49 +265,24 @@ module MAIN #(
         );
     end
     else begin
-        always_comb ExpBus[BUS_V9990].connect_dummy();
-        always_comb Video.connect_dummy();
-        always_comb VideoRam.connect_dummy();
-    end
+        assign clear_done = 1'b1;
+        always_comb ExpRam[RAM_MEGAROM].connect_dummy();
+        always_comb ExpRam[RAM_BOOTLOADER].connect_dummy();
+        always_comb Sound[SOUND_MEGAROM].connect_dummy();
 
-    /***************************************************************
-     * ブートローダー
-     ***************************************************************/
-    logic SYS_RESET_n;
-    logic BOOT_n;
-    logic BOOT_WAIT_n;
-    always_ff @(posedge CLK or negedge RESET_n) begin
-        if(!RESET_n)     SYS_RESET_n <= 0;
-        else if(!BOOT_n) SYS_RESET_n <= 0;
-        else             SYS_RESET_n <= 1;
+        /***********************************************************
+         * V9990 カートリッジ: directo al bus, sin slot expandido
+         * (solo puertos 60h-6Fh, como un GFX9000)
+         ***********************************************************/
+        CARTRIDGE_V9990 u_v9990 (
+            .RESET_n        (SYS_RESET_n),
+            .CLK,
+            .Bus            (Bus),
+            .Ram            (VideoRam),
+            .UmaClock,
+            .Video          (Video)
+        );
     end
-
-    BOOTLOADER #(
-        .XFER_SRC_ADDR  (CONFIG::FLASH_ADDR_BIOS),
-        .XFER_DST_ADDR  (CONFIG::RAM_ADDR_BIOS),
-        .XFER_SIZE      (CONFIG::FLASH_SIZE_BIOS),
-        .MEGAROM_CLEAR_ADDR(CONFIG::RAM_ADDR_MEGAROM),
-        .MEGAROM_CLEAR_SIZE(32768),
-        .RAM_CLEAR_ADDR (CONFIG::RAM_ADDR_RAM),
-        .RAM_CLEAR_SIZE (65536),
-        .PAC_RAM_ADDR   (CONFIG::RAM_ADDR_PAC),
-        .PAC_FLASH_ADDR (CONFIG::FLASH_ADDR_PAC)
-    ) u_boot (
-        .RESET_n,
-        .CLK,
-        .Flash,
-        .Ram            (ExpRam[RAM_BOOTLOADER]),
-        .Led            (LedBoot),
-        .Xfer           (Xfer),
-        .PAC            (PAC),
-        .ClearMegarom   (1'b1),
-        .BusReset_n     (Bus.RESET_n),
-        .RD_n           (Bus.RD_n),
-        .WR_n           (Bus.WR_n),
-        .RFSH_n         (Bus.RFSH_n),
-        .WAIT_n         (BOOT_WAIT_n),
-        .READY          (BOOT_n)
-    );
 
     /***************************************************************
      * 外部サウンド出力ミキサー
