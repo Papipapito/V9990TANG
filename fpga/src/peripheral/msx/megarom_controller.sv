@@ -77,10 +77,18 @@ endinterface
 //    0000h-BFFFh con offset = direccion, sin bancos, sin escritura y sin
 //    mascaras CS. Todo HOST de MEGAROM_IF tiene que conducir Plain (0 si no
 //    usa el modo).
+//  - ENABLE_MEM_WAIT = 1 (solo con USE_FF = 1): /WAIT en las lecturas de la
+//    ventana (hito 8b). Bus.WAIT_n baja en el flanco siguiente al primer
+//    ciclo en que se ve la lectura (rd_mem_n = 0 en el camino retrasado:
+//    SLTSL, MERQ, RD y direccion de este puerto) y vuelve a 1 en el MISMO
+//    flanco en que Bus.DOUT carga el byte de la SDRAM: el que el UMA deja en
+//    Ram.DOUT al subir Ram.ACK_n despues de haberlo bajado para esta lectura.
+//    Contrato con el pre-WAIT del bus y ciclos medidos en docs/notas/megaram.md.
 //
 module MEGAROM_CONTROLLER #(
     parameter               COUNT = 1,
-    parameter               USE_FF = 0
+    parameter               USE_FF = 0,
+    parameter               ENABLE_MEM_WAIT = 0
 ) (
     input   wire            RESET_n,
     input   wire            CLK,
@@ -185,6 +193,8 @@ module MEGAROM_CONTROLLER #(
         end
     endgenerate
 
+    logic mem_wait_req;     // V9990TANG: /WAIT de lectura de memoria (abajo)
+
     if(USE_FF) begin
         always @(posedge CLK or negedge RESET_n) begin
             if(!RESET_n) begin
@@ -197,13 +207,13 @@ module MEGAROM_CONTROLLER #(
             end
             else begin
                 Bus.INT_n          <= tmp_int_n[0];
-                Bus.WAIT_n         <= tmp_wait_n[0];
+                Bus.WAIT_n         <= tmp_wait_n[0] && !mem_wait_req;
             end
         end
     end
     else begin
         assign Bus.INT_n          = tmp_int_n[0];
-        assign Bus.WAIT_n         = tmp_wait_n[0];
+        assign Bus.WAIT_n         = tmp_wait_n[0] && !mem_wait_req;
     end
 
     /***************************************************************
@@ -229,6 +239,61 @@ module MEGAROM_CONTROLLER #(
     wire rd_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.RD_n;
     wire wr_mem_n  = cs_mem_n || wr_n || Megarom.WriteProtect || bank_write_protect || Megarom.Plain;
     wire rd_mem_n  = cs_mem_n || rd_n;
+
+    /***************************************************************
+     * V9990TANG: /WAIT en las lecturas de memoria (ENABLE_MEM_WAIT)
+     *  MW_IDLE    : sin lectura en curso
+     *  MW_ACK_LOW : lectura vista; espera a que el UMA baje Ram.ACK_n
+     *  MW_ACK_HIGH: espera a que Ram.ACK_n vuelva a 1 (Ram.DOUT valido)
+     *  MW_READY   : dato entregado; WAIT suelto hasta el fin de la lectura
+     * Ram.ACK_n es el del canal 0 del UMA, compartido con la escritura y el
+     * refresco de este mismo puerto. Un ACK_n ya bajo al empezar (refresco o
+     * escritura anterior aun en curso) no adelanta la liberacion: el UMA lo
+     * baja otra vez en el flanco siguiente a Ram.OE_n = 0 (det_oe tiene
+     * prioridad sobre el fin del acceso anterior) y no lo sube mientras quede
+     * la lectura pendiente (save_oe).
+     ***************************************************************/
+    typedef enum logic [1:0] {
+        MW_IDLE,
+        MW_ACK_LOW,
+        MW_ACK_HIGH,
+        MW_READY
+    } mem_wait_state_t;
+    mem_wait_state_t mw_state;
+    logic prev_rd_mem_n;
+
+    if(ENABLE_MEM_WAIT && USE_FF) begin
+        always_ff @(posedge CLK or negedge RESET_n) begin
+            if(!RESET_n) begin
+                prev_rd_mem_n <= 1;
+                mw_state <= MW_IDLE;
+            end
+            else if(!Bus.RESET_n) begin
+                prev_rd_mem_n <= 1;
+                mw_state <= MW_IDLE;
+            end
+            else begin
+                prev_rd_mem_n <= rd_mem_n;
+                if(rd_mem_n) mw_state <= MW_IDLE;
+                else case (mw_state)
+                    MW_IDLE:        if(prev_rd_mem_n) mw_state <= MW_ACK_LOW;
+                    MW_ACK_LOW:     if(!Ram.ACK_n)    mw_state <= MW_ACK_HIGH;
+                    MW_ACK_HIGH:    if(Ram.ACK_n)     mw_state <= MW_READY;
+                    default:        ;
+                endcase
+            end
+        end
+
+        assign mem_wait_req = !rd_mem_n && (
+                                  (mw_state == MW_IDLE && prev_rd_mem_n) ||
+                                  (mw_state == MW_ACK_LOW) ||
+                                  (mw_state == MW_ACK_HIGH && !Ram.ACK_n) );
+    end
+    else begin
+        assign prev_rd_mem_n = 1'b1;
+        assign mw_state = MW_IDLE;
+        assign mem_wait_req = 1'b0;
+    end
 
     /***************************************************************
      * ライト検出

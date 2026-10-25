@@ -40,8 +40,12 @@
 // V9990TANG: con el modo PLAIN0 activo (Megarom.Plain) el SCC no contesta y
 // su registro de modo (BFFEh/BFFFh) no se escribe: la ROM plana ocupa
 // 0000h-BFFFh entera (docs/notas/megaram.md).
+// ENABLE_MEM_WAIT (por defecto CONFIG::ENABLE_MEM_WAIT: toda configuracion
+// que compile este fichero tiene que definirlo) activa el /WAIT de las
+// lecturas de memoria de megarom_controller.sv.
 //
 module CARTRIDGE_MEGAROM #(
+    parameter           ENABLE_MEM_WAIT             = CONFIG::ENABLE_MEM_WAIT,
     parameter [23:0]    FLASH_FS_ADDR               = 0,
     parameter [23:0]    FLASH_FS_SIZE               = 0,
     parameter [23:0]    FLASH_MEGAROM_ADDR          = 0,
@@ -152,7 +156,8 @@ module CARTRIDGE_MEGAROM #(
 
     MEGAROM_CONTROLLER #(
         .COUNT(BUS_COUNT),
-        .USE_FF(1)
+        .USE_FF(1),
+        .ENABLE_MEM_WAIT(ENABLE_MEM_WAIT)
     ) u_rom (
         .RESET_n,
         .CLK,
