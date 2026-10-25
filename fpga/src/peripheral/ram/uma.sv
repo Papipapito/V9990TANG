@@ -60,14 +60,28 @@ module UMA #(
     parameter COUNT         = 2,
     parameter DIV           = 30,       // 3.58MHz の分周値
     parameter DELAY         = 0,        // 3.58MHz クロックエッジからメモリアクセスまでのディレイ
-    parameter SYNC_CLK_EN   = 1         // CLK_EN で同期をとる
+    parameter SYNC_CLK_EN   = 1,        // CLK_EN で同期をとる
+    // V9990TANG (hito 4): AUTO REFRESH propio de la SDRAM, en el canal 0
+    parameter INT_REFRESH   = 1,                    // 1 = temporizador de refresco interno
+    parameter REFRESH_CYCLES= 780,                  // ciclos de CLK sin ningun AUTO REFRESH tras los que se pide uno
+                                                    // (7,22 us a 108 MHz, 7,26 a 107,386: REFRESH_CYCLES de wv_to_sdram.v del MoonTANG)
+    parameter REFRESH_ESC   = 2 * REFRESH_CYCLES,   // ciclos sin AUTO REFRESH a partir de los que el interno gana a un R/W del canal 0
+    parameter DBG_W         = 16                    // ancho de los contadores de depuracion
 ) (
     input   wire            RESET_n,
     input   wire            CLK,
     input   wire            CLK_EN,
     RAM_IF.HOST             Primary,
     RAM_IF.DEVICE           Secondary[0:COUNT-1],
-    UMA_IF.DEVICE           Uma
+    UMA_IF.DEVICE           Uma,
+
+    // V9990TANG: depuracion del refresco (se pueden dejar sin conectar)
+    output  reg [DBG_W-1:0] DBG_RF_INT,             // AUTO REFRESH emitidos por el temporizador interno
+    output  reg [DBG_W-1:0] DBG_RF_CH0,             // AUTO REFRESH por el RFSH reenviado del canal 0
+    output  reg [DBG_W-1:0] DBG_RF_CH1,             // AUTO REFRESH por el RAM_RF del canal 1
+    output  reg [DBG_W-1:0] DBG_RF_ESC,             // escalaciones: R/W del canal 0 aplazado una ranura
+    output  reg [11:0]      DBG_RF_MAXGAP,          // mayor intervalo entre dos AUTO REFRESH, en ciclos de CLK menos 1 (satura en 4095)
+    output  reg             DBG_RF_STB              // un ciclo por cada AUTO REFRESH presentado a Primary
 );
     localparam CLK_OFFSET = 7'd2;    // TIMING より 2clk 速く CLK_EN を出力
     localparam DIV14MHz = 15;
@@ -238,9 +252,85 @@ end
     assign exec_timing[0] = exec_timing_buff[0][MRAM_EXEC_DELAY-1]; // MainRam は 1CLK 遅延
     assign exec_timing[1] = exec_timing_buff[1][VRAM_EXEC_DELAY-1]; // VideoRam は 2CLK 遅延
 
-    // refresco interno: todavia no
-    wire                               int_esc   = 1'b0;
-    wire                               int_issue = 1'b0;
+    /***************************************************************
+     * V9990TANG (hito 4): refresco interno de la SDRAM
+     *
+     * La SDRAM pide 4096 AUTO REFRESH en 64 ms (uno cada 15,6 us). En
+     * tnCart los traia el /RFSH del Z80 reenviado por la RAM o la
+     * megaROM; el V9990 solo pide uno por linea y ninguno en standby
+     * (t9990_timing.sv, MEM.STATE). Un cartucho solo V9990 se quedaria
+     * sin refresco, asi que el UMA genera el suyo:
+     *
+     * - rf_age cuenta los ciclos desde el ultimo AUTO REFRESH que el UMA
+     *   presento a Primary, venga de donde venga (interno, RFSH del
+     *   canal 0 o RAM_RF del canal 1).
+     * - Con REFRESH_CYCLES ciclos sin refresco se levanta int_req, que se
+     *   sirve en la primera ranura exec_timing[0] sin R/W del canal 0.
+     *   Nunca en exec_timing[1]: el canal 1 (V9990) no cambia.
+     * - Con REFRESH_ESC ciclos (dos periodos) se levanta int_esc: el
+     *   refresco interno gana tambien a un R/W del canal 0, que se queda
+     *   en save_oe/save_we y sale en la siguiente ranura del canal 0
+     *   (20 ciclos despues). Tras el refresco rf_age vuelve a 0, asi que
+     *   cada refresco aplaza como mucho un R/W. Intervalo maximo entre
+     *   refrescos: REFRESH_ESC + 20 ciclos = 1580 (14,63 us a 108 MHz,
+     *   14,71 a 107,386); sin R/W que lo impida, REFRESH_CYCLES + 1 a
+     *   REFRESH_CYCLES + 20 (781 a 800 ciclos).
+     * - El refresco interno no pasa por processing, done_ch, proc_rw,
+     *   Secondary[0].DOUT ni los ACK_n de los clientes: si pasara por
+     *   done_ch, diez ciclos despues copiaria en Secondary[0].DOUT la
+     *   lectura del canal 1 y la megaROM la pondria en el bus del Z80.
+     *   Si coincide con un RFSH pendiente del canal 0 sale un solo AUTO
+     *   REFRESH, que cuenta como del canal 0 y sirve a los dos.
+     ***************************************************************/
+    localparam AGE_MAX = 12'd4095;
+    reg  [11:0]                        rf_age;                   // ciclos desde el ultimo AUTO REFRESH (satura)
+    reg                                int_req;                  // refresco interno pedido (flag propio)
+    reg                                int_esc;                  // refresco interno escalado: gana al R/W del canal 0
+    wire                               int_issue;                // esta ranura emite el refresco interno
+    wire                               ref_issue;                // esta ranura emite un AUTO REFRESH (de cualquier fuente)
+    wire                               esc_issue;                // esta ranura aplaza un R/W del canal 0 por el refresco
+
+    assign int_issue = exec_timing[0] && int_req && !grant_rw[0];
+    assign esc_issue = exec_timing[0] && int_esc && rw_req[0];
+    assign ref_issue = int_issue || grant_rf[0] || grant_rf[1];
+
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            rf_age  <= 0;
+            int_req <= 0;
+            int_esc <= 0;
+        end
+        else if(ref_issue) begin
+            rf_age  <= 0;
+            int_req <= 0;
+            int_esc <= 0;
+        end
+        else begin
+            if(rf_age != AGE_MAX)                                     rf_age  <= rf_age + 1'd1;
+            if(INT_REFRESH != 0 && rf_age == (REFRESH_CYCLES - 1))    int_req <= 1;
+            if(INT_REFRESH != 0 && rf_age == (REFRESH_ESC - 1))       int_esc <= 1;
+        end
+    end
+
+    // contadores de depuracion
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            DBG_RF_INT    <= 0;
+            DBG_RF_CH0    <= 0;
+            DBG_RF_CH1    <= 0;
+            DBG_RF_ESC    <= 0;
+            DBG_RF_MAXGAP <= 0;
+            DBG_RF_STB    <= 0;
+        end
+        else begin
+            DBG_RF_STB <= ref_issue;
+            if(grant_rf[0])             DBG_RF_CH0 <= DBG_RF_CH0 + 1'd1;
+            else if(int_issue)          DBG_RF_INT <= DBG_RF_INT + 1'd1;
+            if(grant_rf[1])             DBG_RF_CH1 <= DBG_RF_CH1 + 1'd1;
+            if(esc_issue)               DBG_RF_ESC <= DBG_RF_ESC + 1'd1;
+            if(ref_issue && rf_age > DBG_RF_MAXGAP) DBG_RF_MAXGAP <= rf_age;
+        end
+    end
 
     generate
         genvar process_ch;
