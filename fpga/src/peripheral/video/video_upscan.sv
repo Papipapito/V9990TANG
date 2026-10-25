@@ -40,6 +40,11 @@
  * アップスキャンモジュール
  *
  * V9990TANG:
+ *  - BLEND = 1 (por defecto): mezcla lineal horizontal de tnCart, sin cambios.
+ *    BLEND = 0: replicacion del punto mas cercano con la misma cadencia de
+ *    lectura (mismas R_ADDR, out_state y latencias); no se instancian los
+ *    sumadores de la mezcla. En cada salida se toma el punto de mayor peso de
+ *    la mezcla (R_DATA_P o R_DATA_C) y, a igual peso, el nuevo (R_DATA_C).
  *  - OUT.PAL: IN.PAL pasado al dominio de DCLK (dos flops) y fijado en el
  *    flanco de VSYNC de entrada, el mismo que reinicia los contadores de
  *    salida: vale para todo el cuadro que empieza. Con 313 lineas de entrada
@@ -48,6 +53,7 @@
  ***********************************************************************/
 module VIDEO_UPSCAN #(
     parameter ENABLE_SCANLINE = 0,
+    parameter BLEND         = 1,    // 1=mezcla lineal (tnCart) / 0=replicacion del punto mas cercano
     parameter [9:0] H_TOTAL = 10'd855,
     parameter [9:0] H_SYNC  = 10'd62,
     parameter [9:0] H_ERASE = 10'd69,
@@ -110,7 +116,8 @@ module VIDEO_UPSCAN #(
     assign OUT.FIELD = 0;
 
     VIDEO_UPSCAN_STRETCH_BUFFER #(
-        .ROW_COUNT(ROW_COUNT)
+        .ROW_COUNT(ROW_COUNT),
+        .BLEND(BLEND)
     ) u_buff_r (
         .RESET_n,
         .CLEAR(1'b0),
@@ -130,7 +137,8 @@ module VIDEO_UPSCAN #(
     );
 
     VIDEO_UPSCAN_STRETCH_BUFFER #(
-        .ROW_COUNT(ROW_COUNT)
+        .ROW_COUNT(ROW_COUNT),
+        .BLEND(BLEND)
     ) u_buff_g (
         .RESET_n,
         .CLEAR(1'b0),
@@ -150,7 +158,8 @@ module VIDEO_UPSCAN #(
     );
 
     VIDEO_UPSCAN_STRETCH_BUFFER #(
-        .ROW_COUNT(ROW_COUNT)
+        .ROW_COUNT(ROW_COUNT),
+        .BLEND(BLEND)
     ) u_buff_b (
         .RESET_n,
         .CLEAR(1'b0),
@@ -344,7 +353,8 @@ endmodule
  * 拡大縮小付きバッファ
  ***********************************************************************/
 module VIDEO_UPSCAN_STRETCH_BUFFER #(
-    parameter ROW_COUNT = 2
+    parameter ROW_COUNT = 2,
+    parameter BLEND     = 1     // 1=mezcla lineal / 0=replicacion del punto mas cercano (V9990TANG)
 ) (
     input wire          RESET_n,
     input wire          CLEAR,
@@ -500,73 +510,6 @@ module VIDEO_UPSCAN_STRETCH_BUFFER #(
     logic [7:0] R_DATA_P;
     wire  [7:0] R_DATA_C = R_DATA;
 
-
-    wire [11:0] p0 = 0;
-    wire [11:0] p1 = {4 'h0, R_DATA_P };
-    wire [11:0] p2 = {4 'h0, R_DATA_P, 1'h0 };
-    wire [11:0] p4 = {4 'h0, R_DATA_P, 2'h0 };
-    wire [11:0] p8 = {4 'h0, R_DATA_P, 3'h0 };
-    wire [11:0] p3 =           p2 + p1;
-    wire [11:0] p5 =      p4      + p1;
-    wire [11:0] p6 =      p4 + p2     ;
-    wire [11:0] p7 =      p4 + p2 + p1;
-    wire [11:0] p9 = p8           + p1;
-    wire [11:0] pA = p8      + p2     ;
-    wire [11:0] pB = p8      + p2 + p1;
-    wire [11:0] pC = p8 + p4          ;
-    wire [11:0] pD = p8 + p4      + p1;
-    wire [11:0] pE = p8 + p4 + p2     ;
-    wire [11:0] pF = p8 + p4 + p2 + p1;
-
-    wire [11:0] c0 = 0;
-    wire [11:0] c1 = {4 'h0, R_DATA_C };
-    wire [11:0] c2 = {4 'h0, R_DATA_C, 1'h0 };
-    wire [11:0] c4 = {4 'h0, R_DATA_C, 2'h0 };
-    wire [11:0] c8 = {4 'h0, R_DATA_C, 3'h0 };
-    wire [11:0] c3 =           c2 + c1;
-    wire [11:0] c5 =      c4      + c1;
-    wire [11:0] c6 =      c4 + c2     ;
-    wire [11:0] c7 =      c4 + c2 + c1;
-    wire [11:0] c9 = c8           + c1;
-    wire [11:0] cA = c8      + c2     ;
-    wire [11:0] cB = c8      + c2 + c1;
-    wire [11:0] cC = c8 + c4          ;
-    wire [11:0] cD = c8 + c4      + c1;
-    wire [11:0] cE = c8 + c4 + c2     ;
-    wire [11:0] cF = c8 + c4 + c2 + c1;
-
-    wire [11:0] p0_c2 = p0 + c2;
-    wire [11:0] p1_c1 = p1 + c1;
-
-    wire [11:0] p0_c4 = p0 + c4;
-    wire [11:0] p1_c3 = p1 + c3;
-    wire [11:0] p2_c2 = p2 + c2;
-    wire [11:0] p3_c1 = p3 + c1;
-
-    wire [11:0] p0_c8 = p0 + c8;
-    wire [11:0] p1_c7 = p1 + c7;
-    wire [11:0] p2_c6 = p2 + c6;
-    wire [11:0] p3_c5 = p3 + c5;
-    wire [11:0] p4_c4 = p4 + c4;
-    wire [11:0] p5_c3 = p5 + c3;
-    wire [11:0] p6_c2 = p6 + c2;
-    wire [11:0] p7_c1 = p7 + c1;
-
-    wire [11:0] p1_cF = p1 + cF;
-    wire [11:0] p2_cE = p2 + cE;
-    wire [11:0] p3_cD = p3 + cD;
-    wire [11:0] p4_cC = p4 + cC;
-    wire [11:0] p5_cB = p5 + cB;
-    wire [11:0] p6_cA = p6 + cA;
-    wire [11:0] p7_c9 = p7 + c9;
-    wire [11:0] p8_c8 = p8 + c8;
-    wire [11:0] p9_c7 = p9 + c7;
-    wire [11:0] pA_c6 = pA + c6;
-    wire [11:0] pB_c5 = pB + c5;
-    wire [11:0] pC_c4 = pC + c4;
-    wire [11:0] pD_c3 = pD + c3;
-    wire [11:0] pE_c2 = pE + c2;
-    wire [11:0] pF_c1 = pF + c1;
 
     always_ff @(posedge OUT_CLK or negedge RESET_n) begin
         if(!RESET_n) begin
@@ -771,6 +714,77 @@ module VIDEO_UPSCAN_STRETCH_BUFFER #(
         end
     end
 
+    /***************************************************************
+     * BLEND = 1: mezcla lineal de tnCart (sumadores y registro OUT sin cambios)
+     ***************************************************************/
+if(BLEND) begin : g_blend
+    wire [11:0] p0 = 0;
+    wire [11:0] p1 = {4 'h0, R_DATA_P };
+    wire [11:0] p2 = {4 'h0, R_DATA_P, 1'h0 };
+    wire [11:0] p4 = {4 'h0, R_DATA_P, 2'h0 };
+    wire [11:0] p8 = {4 'h0, R_DATA_P, 3'h0 };
+    wire [11:0] p3 =           p2 + p1;
+    wire [11:0] p5 =      p4      + p1;
+    wire [11:0] p6 =      p4 + p2     ;
+    wire [11:0] p7 =      p4 + p2 + p1;
+    wire [11:0] p9 = p8           + p1;
+    wire [11:0] pA = p8      + p2     ;
+    wire [11:0] pB = p8      + p2 + p1;
+    wire [11:0] pC = p8 + p4          ;
+    wire [11:0] pD = p8 + p4      + p1;
+    wire [11:0] pE = p8 + p4 + p2     ;
+    wire [11:0] pF = p8 + p4 + p2 + p1;
+
+    wire [11:0] c0 = 0;
+    wire [11:0] c1 = {4 'h0, R_DATA_C };
+    wire [11:0] c2 = {4 'h0, R_DATA_C, 1'h0 };
+    wire [11:0] c4 = {4 'h0, R_DATA_C, 2'h0 };
+    wire [11:0] c8 = {4 'h0, R_DATA_C, 3'h0 };
+    wire [11:0] c3 =           c2 + c1;
+    wire [11:0] c5 =      c4      + c1;
+    wire [11:0] c6 =      c4 + c2     ;
+    wire [11:0] c7 =      c4 + c2 + c1;
+    wire [11:0] c9 = c8           + c1;
+    wire [11:0] cA = c8      + c2     ;
+    wire [11:0] cB = c8      + c2 + c1;
+    wire [11:0] cC = c8 + c4          ;
+    wire [11:0] cD = c8 + c4      + c1;
+    wire [11:0] cE = c8 + c4 + c2     ;
+    wire [11:0] cF = c8 + c4 + c2 + c1;
+
+    wire [11:0] p0_c2 = p0 + c2;
+    wire [11:0] p1_c1 = p1 + c1;
+
+    wire [11:0] p0_c4 = p0 + c4;
+    wire [11:0] p1_c3 = p1 + c3;
+    wire [11:0] p2_c2 = p2 + c2;
+    wire [11:0] p3_c1 = p3 + c1;
+
+    wire [11:0] p0_c8 = p0 + c8;
+    wire [11:0] p1_c7 = p1 + c7;
+    wire [11:0] p2_c6 = p2 + c6;
+    wire [11:0] p3_c5 = p3 + c5;
+    wire [11:0] p4_c4 = p4 + c4;
+    wire [11:0] p5_c3 = p5 + c3;
+    wire [11:0] p6_c2 = p6 + c2;
+    wire [11:0] p7_c1 = p7 + c1;
+
+    wire [11:0] p1_cF = p1 + cF;
+    wire [11:0] p2_cE = p2 + cE;
+    wire [11:0] p3_cD = p3 + cD;
+    wire [11:0] p4_cC = p4 + cC;
+    wire [11:0] p5_cB = p5 + cB;
+    wire [11:0] p6_cA = p6 + cA;
+    wire [11:0] p7_c9 = p7 + c9;
+    wire [11:0] p8_c8 = p8 + c8;
+    wire [11:0] p9_c7 = p9 + c7;
+    wire [11:0] pA_c6 = pA + c6;
+    wire [11:0] pB_c5 = pB + c5;
+    wire [11:0] pC_c4 = pC + c4;
+    wire [11:0] pD_c3 = pD + c3;
+    wire [11:0] pE_c2 = pE + c2;
+    wire [11:0] pF_c1 = pF + c1;
+
     always_ff @(posedge OUT_CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             OUT <= 0;
@@ -896,6 +910,97 @@ module VIDEO_UPSCAN_STRETCH_BUFFER #(
             endcase
         end
     end
+end
+else begin : g_nearest
+    /***************************************************************
+     * BLEND = 0 (V9990TANG): replicacion del punto mas cercano
+     * Mismos estados, mismas R_ADDR y misma latencia que g_blend; en
+     * cada estado sale el punto de mayor peso de la mezcla de g_blend
+     * (indicada en cada linea) y, a igual peso, R_DATA_C. Los estados
+     * que g_blend deja a 0 (out_state_delay = F tras OUT_START) siguen
+     * a 0. Sin sumadores: un multiplexor de 2 a 1 por bit.
+     ***************************************************************/
+    always_ff @(posedge OUT_CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            OUT <= 0;
+        end
+        else if(OUT_START) begin
+            OUT <= 0;
+        end
+        else if(OUT_EN && out_count != 10'd720) begin
+            case (IN_RESOLUTION)
+                default:         OUT <= R_DATA_C;           // c1
+
+`ifdef RATIO_1_125
+                VIDEO::RESOLUTION_B1:                       // x9/4
+                    case (out_state_delay)
+                        default: OUT <= 0;
+                        4'h6:    OUT <= R_DATA_P;           // p3_c1
+                        4'h0, 4'h1, 4'h3, 4'h5, 4'h7, 4'h8,
+                        4'h2, 4'h4:
+                                 OUT <= R_DATA_C;           // p0_c4, p1_c3, p2_c2 (empate)
+                    endcase
+`else
+                VIDEO::RESOLUTION_B1:                       // x5/2
+                    case (out_state_delay)
+                        default: OUT <= 0;
+                        4'h0, 4'h1, 4'h3, 4'h4,
+                        4'h2:
+                                 OUT <= R_DATA_C;           // p0_c2, p1_c1 (empate)
+                    endcase
+`endif
+
+                VIDEO::RESOLUTION_B2:                       // x15/8
+                    case (out_state_delay)
+                        default: OUT <= 0;
+                        4'h1, 4'h3, 4'h5:
+                                 OUT <= R_DATA_P;           // p7_c1, p6_c2, p5_c3
+                        4'h0, 4'h2, 4'h4, 4'h6, 4'h8, 4'ha, 4'hc, 4'he,
+                        4'h7, 4'h9, 4'hb, 4'hd:
+                                 OUT <= R_DATA_C;           // p0_c8, p4_c4 (empate), p3_c5, p2_c6, p1_c7
+                    endcase
+
+`ifdef RATIO_1_125
+                VIDEO::RESOLUTION_B3:                       // x9/8
+                    case (out_state_delay)
+                        default: OUT <= 0;
+                        4'h5, 4'h6, 4'h7:
+                                 OUT <= R_DATA_P;           // p5_c3, p6_c2, p7_c1
+                        4'h0, 4'h8, 4'h1, 4'h2, 4'h3, 4'h4:
+                                 OUT <= R_DATA_C;           // p0_c8, p1_c7, p2_c6, p3_c5, p4_c4 (empate)
+                    endcase
+`else
+                VIDEO::RESOLUTION_B3:                       // x5/4
+                    case (out_state_delay)
+                        default: OUT <= 0;
+                        4'h3:    OUT <= R_DATA_P;           // p3_c1
+                        4'h0, 4'h4, 4'h1, 4'h2:
+                                 OUT <= R_DATA_C;           // p0_c4, p1_c3, p2_c2 (empate)
+                    endcase
+`endif
+
+                VIDEO::RESOLUTION_B4:                       // x15/16
+                    case (out_state_delay)
+                        default: R_ADDR <= R_ADDR;          // como en g_blend: segundo driver de R_ADDR (ver docs/notas/video.md)
+                        4'h1, 4'h2, 4'h3, 4'h4, 4'h5, 4'h6:
+                                 OUT <= R_DATA_P;           // pE_c2, pD_c3, pC_c4, pB_c5, pA_c6, p9_c7
+                        4'h0, 4'h7, 4'h8, 4'h9, 4'ha, 4'hb, 4'hc, 4'hd, 4'he:
+                                 OUT <= R_DATA_C;           // c1, p8_c8 (empate), p7_c9 ... p1_cF
+                    endcase
+
+                VIDEO::RESOLUTION_B5,                       // x9/8
+                VIDEO::RESOLUTION_B6:
+                    case (out_state_delay)
+                        default: OUT <= 0;
+                        4'h5, 4'h6, 4'h7:
+                                 OUT <= R_DATA_P;           // p5_c3, p6_c2, p7_c1
+                        4'h0, 4'h8, 4'h1, 4'h2, 4'h3, 4'h4:
+                                 OUT <= R_DATA_C;           // p0_c8, p1_c7, p2_c6, p3_c5, p4_c4 (empate)
+                    endcase
+            endcase
+        end
+    end
+end
 
 endmodule
 
