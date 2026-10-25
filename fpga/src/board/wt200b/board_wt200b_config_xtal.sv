@@ -1,5 +1,5 @@
 //
-// board_wt200b_config.sv
+// board_wt200b_config_xtal.sv
 //
 // BSD 3-Clause License
 //
@@ -32,6 +32,23 @@
 // CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+
+//
+// V9990TANG: variante xtal (CLK_BASE = 27 MHz del cristal x 4 = 108,000 MHz).
+// Partido de board_wt200b_config.sv de tnCartWonder d3a54f1 sin cambiar ningun
+// valor; la variante sync es board_wt200b_config_sync.sv. Cada build_*.tcl
+// compila uno de los dos con su .sdc (fpga/constraints/).
+//
+// SYNC_CPU_UMA = 0 en las dos variantes, como en la rev1 de buppu3: el UMA
+// corre libre con DIV = 30. La alternativa 2 de uma.sv ("最初に同期": se
+// engancha a Bus.CLK_EN una sola vez, en el primer flanco del reloj del slot
+// tras el reset, y despues corre libre) fijaria la fase entre el Z80 y las
+// ranuras de la SDRAM en cada arranque; solo tiene sentido en sync (en xtal la
+// fase deriva igual) y queda para cuando se mida la MegaRAM sin WAIT con
+// osciloscopio (estudio, seccion 10). La 1 reinicia la cuenta en cada flanco
+// del reloj del slot (Bus.CLK_EN, que sale del PIN_FILTER con su jitter de un
+// ciclo); en xtal la recortaria o la pararia en cada ciclo del Z80. No se usa.
 //
 
 `default_nettype none
