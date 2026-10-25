@@ -308,9 +308,19 @@ end
         else begin
             if(rf_age != AGE_MAX)                                     rf_age  <= rf_age + 1'd1;
             if(INT_REFRESH != 0 && rf_age == (REFRESH_CYCLES - 1))    int_req <= 1;
-            if(INT_REFRESH != 0 && rf_age == (REFRESH_ESC - 1))       int_esc <= 1;
+            // la escalacion siempre lleva su peticion: si no, con REFRESH_ESC <
+            // REFRESH_CYCLES el R/W se aplazaria sin que saliera ningun refresco
+            if(INT_REFRESH != 0 && rf_age == (REFRESH_ESC - 1)) begin int_esc <= 1; int_req <= 1; end
         end
     end
+
+    // rf_age satura en AGE_MAX: umbrales mayores no llegarian nunca
+    // synthesis translate_off
+    initial begin
+        if(INT_REFRESH != 0 && (REFRESH_CYCLES < 1 || REFRESH_CYCLES > AGE_MAX || REFRESH_ESC < 1 || REFRESH_ESC > AGE_MAX))
+            $error("UMA: REFRESH_CYCLES (%0d) y REFRESH_ESC (%0d) tienen que estar entre 1 y %0d", REFRESH_CYCLES, REFRESH_ESC, AGE_MAX);
+    end
+    // synthesis translate_on
 
     // contadores de depuracion
     always_ff @(posedge CLK or negedge RESET_n) begin
