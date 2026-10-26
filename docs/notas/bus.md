@@ -162,6 +162,26 @@ después del `/RD` del pin, si la decisión ya ve la dirección nueva (sección 
 Un disparo por ciclo: se rearma con `RD_n` y `WR_n` filtrados en reposo 3
 muestras seguidas.
 
+**Nunca en el ciclo del flanco** (arreglo de la revisión, cuarta sesión). La
+cuenta de muestras frescas (`fresh_cnt`) se pone a 0 en el flanco E0, así que
+en el ciclo [E0-1, E0), en el que ya se ve el disparo, todavía vale la del
+ciclo **anterior** del Z80. Antes `fresh` salía a 1 ahí, y la decisión usaba
+el `IORQ_n` filtrado, `ff_addr` y el `SLTSL_n`/`MERQ_n` de ese ciclo anterior,
+con `pw_armed` ya rearmado y `RD_n` a 0. Tras un `IN`/`OUT` a 60h/61h, el
+filtro de `IORQ` ve subir `/IORQ` hasta ~10 ciclos tarde, así que si el `/RD`
+del M1 siguiente bajaba antes (un hueco de 70 ns o menos desde el fin del
+`IN`/`OUT`), saltaba un pre-WAIT en el M1. Ese pre-WAIT no lo soltaba nadie
+hasta K (D+7), más los 300 ns del NPN. Con la fuente de memoria pasaba lo
+mismo tras una lectura de nuestra ranura. Con cifras máximas de Z80A el hueco
+es T - 5 ns (88 ns a 10,74 MHz, en el límite), pero Zilog no da mínimos. Ahora
+`fresh = (fresh_cnt == 2) && !fresh_rst`, con `fresh_rst = trig && jhold == 0`
+(el flanco de un ciclo nuevo). Un flanco dentro de la retención no cuenta como
+ciclo nuevo, así que la defensa contra rebotes de abajo no cambia. Pruebas:
+`tb_m1spur.sv` (sección 8) pasa de 102-334 pre-WAIT espurios de 400 (huecos de
+30-88 ns, `/IORQ` 0-20 ns tarde) a **0**, con los 2400 disparos buenos de
+2400; `tb_bus.sv` con `+M1RD=30` a 10,74 MHz pasa de 223/316 pre-WAIT en
+ciclos M1 a 0 (sección 9); la peor latencia del disparo no cambia.
+
 Dos defensas contra un rebote de `/RD` o `/WR` justo después del flanco (las dos
 las pidió el banco):
 
