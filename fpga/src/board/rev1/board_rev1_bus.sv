@@ -510,8 +510,9 @@ module BOARD_REV1_BUS #(
      *
      * Dispara cuando, con las dos muestras del g2 frescas (de despues del
      * flanco de RD_n/WR_n filtrados), IORQ esta confirmado y A[7:1] es 60h/61h
-     * con RD_n o WR_n filtrados a 0 (o, con PREWAIT_MEM_EN, SLTSL y MERQ con
-     * RD_n). Mantiene /WAIT de nivel hasta que el WAIT_n de la cadena (Bus.WAIT_n)
+     * con RD_n o WR_n filtrados a 0 o dentro de la retencion del salto (o, con
+     * PREWAIT_MEM_EN, SLTSL y MERQ con RD_n). Mantiene /WAIT de nivel hasta
+     * que el WAIT_n de la cadena (Bus.WAIT_n)
      * baje y vuelva a subir. Liberacion sin esperar al timeout:
      *  - el WAIT_n de la cadena no ha bajado PREWAIT_K (PREWAIT_MEM_K) ciclos
      *    con el RD_n/WR_n retrasado ya en Bus (el evento llego al dispositivo y
@@ -529,9 +530,28 @@ module BOARD_REV1_BUS #(
     end
     wire rw_idle3 = rw_idle_now && (rw_idle_cnt >= 2'd2);    // 3a muestra en reposo seguida
 
+    // Strobe activo para el disparo: RD_n/WR_n filtrados a 0, o dentro de la
+    // retencion de JUMP_HOLD tras el salto (un rebote de 2 muestras justo
+    // despues del flanco deja RD_n filtrado a 1 dos ciclos y, sin esto,
+    // retrasaria el disparo 2 ciclos: 87 ns en vez de 70 en el pin, fuera del
+    // presupuesto a 5,37 MHz). Los strobes que piden pre-WAIT duran mas que el
+    // salto mas la retencion (el mas corto, el /RD de un M1 o el /RD o /WR de
+    // E/S, es 1,5 T + 5 ns: 15,6 ciclos a 10,74 MHz, frente a 2-3 + 12), asi
+    // que la retencion no da por activo un strobe que ya ha acabado; trig_rd
+    // recuerda si el salto vino de RD_n (la fuente de memoria es solo de
+    // lecturas: el /WR de memoria, T + 5 ns, si puede acabar antes).
+    logic trig_rd;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n)        trig_rd <= 1'b0;
+        else if(trig_ok)    trig_rd <= rd_q && !RD_n;
+    end
+    wire in_hold  = (jhold != 4'd0);
+    wire stb_any  = !RD_n || !WR_n || in_hold;
+    wire stb_rd   = !RD_n || (in_hold && trig_rd);
+
     wire io_match = (((ff_addr[7:0] ^ PREWAIT_IO_BASE) & PREWAIT_IO_MASK) == 8'h00);
-    wire io_hit   = (PREWAIT_IO_EN != 0) && fresh && !IORQ_n && io_match && (!RD_n || !WR_n);
-    wire mem_hit  = (PREWAIT_MEM_EN != 0) && fresh && !SLTSL_n && !MERQ_n && IORQ_n && !RD_n;
+    wire io_hit   = (PREWAIT_IO_EN != 0) && fresh && !IORQ_n && io_match && stb_any;
+    wire mem_hit  = (PREWAIT_MEM_EN != 0) && fresh && !SLTSL_n && !MERQ_n && IORQ_n && stb_rd;
     wire dly_act  = !delay_rd_n[0] || !delay_wr_n[0];           // el evento ya esta en Bus
 
     logic       pw_armed;
