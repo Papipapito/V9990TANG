@@ -1,5 +1,5 @@
-# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-25 23:26
-# arbol: 03dca7b tb/sdram: cadencia comprobada en cada exec_timing y controles de la SDRAM lenta   referencia hito 1: 20936e6   2000 us por caso
+# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-26 04:22
+# arbol: b54b870 docs/notas/sdram.md: nota del hito 4 (refresco y SDRAM)   referencia hito 1: 20936e6   2000 us por caso
 # Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
 ## 108000 kHz
 idle_standby_108000        new    +MHZ=108000 +CH0=0 +V99=0                    gap 7.445 us (804)     init 2 | INT=269 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 
@@ -28,6 +28,8 @@ full100_v99_108000         new    +MHZ=108000 +CH0=2 +V99=1                    g
     RESULT: PASA
 rw_rfsh_108000             new    +MHZ=108000 +CH0=3 +V99=0                    gap 0.741 us (80)      init 2 | INT=0 CH0=3762 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=3762 rfsh_pedidos=3762 (solo_rfsh=943) err_dato=0
     RESULT: PASA
+rw_rfsh_v99_108000         new    +MHZ=108000 +CH0=3 +V99=1                    gap 0.741 us (80)      init 2 | INT=0 CH0=3762 CH1=32 ESC=0 | ch1 12..12 perd 0 err 0 | ops=3762 rfsh_pedidos=3762 (solo_rfsh=943) err_dato=0
+    RESULT: PASA
 rw_rfsh_int0_108000        int0   +MHZ=108000 +CH0=3 +V99=0                    gap 0.741 us (80)      init 2 | INT=0 CH0=3762 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=3762 rfsh_pedidos=3762 (solo_rfsh=943) err_dato=0
     RESULT: PASA
 ## controles negativos (se espera que falle la comprobacion indicada) 108000 kHz
@@ -54,6 +56,9 @@ neg_hito1_rwrfsh_108000    hito1  +MHZ=108000 +CH0=3 +V99=0 +NEG=rfsh          g
 neg_mut_dout_108000        mut    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 +NEG=z80 gap 7.778 us (840)     init 2 | INT=252 CH0=0 CH1=32 ESC=0 | ch1 12..12 perd 0 err 0 | tarde 0 captura_max 37 int_tras_captura 32
     RESULT: PASA (el control negativo 'z80' falla como se espera)
     CHECK z80      FALLA  (control negativo: se espera FALLA) DOUT estable y correcto en cada /RD (tarde=0)
+neg_mutrw_dout_108000      mutrw  +MHZ=108000 +CH0=3 +V99=1 +NEG=ch0           gap 0.741 us (80)      init 2 | INT=0 CH0=3762 CH1=32 ESC=0 | ch1 12..12 perd 0 err 0 | ops=3762 rfsh_pedidos=3762 (solo_rfsh=943) err_dato=913
+    RESULT: PASA (el control negativo 'ch0' falla como se espera)
+    CHECK ch0      FALLA  (control negativo: se espera FALLA) datos del canal 0 correctos y el handshake avanza (3762 ops)
 neg_slack0_slot_108000     slack0 +MHZ=108000 +CH0=2 +V99=1 +NEG=slot          gap 14.631 us (1580)   init 2 | INT=126 CH0=0 CH1=32 ESC=126 | ch1 12..12 perd 0 err 0 | lat0 15:1 18:10544 38:126
     RESULT: PASA (el control negativo 'slot' falla como se espera)
     CHECK slot     FALLA  (control negativo: se espera FALLA) en cada exec_timing la SDRAM ha terminado el acceso anterior (21594 ranuras, 21593 mal)
@@ -89,6 +94,8 @@ full100_v99_107386         new    +MHZ=107386 +CH0=2 +V99=1                    g
     RESULT: PASA
 rw_rfsh_107386             new    +MHZ=107386 +CH0=3 +V99=0                    gap 0.745 us (80)      init 2 | INT=0 CH0=3742 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=3742 rfsh_pedidos=3742 (solo_rfsh=938) err_dato=0
     RESULT: PASA
+rw_rfsh_v99_107386         new    +MHZ=107386 +CH0=3 +V99=1                    gap 0.745 us (80)      init 2 | INT=0 CH0=3742 CH1=32 ESC=0 | ch1 12..12 perd 0 err 0 | ops=3742 rfsh_pedidos=3742 (solo_rfsh=938) err_dato=0
+    RESULT: PASA
 rw_rfsh_int0_107386        int0   +MHZ=107386 +CH0=3 +V99=0                    gap 0.745 us (80)      init 2 | INT=0 CH0=3742 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=3742 rfsh_pedidos=3742 (solo_rfsh=938) err_dato=0
     RESULT: PASA
 ## controles negativos (se espera que falle la comprobacion indicada) 107386 kHz
@@ -115,6 +122,9 @@ neg_hito1_rwrfsh_107386    hito1  +MHZ=107386 +CH0=3 +V99=0 +NEG=rfsh          g
 neg_mut_dout_107386        mut    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 +NEG=z80 gap 7.822 us (840)     init 2 | INT=251 CH0=0 CH1=32 ESC=0 | ch1 12..12 perd 0 err 0 | tarde 0 captura_max 37 int_tras_captura 31
     RESULT: PASA (el control negativo 'z80' falla como se espera)
     CHECK z80      FALLA  (control negativo: se espera FALLA) DOUT estable y correcto en cada /RD (tarde=0)
+neg_mutrw_dout_107386      mutrw  +MHZ=107386 +CH0=3 +V99=1 +NEG=ch0           gap 0.745 us (80)      init 2 | INT=0 CH0=3742 CH1=32 ESC=0 | ch1 12..12 perd 0 err 0 | ops=3742 rfsh_pedidos=3742 (solo_rfsh=938) err_dato=906
+    RESULT: PASA (el control negativo 'ch0' falla como se espera)
+    CHECK ch0      FALLA  (control negativo: se espera FALLA) datos del canal 0 correctos y el handshake avanza (3742 ops)
 neg_slack0_slot_107386     slack0 +MHZ=107386 +CH0=2 +V99=1 +NEG=slot          gap 14.713 us (1580)   init 2 | INT=125 CH0=0 CH1=32 ESC=125 | ch1 12..12 perd 0 err 0 | lat0 15:1 18:10485 38:125
     RESULT: PASA (el control negativo 'slot' falla como se espera)
     CHECK slot     FALLA  (control negativo: se espera FALLA) en cada exec_timing la SDRAM ha terminado el acceso anterior (21473 ranuras, 21472 mal)
