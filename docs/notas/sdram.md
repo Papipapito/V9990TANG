@@ -100,6 +100,10 @@ Cómo funciona (`uma.sv:255-343`):
   sirve a los dos. El RFSH sigue su camino normal, con `processing` y `ACK_n`, y
   cuenta como del canal 0.
 - `INT_REFRESH = 0` quita el temporizador. Los arreglos 2 y 3 se quedan.
+- El UMA se resetea con el `reset_n` del top, que solo depende del PLL base y
+  de `READY` de la SDRAM (`tnCart_board_wt200b_top.sv:176-181`), no con el
+  /RESET del MSX: el refresco interno sigue mientras el MSX está en reset. El
+  banco lo modela igual (`sys_rst_n` bajo hasta `READY`).
 
 `sdram.sv` hace el AUTO REFRESH con la misma secuencia de 9 ciclos que un R/W
 (`sdram.sv:318-330`: `CMD_REF` en `STATE_ACTIVE` y NOP en el resto), así que el
@@ -228,6 +232,23 @@ Lo que tiene que hacer la integración (fuera de mis ficheros):
    `ARCHITECTURE.md`): el banco usa la ventana del modelo del MoonTANG
    (T_VALID 10,5 ns, T_HOLD 5,5 ns), no un STA de esta placa. Restringirla es
    del `.sdc` de la integración.
+5. **Orden de fusión con `hito/megaram`.** El banco de la MegaRAM ya corre con
+   este `uma.sv` (variantes `wait_hito4` e `inj_hito4` de su
+   `fpga/tb/megaram/run.sh`), y según su nota (`docs/notas/megaram.md` de esa
+   rama) su contrato del /WAIT depende de que `Secondary[0].DOUT` solo se copie
+   tras un R/W (`proc_rw`): con el `uma.sv` de `main`, un refresco del canal 0
+   que acabe después de la lectura sube el ACK con la lectura del canal 1 (su
+   variante `inj_main`). `hito/sdram` tiene que entrar antes que
+   `hito/megaram`, o a la vez. No he corrido su banco: es de otra área.
+6. **Dos cosas que no hay que cambiar sin rehacer la cuenta del intervalo.**
+   (a) El reset del UMA (arriba): si la integración lo atara al /RESET del
+   MSX, un reset largo dejaría la SDRAM sin refresco. (b) `SYNC_CPU_UMA = 0`
+   (`board_wt200b_config.sv:43`; también en las dos variantes de la rama de
+   integración). El temporizador cuenta ciclos de `CLK`, pero solo emite en
+   `exec_timing[0]`, que sale de `mem_cnt`. Con `SYNC_CLK_EN = 0` el contador
+   corre libre, que es lo que simula el banco; con `SYNC_CLK_EN = 1`,
+   `mem_cnt` se para en `DIV - 1` si falta `CLK_EN` (`uma.sv:126-130`), y sin
+   ranuras no sale ningún refresco.
 
 ## Cómo se prueba
 
@@ -238,8 +259,12 @@ fpga/tb/sdram/run.sh [US]        # desde Git Bash o WSL; US = µs por caso (2000
 Compila siete builds de Verilator 5.020 en `/tmp` (WSL) y corre la matriz a 108
 y a 107,386 MHz. Escribe `fpga/tb/sdram/resultados.txt` (en el repositorio: la
 salida de la última ejecución, 2 ms por caso) y sale con 1 si algún caso no da
-lo esperado. Tarda unos 30 s. `fpga/tb/sdram/resultados_20ms.txt` es la misma
-matriz con 20 ms por caso (`run.sh 20000`, unos 5 min). Icarus 12 no sirve: no
+lo esperado. Tarda entre 30 s y 1,5 min, según lo que corra a la vez en WSL.
+`fpga/tb/sdram/resultados_20ms.txt` es la misma matriz con 20 ms por caso
+(`run.sh 20000`, de 5 a 15 min). Para escribirla ahí hay que lanzarlo desde
+WSL con `OUT=.../resultados_20ms.txt` (las variables de Git Bash no pasan a
+WSL), y no lanzar dos a la vez con el mismo `OUT`: las dos ejecuciones
+escriben en el mismo fichero y las líneas salen mezcladas. Icarus 12 no sirve: no
 compila los puertos `RAM_IF.HOST` de tnCart ("syntax error ... Errors in port
 declarations").
 
@@ -399,8 +424,8 @@ hito 1 (CV0016 x2, NL0002 x6), ninguno de `uma.sv` ni de `sdram.sv`.
 `source check_sdram.tcl` y `run pnr`, desde `fpga/` (19 a 29 min en total,
 según las otras builds de Gowin que corran en paralelo). La puerta del hito 1 (`tools/check_build.py
 fpga/impl/pnr/check_sdram` con los mismos argumentos que
-`docs/VERIFICATION.md` da para `v9990_xtal`) **pasa**. Se ha hecho dos veces
-sobre el mismo RTL (25/10 y 26/10) con cifras idénticas:
+`docs/VERIFICATION.md` da para `v9990_xtal`) **pasa**. Se ha hecho tres veces
+sobre el mismo RTL (25/10 y dos el 26/10) con cifras idénticas:
 
 | | Hito 1 (`fpga/reports/hito1`) | Hito 4 |
 |---|---|---|
@@ -418,7 +443,9 @@ de `u_tg` → `u_sp`). La mejora de Fmax y los −28 CLS son variación del
 P&R, no algo que se deba a este cambio. El `.fs` (`impl/pnr/check_sdram.fs`) no
 se ha archivado ni probado en la placa: `fpga/reports/` es de la integración.
 
-## Revisión del 26/10/2026
+## Revisiones
+
+### Primera revisión (26/10/2026, madrugada)
 
 El hito lo empezó otra sesión, que se cortó por un límite de tiempo. Se ha
 revisado todo lo suyo y se ha vuelto a comprobar lo que daba por hecho. **El
@@ -447,6 +474,43 @@ RTL no cambia**; el banco gana un caso y un control:
 - Comprobados también el aviso `PINMISSING` de Verilator (tabla de interfaces)
   y que Icarus 12 no compila `ram.sv` ni `uma.sv`.
 
+### Segunda revisión (26/10/2026, mañana)
+
+La sesión de la primera revisión también se cortó. Se ha vuelto a revisar y a
+correr todo. **El RTL y el banco no cambian**; la nota gana el reset del UMA
+(en "Cómo funciona"), los puntos 5 y 6 de la integración, un riesgo (ranura con
+la SDRAM ocupada) y cómo lanzar la matriz de 20 ms sin pisarla.
+
+- `uma.sv` y `sdram.sv` releídos otra vez frente a `main`: los tres arreglos y
+  `proc_rw`, nada más. Las líneas citadas de los dos ficheros siguen siendo
+  las de la nota.
+- `run.sh` (2 ms) y `run.sh 20000`: `TOTAL: PASA`, y las cifras de cada caso
+  son las mismas que en la primera revisión; en los dos ficheros de resultados
+  solo cambia la cabecera (fecha y commit).
+- Síntesis (`check_sdram.tcl`) sobre el árbol y sobre `main` (`20936e6`) en una
+  copia de ruta corta: `u_uma` 207 / 233 frente a 171 / 217, `u_sdram`
+  243 / 144 frente a 246 / 144, total 11 549 / 2 167 / 6 189 / 24 frente a
+  11 565 / 2 166 / 6 173 / 24, mismos 8 avisos. Con las seis salidas de
+  depuración conectadas (copia temporal, XOR a un puerto nuevo del top),
+  `u_uma` 215 LUT / 310 FF / 72 ALU. Todo igual que lo medido antes. Las cifras
+  del encargo (178 / 217 y 245 / 144) son de la tabla de módulos de la síntesis
+  `full` del estudio (sección 3), como ya decía la nota.
+- P&R y puerta de `check_build.py`: **PASA**, con las cifras de la tabla de
+  arriba (14 123 / 8 651 / 24, Fmax 110,303 MHz, slack 0,193 / 0,074 ns, 0
+  endpoints violados) y ningún camino de `u_uma` ni de `u_sdram` entre los 25
+  peores de setup.
+- Comprobado otra vez a mano: el error de Verilator 5.020 con
+  `$bits(Ram.ADDR)` en un `localparam` (`sdram.sv` de `main`, línea 109), los
+  seis `PINMISSING`, el `syntax error` de Icarus 12, las líneas de openMSX
+  (`V9990.cc:123-125` y `:374-380`, `V9990.hh:270`, en `a557de7`), el texto
+  del manual en la página 80 (el PDF es escaneado, sin capa de texto: se ha
+  leído en la imagen de la página 86) y una muestra de las citas de tnCart,
+  MoonTANG y nand2mario (`megarom_controller.sv:309/323/326/342/345`,
+  `t9990_timing.sv:543-546`, `wv_to_sdram.v:40`,
+  `board_wt200b_clock.sv:128/181-184`, `WonderTANG-ref/fpga/src/sdram.v:17-21`).
+- No se ha probado en la placa: sigue pendiente la puerta del hito 4 (punto 2
+  de la integración).
+
 ## Riesgos y observaciones
 
 - **Comandos de la SDRAM antes del LOCK.** En `sdram.sv`, `SDRAM_CMD` no tiene
@@ -471,6 +535,15 @@ RTL no cambia**; el banco gana un caso y un control:
   ciclos más tarde solo si hay escalación. Con un Z80 no hay escalaciones
   (banco: 0 en todos los regímenes del Z80, también a 7,16 MHz sin `/RFSH`),
   porque siempre quedan ranuras libres.
+- **Una ranura con la SDRAM aún ocupada no emite nada**, y nadie lo ve. Si en
+  un `exec_timing` `Primary.ACK_n` siguiera bajo, esa rama tiene prioridad en
+  `uma.sv` (`:499`) y no sale ni el R/W ni el refresco, pero `save_oe`,
+  `save_we`, `save_rfsh`, `rf_age`, `int_req` y los contadores ya se habrían
+  borrado o contado como emitidos. Con el R/W es lo mismo que en tnCart. No
+  pasa mientras se cumpla la cadencia (la comprobación `slot` lo mira en cada
+  ranura); si un hito cambia la cadencia, un refresco se perdería sin aviso y
+  `DBG_RF_MAXGAP` no lo vería, porque mide lo que el UMA presenta, no lo que
+  ejecuta la SDRAM.
 - **Solo cuenta lo que pasa por el UMA.** `rf_age` ve los AUTO REFRESH que el
   UMA presenta. Hoy no hay otro camino a la SDRAM. Si un hito añade un cliente
   que no pase por el UMA, tendrá que avisar al temporizador.
