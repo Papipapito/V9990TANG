@@ -840,6 +840,8 @@ la puerta en ninguna variante (`xtal`: carrera CLK_BASE → DCLK −0,077 ns;
 son del core: `u_sel/OUT_2` → `video_b_5`, `u_ram/timing_state_1` →
 `RAM_ADDR_*`), sino margen de colocación. Se arregla con opciones por variante
 (`BUILD_OPTS`, `6ebe4ff`, `893eecd`, `32c70b5`) elegidas en un barrido de 34
-builds con 21 juegos de opciones (sección 6), y las dos builds se rehacen y se archivan (`d95825f` y el
-commit del hito 6). Prueba: la puerta de cada build archivada (`PASA`) y el
-cuerpo de su `.fs` igual al del barrido.
+builds con 21 juegos de opciones (sección 6), y las dos builds se rehacen y
+se archivan (`d95825f` y `99b6221`). Prueba: la puerta de cada build
+archivada (`PASA`), el cuerpo de su `.fs` igual al del barrido (CheckSum
+`0xB95F` en `xtal` y `0xEFEC` en `sync`) y, en `sync`, ningún `TA*` y los dos
+`PR1014` de siempre (`CLK_27M_d`, `CART_CLOCK_d`).
