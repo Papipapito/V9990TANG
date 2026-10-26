@@ -168,13 +168,29 @@ ensayar (sección 8).
     cuando vuelva a ser estable.
   - `PLL_OK` tras 2,43 ms (65 536 ciclos) de `LOCK` seguido. La misma nota del
     UG286 avisa de que `LOCK` puede dar *glitches* mientras engancha y pide
-    vigilarlo al menos 2 ms.
+    vigilarlo al menos 2 ms. DS226-2.7E, tabla 3-20 (GW2AR-18 C8/I7):
+    `TLOCKMAX` 1 ms y `RSTMINPULSE` 10 ns; el reset del rPLL dura 1,21 ms en
+    el POR y 38 µs en cada reintento, y `LOCK_TIMEOUT` (19,4 ms) es 19 veces
+    el `TLOCKMAX`.
   - **Detector de pérdida**: sin enganche estable en 19,4 ms, o si se pierde
     (`LOCK` bajo 152 µs seguidos o, en `sync`, el reloj del slot ausente o
     fuera de frecuencia): `PLL_OK` = 0 (el diseño vuelve a reset de forma
     asíncrona: `BASE_READY`, `RESET_n` y `SYS_RESET_n` caen sin esperar a
     `CLK_BASE`), un ciclo después 38 µs de reset del rPLL, y reintento.
     `RELOCKED` queda pegajoso para el LED.
+  - **Control rápido del periodo** (`sync`; resto del hallazgo 2 de la
+    revisión): si el reloj del slot cambia de frecuencia sin salir del rango
+    del rPLL (por ejemplo a 4,0 MHz: VCO 960 MHz, CLK_BASE 120 MHz, por
+    encima de la Fmax), `LOCK` no tiene por qué caer y la ventana de 151,7 µs
+    tarda de 152 a 303 µs en verlo. El control rápido cuenta los ciclos de 27
+    MHz de 16 periodos del slot (4,47 µs; 120,7 ciclos a 3,579545 MHz, banda
+    117-124): con la cuantificación y la metaestabilidad de los dos extremos
+    (±1 cada una) pasa seguro de −1,9 a +2,3 % (la ventana de ±1,5 % cabe
+    dentro) y salta seguro por debajo de −4,2 % o por encima de +4,9 %. Quita
+    `SLOT_OK` con **tres** medidas seguidas fuera de banda: un flanco espurio
+    aislado estropea como mucho dos (la que lo contiene y, si la cierra él, la
+    siguiente). En `S_LOCKED` eso baja `PLL_OK` y `DRIVE_EN` en menos de 20
+    µs. En `xtal` `SLOT_OK` no se usa.
   - `BASE_READY` resetea el rPLL TMDS, su CLKDIV y `sdram.sv` (antes era el
     LOCK crudo del rPLL base, pegajoso en `sync`).
 - **El rPLL de `sync` y el pin 76.** `CART_CLOCK` está en el pin 76
@@ -188,27 +204,78 @@ ensayar (sección 8).
   jitter que añada el enrutado no está cuantificado. Ningún aviso `TA*`.
 - **Rango del rPLL en `sync`**: `FCLKIN` 3,58, `IDIV_SEL` 0 (/1),
   `FBDIV_SEL` 29 (x30), `ODIV_SEL` 8: PFD 3,58 MHz, CLKOUT 107,386 MHz, VCO
-  859 MHz. Límites del GW2AR-18 C8/I7 en el DS226-1.9.1 (2021, tabla 4-18, la
-  versión que se pudo leer): CLKIN y PFD 3-500 MHz, VCO 500-1250 MHz, CLKOUT
-  3,906-625 MHz; UG286-2.0.2E (en la instalación de Gowin), tabla 5-3:
-  `FCLKIN` de "3" a "500". Todo dentro; el PFD queda un 19 % sobre el mínimo.
-  Con x30 y ODIV 8 el rPLL admitiría de 3,0 a 5,2 MHz en la entrada: un slot a
-  5,37 MHz (turbo que cambie el CLOCK del cartucho) daría VCO 1289 MHz, fuera
-  de rango; la guardia no suelta el rPLL fuera de 3,579545 MHz ±1,5 %. **Sin
-  comprobar**: la DS226-2.7E (31/07/2026, la vigente según el índice de Gowin)
-  pide registro; los límites de jitter y de ciclo de trabajo de la entrada y el
-  tiempo máximo de enganche no están en las versiones leídas, y el jitter del
-  reloj del slot no está medido en ninguna máquina.
+  859 MHz. Límites del GW2AR-18 C8/I7 en la DS226-2.7E (31/07/2026, tabla
+  3-20; copia leída en el *scratchpad* de la sesión, los mismos que en la
+  1.9.1, tabla 4-18): FIN y PFD 3-500 MHz, VCO 500-1250 MHz, CLKOUT
+  3,906-625 MHz, `TLOCKMAX` 1 ms; UG286-2.0.2E (en la instalación de Gowin),
+  tabla 5-3: `FCLKIN` de "3" a "500". Todo dentro; el PFD queda un 19 % sobre
+  el mínimo. Con x30 y ODIV 8 el rPLL admitiría de 3,0 a 5,2 MHz en la
+  entrada: un slot a 5,37 MHz (turbo que cambie el CLOCK del cartucho) daría
+  VCO 1289 MHz, fuera de rango; la guardia no suelta el rPLL fuera de 3,579545
+  MHz ±1,5 %.
+- **Entrada del rPLL en `sync`** (misma tabla 3-20): jitter de periodo menor
+  del 20 % del periodo **o 1 ns como máximo** (a 3,58 MHz, 20 % son 56 ns:
+  manda el 1 ns) y ciclo de trabajo de **al menos el 25 %** (3-49 MHz). El
+  reloj del slot llega por el pin 76 con enrutado genérico (`PR1014`), y su
+  jitter no está medido en ninguna máquina: los dos límites pasan a ser
+  criterios de placa del hito 6 (sección 9).
 
 ## 3. Guardia de lock
 
-- `DRIVE_EN_27` = `PLL_OK` y el sistema listo (`SYS_RESET_n`, que ya incluye
-  el `READY` de la SDRAM, el POR y el borrado de la megaROM, con 2 FF en 27
-  MHz). `BOOT_HOLD_27` = `PLL_OK` y el sistema aún no listo, con un tope de 50
-  ms (1 350 000 ciclos) que solo se rearma cuando el sistema llega a estar
-  listo. Sin enganche, las dos a 0: el cartucho no saca nada al slot y el MSX
-  arranca. Al quedar listo, `DRIVE_EN_27` sube un ciclo antes de que baje
-  `BOOT_HOLD_27`: el /WAIT no tiene hueco en el relevo.
+- `DRIVE_EN_27` = `PLL_OK`, `LOCK` alto en ese momento (`lock_s`, los 2 FF
+  del sincronizador, sin filtro) y el sistema listo (`SYS_RESET_n`, que ya
+  incluye el `READY` de la SDRAM, el POR y el borrado de la megaROM, con 2 FF
+  en 27 MHz). Si `LOCK` baja, los pines se sueltan en 2-3 ciclos (0,11 µs en
+  el banco) aunque `PLL_OK` aguante los 152 µs del filtro de pérdida antes de
+  mandar el diseño a reset; en `sync`, con el slot saltando a 5,37 MHz, a los
+  0,1-0,2 µs en lugar de los 33-152 µs que tarda `PLL_OK` (hallazgo 2 de la
+  revisión: antes la lógica de `CLK_BASE`, posiblemente fuera de frecuencia,
+  seguía gobernando `/WAIT`, `/INT`, `BUSDIR` y los datos ese tiempo).
+  Contrapartida: un *glitch* de `LOCK` con el PLL ya enganchado corta un
+  /WAIT en curso (sin reset: `DRIVE_EN_27` vuelve con `LOCK`, y un hueco de
+  menos de 152 µs sigue sin resetear nada). Si `LOCK` no cae (el rPLL sigue
+  al slot fuera de frecuencia), en `sync` los pines se sueltan con `PLL_OK`
+  por el control rápido del periodo (sección 2): 9,8 µs a 4,0 MHz y 16,3 µs a
+  3,40 MHz en el banco, frente a 69,7 y 185,0 µs con solo la ventana.
+- `BOOT_HOLD_27` = sistema aún no listo durante un arranque, con un tope de 50
+  ms (1 350 000 ciclos) por arranque:
+  - **Arranque en frío**: desde que acaba la configuración de la FPGA (`xtal`:
+    el cristal está siempre; el primer flanco de 27 MHz) o desde el primer
+    flanco del reloj del slot (`sync`: el MSX encendido) hasta que el sistema
+    queda listo por primera vez, **con el PLL enganchado o no**: cubre el POR
+    (1,21 ms), el enganche (hasta 1 ms según el `TLOCKMAX`), los 2,43 ms de
+    `LOCK` estable, la SDRAM y, en MegaRAM, el borrado de la ventana. En
+    `sync`, si el reloj del slot desaparece (MSX apagado con la Tang
+    alimentada por USB) el siguiente arranque vuelve a ser en frío, con su
+    tope entero.
+  - **Tras perder el enganche** con el sistema ya listo: desde que vuelve
+    `PLL_OK` hasta que el sistema queda listo (como antes).
+  - Sin enganche, `DRIVE_EN_27` = 0 siempre y `BOOT_HOLD_27` = 0 salvo en el
+    arranque en frío, y ahí como mucho 50 ms: el cartucho queda mudo y el MSX
+    arranca. Al quedar listo, `DRIVE_EN_27` sube un ciclo antes de que baje
+    `BOOT_HOLD_27`: el /WAIT no tiene hueco en el relevo.
+- **Por qué el arranque en frío** (hallazgo 1 de la revisión). Con
+  `BOOT_HOLD_27` = `PLL_OK` y sistema no listo, el /WAIT de arranque solo
+  cubría de `PLL_OK` a `SYS_RESET_n` (0,5 µs en `v9990`): desde el final de la
+  configuración hasta `PLL_OK` (3,7 ms; 4,6 ms con el `TLOCKMAX`) el MSX corría
+  con el cartucho mudo. En el hito 1 el /WAIT salía desde el final de la
+  configuración (el reset de `EXPANSION_SLOT` pone `Primary.WAIT_n <= 0` y
+  `SYS_RESET_n` seguía retenido por `BOOT_n`), y la DS226-2.7E dice que durante
+  la configuración los GPIO están en alta impedancia con *pull-up* débil, lo
+  que probablemente ya enciende el transistor de `CART_WAIT_n` y congela el
+  MSX mientras carga el bitstream (no se ha visto en la placa). En `v9990` no
+  hacía daño (solo puertos de E/S), pero en MegaRAM la BIOS podía hacer en esa
+  ventana la detección del slot expandido (`FFFFh`) o buscar el `AB` con el
+  cartucho invisible. Esto se aparta de la letra del encargo ("sin enganche,
+  `BOOT_HOLD_27` = 0") y sigue su intención ("que el MSX no corra mientras el
+  cartucho arranca, como hacía el bootloader, pero que un fallo no lo congele
+  para siempre"): sin enganche el MSX queda retenido como mucho 50 ms al
+  encenderse y después arranca con el cartucho mudo. Lo demuestra el banco:
+  con la guardia de `83940f4` el banco nuevo falla en el POR (`BOOT_HOLD` 0,
+  esperado 1) y en el arranque en frío (sección 7).
+- El reloj del slot cuenta como presente desde su primer flanco de subida
+  (`gap_cnt` arranca en "ausente"), no desde la configuración: en `sync` sin
+  MSX no sale ningún pulso de /WAIT al encender.
 - Por qué hace falta: el estado de reset de la carcasa **saca /WAIT**:
   `EXPANSION_SLOT` pone `Primary.WAIT_n <= 0` en reset
   (`expansion_slot.sv:209`) y `BOARD_REV1_BUS` hace
@@ -237,7 +304,11 @@ ensayar (sección 8).
   quedar listo (microsegundos en `v9990`; el borrado entero en MegaRAM, que
   vuelve a borrar los 32 KB de la ventana). Si el primer arranque agotó el
   tope, ya no hay `BOOT_HOLD` hasta que el sistema llegue a estar listo alguna
-  vez.
+  vez (en `sync`, o hasta que el reloj del slot desaparezca: el siguiente
+  arranque es en frío con su tope entero).
+- El LED marca "error de reloj" (código 0) durante el POR y el enganche de
+  cada arranque (unos 3,7 ms, no se llega a ver) y "arrancando" (código 1)
+  de `PLL_OK` a listo.
 
 ## 4. LED (pin 75, 1 = encendido, como el LED de tnCart; `STATUS_LED` en 27 MHz)
 
@@ -360,9 +431,11 @@ segunda build. La `v9990_sync` se compiló ya con el árbol commiteado.
 
 ## 7. Banco (Verilator 5.020, WSL)
 
-`bash tb/integ/run.sh` desde `fpga/` (en WSL; 4 min 38 s). Resultado del
-26/10/2026: **17 de 17 ejecuciones pasan** (pins: 64 casos y 273 comprobaciones; guardia:
-8 escenarios en `xtal` y 8 en `sync`, de 9 a 20 comprobaciones cada uno).
+`bash tb/integ/run.sh` desde `fpga/` (en WSL; de 3 a 9 min según lo que
+corra en paralelo). Resultado del 26/10/2026 sobre `f00c622` (árbol
+commiteado, tras los arreglos de la revisión): **19 de 19 ejecuciones pasan**
+(pins: 64 casos y 273 comprobaciones; guardia: 9 escenarios en `xtal` y 9 en
+`sync`, de 13 a 35 comprobaciones cada uno; 175 en `xtal` y 181 en `sync`).
 
 - `tb_integ_guard`: `BOARD_WT200B_GUARD`, `SYSTEM_RESET`,
   `SYSTEM_RESET_HOLD` y `STATUS_LED` reales con sus parámetros de la build
@@ -370,33 +443,76 @@ segunda build. La `v9990_sync` se compiló ya con el árbol commiteado.
   `sync` solo engancha con el slot entre 3 y 5,2 MHz), `CLK_BASE`, el `READY`
   de la SDRAM y el `DONE` del borrado. En las dos variantes. Escenarios:
   - `lento`: LOCK a los 3 ms de soltar el reset; listo a los 6,64 ms (POR
-    1,21 + LOCK 3 + 2,43 estable), `BOOT_HOLD` ~0,5 µs, LED fijo.
-  - `perdida`: en `xtal` un hueco de LOCK de 50 µs se ignora y una pérdida
-    larga baja `PLL_OK` a los 151,7 µs; en `sync` el reloj del slot se para y
-    `PLL_OK` cae a los 1,22 µs; en las dos, el sistema vuelve a reset con
-    `DRIVE_EN`/`BOOT_HOLD` a 0 y LED de error, reengancha y queda listo con
-    `RELOCKED` (LED de cuatro destellos).
-  - `nunca`: en `xtal` el rPLL no engancha (3 reintentos en 60 ms); en `sync`
-    no hay reloj del slot y el rPLL no se suelta nunca; en las dos, a los 60 ms
-    sin `PLL_OK`, `DRIVE_EN` ni `BOOT_HOLD` y sistema en reset, LED de error.
+    1,21 + LOCK 3 + 2,43 estable). `BOOT_HOLD` del arranque en frío desde los
+    0,019 µs (`xtal`, el primer flanco de 27 MHz) o los 0,278 µs (`sync`, el
+    primer flanco del reloj del slot) hasta los 6,642 ms, sin huecos; de
+    `PLL_OK` a listo, 0,56 µs. LED fijo.
+  - `perdida`: en `xtal` un hueco de LOCK de 50 µs suelta los pines a los
+    0,111 µs sin resetear nada (`DRIVE_EN` vuelve con LOCK) y una pérdida
+    larga los suelta a los 0,115 µs y baja `PLL_OK` a los 151,8 µs; en `sync`
+    el reloj del slot se para y `PLL_OK` cae a los 1,22 µs. En las dos, el
+    sistema vuelve a reset con `DRIVE_EN`/`BOOT_HOLD` a 0 y LED de error,
+    reengancha y queda listo con `RELOCKED` (LED de cuatro destellos). Tras
+    el reenganche, en `xtal` `BOOT_HOLD` va solo de `PLL_OK` a listo (0,52
+    µs); en `sync` el slot parado cuenta como MSX apagado y el siguiente
+    arranque es en frío (`BOOT_HOLD` desde 0,274 µs después de volver el
+    reloj del slot hasta que el sistema queda listo).
+  - `nunca`: en `xtal` el rPLL no engancha (3 reintentos en 60 ms) y el
+    `BOOT_HOLD` del arranque en frío dura 50,0013 ms y suelta al MSX; en
+    `sync` no hay reloj del slot, el rPLL no se suelta nunca y no sale ningún
+    `BOOT_HOLD`; en las dos, a los 60 ms sin `PLL_OK`, `DRIVE_EN` ni
+    `BOOT_HOLD` y sistema en reset, LED de error.
   - `turbo` (solo `sync`): slot a 5,37 MHz desde el arranque: el rPLL no se
-    suelta.
-  - `tope`: la SDRAM no acaba hasta los 70 ms: `BOOT_HOLD` dura 50,0013 ms, el
-    MSX queda libre con el cartucho mudo y el LED en "arrancando"; a los 70 ms
-    `DRIVE_EN` sube sin volver a `BOOT_HOLD`.
-  - `mega`: el borrado de 2 ms retiene `SYS_RESET_n` y `BOOT_HOLD` dura lo que
-    el borrado.
+    suelta; `BOOT_HOLD` de 50,0013 ms y después el MSX libre.
+  - `tope`: la SDRAM no acaba hasta los 70 ms: `BOOT_HOLD` dura 50,0013 ms
+    desde la configuración, el MSX queda libre con el cartucho mudo y el LED
+    en "arrancando"; a los 70 ms `DRIVE_EN` sube sin volver a `BOOT_HOLD`.
+  - `mega`: el borrado de 2 ms retiene `SYS_RESET_n` (2,000 ms de `PLL_OK` a
+    listo) y `BOOT_HOLD` va de la configuración al final del borrado (8,64
+    ms).
   - `timeout` (solo `xtal`): `WAIT_TIMEOUT` de 1 µs queda pegajoso (LED de
     doble destello) sin quitar `DRIVE_EN`.
   - `glitch`: tres huecos de LOCK de 10 µs al enganchar: `PLL_OK` sube una
-    sola vez, 2,43 ms después del último.
+    sola vez, 2,43 ms después del último, y el `BOOT_HOLD` del arranque en
+    frío no se corta.
   - `turbo_marcha`: el slot pasa a 5,37 MHz con el sistema listo y vuelve a
-    los 2 ms: en `sync` reset y reenganche; en `xtal`, nada.
+    los 2 ms: en `sync` los pines se sueltan a los 0,111 µs (LOCK bajo),
+    `PLL_OK` cae a los 33,3 µs, reset y reenganche con `BOOT_HOLD` solo de
+    `PLL_OK` a listo (el reloj del slot no llegó a pararse); en `xtal`, nada.
+  - `deriva`: con el sistema listo, el slot a −1,4 % y a +1,4 % (1 ms cada
+    uno) y, a +1,0 %, ocho rebotes aislados de 60 ns en el reloj del slot (seis
+    al final de una medida del control rápido, que estropean dos medidas
+    seguidas): ni pérdida ni reset, `DRIVE_EN` sin cortes. Después el slot a
+    4,0 MHz y a 3,40 MHz, dentro del rango del rPLL (el modelo no suelta
+    LOCK): en `sync` `PLL_OK` cae a los 9,77 y 16,30 µs y `DRIVE_EN` 37 ns
+    después (límite del banco, 20 µs), reset de 2 ms y reenganche con
+    `BOOT_HOLD` solo de `PLL_OK` a listo (518,5 ns); en `xtal`, nada.
 
-  En todo momento vigila que sin `PLL_OK` no haya `DRIVE_EN` ni `BOOT_HOLD` y
-  el sistema esté en reset, que el relevo `BOOT_HOLD` → `DRIVE_EN` solape un
-  ciclo como mucho y que el /WAIT del pin no tenga huecos con el V9990
-  pidiéndolo.
+  En todo momento vigila que sin `PLL_OK` no haya `DRIVE_EN`, que `DRIVE_EN`
+  caiga como mucho 3 ciclos de 27 MHz después de bajar LOCK, que sin `PLL_OK`
+  solo haya `BOOT_HOLD` en el arranque en frío (en `sync`, con reloj del slot)
+  y ningún pulso pase de 50 ms, que el sistema esté en reset sin `PLL_OK`, que
+  el relevo `BOOT_HOLD` → `DRIVE_EN` solape un ciclo como mucho y que el
+  /WAIT del pin no tenga huecos con el V9990 pidiéndolo, con el PLL
+  enganchado o en el arranque en frío.
+- **El banco nuevo contra la guardia anterior** (`board_wt200b_guard.sv` de
+  `83940f4` en una copia aparte, con los mismos `SYSTEM_RESET` y `STATUS_LED`;
+  seis ejecuciones): fallan todas, y solo por los dos hallazgos. En las seis,
+  `BOOT_HOLD` = 0 durante el POR (esperado 1) y en el arranque `BOOT_HOLD` no
+  sube hasta los 6 641,2 µs (`PLL_OK`) en lugar de a los 0,019 µs (`xtal`) o
+  0,278 µs (`sync`): `lento` 3 fallos de 15 en cada variante, `tope` 2 de 16.
+  En `xtal perdida` (6 de 31), además, `DRIVE_EN` no cae en el hueco de LOCK
+  de 50 µs ni en la pérdida hasta `PLL_OK` (5 442 ciclos de 27 MHz con
+  `DRIVE_EN` y LOCK bajo); en `sync perdida` (5 de 28) el arranque en frío
+  tras volver el reloj del slot empieza 5 583 µs tarde; en `sync
+  turbo_marcha` (5 de 30), 896 ciclos con `DRIVE_EN` y LOCK bajo.
+- **`deriva` contra el control rápido quitado o con dos medidas** (copias
+  aparte de la guardia de `f00c622`, `sync`): con `SLOT_OK = SLOT_PRESENT &&
+  freq_ok` (solo la ventana) fallan 2 de 35: `PLL_OK` cae a los 69,7 µs (4,0
+  MHz) y a los 185,0 µs (3,40 MHz), fuera del límite de 20 µs. Con el control
+  rápido quitando `fast_ok` a la segunda medida mala en lugar de a la tercera
+  fallan otras 2 de 35: un solo rebote resetea el diseño (`DRIVE_EN` corta una
+  vez con el slot a +1,0 %).
 - `tb_integ_pins`: `BOARD_REV1_BUS` de `main` con `BOARD_WT200B_BUS_GUARD`
   delante y las 64 combinaciones de `DRIVE_EN`, `BOOT_HOLD`, `WAIT_n`,
   `INT_n`, `BUSDIR_n` y /RD contra los pines (Verilator es de dos estados: la
@@ -437,6 +553,35 @@ esta configuración.
 Los números valen solo como orientación: los ficheros de `hito/megaram`
 pueden cambiar antes de la fusión.
 
+**Común a todas las ramas: la lista de ficheros cambia** (hallazgo 4 de la
+revisión). Este hito parte `board_wt200b_config.sv` en
+`board_wt200b_config_xtal.sv` y `_sync.sv`, añade
+`board/wt200b/board_wt200b_guard.sv`, `board/wt200b/board_wt200b_bus_guard.sv`
+(hasta la fusión con `hito/bus`) y `system/system_reset.sv`, saca de la
+build `v9990` `bootloader.sv`, `flash.sv` y `spi.sv`, y cambia el top (sin
+`LED`, `LED_IF`, `FLASH_SPI` ni `SPI`). Ninguna otra rama toca estos ficheros
+(`git diff main...HEAD` vacío en ellos el 26/10), así que la fusión aplica el
+cambio sin conflicto y **sin aviso**, y rompe los bancos y comprobaciones de
+las áreas, que siguen nombrando la lista del hito 1:
+- `board_wt200b_config.sv` (deja de existir) lo nombran, en los worktrees de
+  las áreas el 26/10 a las 15:15 (las líneas se mueven: buscar el nombre),
+  `bus/fpga/tb/bus/run.sh`, `megaram/fpga/tb/megaram/run.sh`,
+  `bus/fpga/check_bus.tcl`, `megaram/fpga/check_megaram.tcl`,
+  `sdram/fpga/check_sdram.tcl`, `video/fpga/check_video.tcl` y las copias sin
+  cambios del `fpga/build_v9990_xtal.tcl` del hito 1. Los bancos pasan a
+  `board_wt200b_config_xtal.sv` (o `_sync.sv` si prueban esa variante).
+- Los cuatro `check_*.tcl` elaboran el top entero con la lista del hito 1
+  (con `bootloader.sv`, `flash.sv` y `spi.sv`, sin la guardia ni
+  `system_reset.sv`): tienen que tomar la lista de `build_common.tcl` (o
+  retirarse en favor de `build_v9990_{xtal,sync}.tcl`). `check_bus.tcl`
+  además parchea el top del hito 1 por texto (`LedPort`, `LED_IF LedNextor`,
+  `.Bus` de `u_bus`) y fallará con "el parche del top no aplica": en la
+  fusión lo sustituye la conexión real del bloque `>>> FUSION hito/bus`.
+- Las copias de `fpga/build_v9990_xtal.tcl` del hito 1 que hay en las ramas
+  no tienen cambios, así que queda la de esta rama (dos líneas que cargan
+  `build_common.tcl`).
+- `UPSTREAM.md` ya describe los ficheros nuevos y partidos.
+
 **`hito/bus`** (`board_rev1_bus.sv`, `cartridge_v9990.sv`):
 - `BOARD_REV1_BUS` gana las entradas `DRIVE_EN` y `BOOT_HOLD` y las salidas
   `WAIT_TIMEOUT` (pegajosa, `CLK_BASE`) y `BUS_OK` (así está en su worktree, sin
@@ -452,6 +597,30 @@ pueden cambiar antes de la fusión.
   registran en `CLK_BASE`, por un sincronizador (su `drive_en_s` lo es); el
   `set_clock_groups` corta el cruce de todas formas. `WAIT_TIMEOUT` lo
   sincroniza la guardia (`u_guard/wto_ff`, 2 FF).
+- **`SYS_READY` de la guardia tiene que incluir `BUS_OK`**: en `hito/bus`
+  (`18f9eca`, 26/10) los datos, `/INT` y el /WAIT del V9990 salen solo con
+  `bus_ok && DRIVE_EN`, y `bus_ok` (reloj del slot vivo en una ventana de
+  2^18 ciclos, y /RESET del slot suelto) no sube hasta 2,43 ms después de
+  `RESET_n`. Con `SYS_READY = SYS_RESET_n` solo, `BOOT_HOLD` bajaría al
+  quedar listo el sistema y el MSX correría esos 2,43 ms con el cartucho
+  mudo: el mismo hueco del hallazgo 1, más corto. En la fusión, el top pasa
+  `.SYS_READY(sys_ready && bus_ok)` a `u_guard` (`BUS_OK` es un flop de
+  `CLK_BASE`; la guardia lo sincroniza con `ready_ff`). Con el /RESET del MSX
+  pulsado, `BUS_OK` = 0: `DRIVE_EN` a 0 y `BOOT_HOLD` a 1 (con su tope)
+  mientras dura, inofensivo con el Z80 en reset, y el LED en "arrancando".
+  `bus_ok` vuelve un ciclo después de soltar el /RESET (su `ck_alive` sigue a
+  1), así que tras un /RESET de más de 50 ms no queda hueco. El caso que sí
+  deja uno, en `xtal`: con la Tang alimentada por USB antes que el MSX, el
+  tope se agota sin MSX y no se rearma al aparecer el reloj del slot (en
+  `xtal` no hay `msx_off`); si el /RESET del MSX dura menos de lo que tarda
+  `ck_alive` (de 2,43 a 4,86 ms tras el primer flanco), el MSX corre ese resto
+  con el cartucho mudo. Si hiciera falta, en la fusión se rearma también en
+  `xtal` con `SLOT_PRESENT`, pero entonces `booting` tiene que exigir
+  `msx_on` también con `PLL_OK` (si no, sin MSX `BOOT_HOLD` se quedaría a 1).
+- `DRIVE_EN` puede bajar y volver sin reset (LOCK bajo menos de 152 µs, ver
+  sección 3): `BOARD_REV1_BUS` no debe tomar su bajada como un reset (hoy
+  solo lo usa en los pines y, sincronizado, para no contar el timeout de
+  /WAIT, así que vale).
 - En la configuración `v9990` el V9990 va directo al bus (sin
   `EXPANSION_SLOT`): el banco de bus por topología de `hito/bus` tiene que
   cubrir los dos casos con este `main.sv`.
@@ -531,26 +700,57 @@ volver a mirar cuando entren sus parches.
   otra rama).
 - Sustituir el bloque `>>> FUSION hito/bus` y conectar `WAIT_TIMEOUT` al
   fusionar `hito/bus`.
-- La DS226-2.7E: límites de jitter y ciclo de trabajo de la entrada del rPLL
-  y tiempo de enganche (pide registro).
+- **Criterio de placa nuevo del hito 6** (DS226-2.7E, tabla 3-20): en cada
+  máquina en que se pruebe `sync`, jitter de periodo del CLOCK del slot
+  **menor de 1 ns** y ciclo de trabajo **de al menos el 25 %**, medidos en el
+  pin 76 de la Tang (después del *buffer* de la WonderTANG).
+- Ver en la placa si el *pull-up* débil de los GPIO durante la configuración
+  enciende el transistor de `CART_WAIT_n` (el MSX congelado mientras carga el
+  bitstream) y cuánto dura el /RESET del MSX frente a la carga.
 
 **Riesgos:**
 - **`sync` depende del reloj del slot** en todo: sin MSX encendido no hay
   CLK_BASE ni HDMI, el pin 76 no es entrada dedicada de PLL (`PR1014`, jitter
-  sin cuantificar), y el jitter del slot llega x30 a la SDRAM. La guardia
-  evita que el MSX se quede colgado, pero no que el cartucho no funcione.
+  sin medir frente al límite de 1 ns de la DS226-2.7E), y el jitter del slot
+  llega x30 a la SDRAM. La guardia evita que el MSX se quede colgado, pero no
+  que el cartucho no funcione.
+- **`BOOT_HOLD` al encender** (sección 3): el MSX queda retenido con /WAIT
+  desde la configuración hasta que el cartucho está listo (3,7 ms en `v9990`,
+  más el borrado en MegaRAM) y, si el PLL no engancha, 50 ms; después arranca
+  con el cartucho mudo. Es lo que hacía el bootloader, salvo el tope.
+- **`DRIVE_EN` sin filtro de LOCK**: un *glitch* de LOCK con el PLL
+  enganchado corta un /WAIT del V9990 en curso (el Z80 sigue con un dato
+  malo). No se ha visto ninguno en placa; con el filtro, la lógica de
+  `CLK_BASE` seguía gobernando el slot hasta 152 µs tras una pérdida real.
 - **Márgenes finos**: carrera CLK_BASE → DCLK en `sync` +0,277 ns; Fmax de
   `sync` 109,59 MHz (0,6 MHz sobre la puerta). Dependen de la colocación.
 - **Medidor de frecuencia**: la ventana de ±1,5 % (535-551 flancos) es una
   elección; una máquina con el CLOCK del slot fuera de esa ventana pero dentro
   del rango del rPLL se quedaría sin enganchar (LED de error y cartucho mudo)
-  aunque funcionara.
+  aunque funcionara. El control rápido del periodo (banda de 16 periodos)
+  resiste un flanco espurio aislado, pero dos espurios en tres medidas
+  seguidas (13,4 µs) pueden resetear el diseño: un CLOCK del slot con mucho
+  ruido o rebotes de más de 37 ns lo haría (sin medir en ninguna máquina).
 - **`BOOT_HOLD` en marcha**: con la guardia, una pérdida y recuperación del
   enganche con el MSX corriendo lo retiene con /WAIT hasta que el cartucho
-  vuelve a estar listo (µs en `v9990`, el borrado en MegaRAM).
+  vuelve a estar listo (µs en `v9990`, el borrado en MegaRAM); en `sync`, si
+  el reloj del slot llegó a pararse, desde que vuelve (arranque en frío).
 - **MegaRAM sin margen de *long wires***: el ensayo da LW 8/8 (en `v9990`,
   7/8); una red de control más con mucho abanico (un reset o un *enable*
   nuevo) tendría que ir por enrutado normal.
 - **Polaridad del LED** tomada del LED de tnCart; no vista en la placa.
 - **Comportamiento con el /RESET del MSX** cambiado frente a tnCart (sección
   1): a validar con la MegaRAM.
+
+## 10. Revisión del 26/10/2026
+
+| Hallazgo | Severidad | Resolución | Commits | Prueba |
+|---|---|---|---|---|
+| 1. `BOOT_HOLD` solo de `PLL_OK` a listo: el MSX corría 3,7 ms (4,6 con el `TLOCKMAX`) con el cartucho mudo al encender | media | **Real, arreglado.** `BOOT_HOLD_27` en el arranque en frío desde la configuración (`xtal`) o el primer flanco del reloj del slot (`sync`), con el PLL enganchado o no, con el tope de 50 ms (sección 3). Se aparta de la letra del encargo ("sin enganche, `BOOT_HOLD_27` = 0"): sin enganche el MSX queda retenido como mucho 50 ms al encender | `d09d121` | banco: la guardia de `83940f4` falla las seis ejecuciones probadas, solo por esto y el hallazgo 2 (sección 7) |
+| 2. Los pines solo se sueltan al caer `PLL_OK` (152 µs con LOCK bajo; una ventana del medidor en `sync`) | baja | **Real, arreglado.** `DRIVE_EN_27` con `lock_s` sin filtro (0,11 µs) y, en `sync`, control rápido del periodo del reloj del slot para el caso en que LOCK no cae (9,8 / 16,3 µs) | `d09d121`, `f00c622` | `perdida`, `turbo_marcha` y `deriva`; contra la guardia sin el control rápido, `deriva` falla (69,7 / 185,0 µs) |
+| 3. La DS226-2.7E sí estaba leída: límites de entrada del rPLL sin citar y pendiente abierto sin motivo | baja | **Real, arreglado.** Tabla 3-20 citada en `board_wt200b_clock.sv`, la guardia y la sección 2; el pendiente se cierra y quedan dos criterios de placa del hito 6 (jitter de periodo < 1 ns, ciclo de trabajo ≥ 25 %) | `c3e4bfc` | lectura de la copia de la DS226-2.7E (tabla 3-20) |
+| 4. El renombrado de `board_wt200b_config.sv` y la lista nueva rompen los bancos y `check_*.tcl` de las áreas al fusionar, sin aviso | baja | **Real, documentado** como contrato común (sección 8) y en `UPSTREAM.md`; no se tocan ficheros de otras áreas | `90d6377` y esta nota | `grep` en los worktrees de las áreas |
+
+Además, al leer `hito/bus` para el hallazgo 1: `SYS_READY` de la guardia
+tiene que incluir `BUS_OK` en la fusión (sección 8, comentario en el bloque
+`>>> FUSION hito/bus` del top, `57c19a3`).
