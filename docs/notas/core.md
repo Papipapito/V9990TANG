@@ -129,7 +129,9 @@ module T9990 #(
   en el (0,0) de la ventana, que ya no coincide con el VS). Cambia solo con
   VS.
 - **`HS`/`VS`**: con R#16 ≠ 00h se mueven frente a la imagen (−7..+8 pasos y
-  −7..+8 líneas). Con R#16 = 00h no cambian.
+  −7..+8 líneas). Con R#16 = 00h no cambian. Cada vez que el programa cambia
+  R#16 sale **un** cuadro (VS a VS) de 262/313 ± 16 líneas con **una** línea
+  (HS a HS) de ± 60 puntos, en el borrado superior; el resto, regular.
 - Los tres parámetros se pueden poner a 0 por separado; con los tres a 0 el
   core es el del hito 1 más los parches 1-3 y la aserción (que no sintetiza).
 - La lista de ficheros del core no cambia (17 ficheros en
@@ -151,8 +153,11 @@ module T9990 #(
    IN.FIELD`), que es justo lo que ahora está alineado.
 3. **R#16 en HDMI.** El upscan cuenta su ventana de entrada desde el flanco de
    HS (`IN_EN` fijo por modo) y su cuadro desde el VS, así que la imagen se
-   mueve en la salida, recortada por esa ventana fija (estudio, riesgos). Si
-   no se quiere el efecto o falta sitio: `T9990 #(.ENABLE_R16(0))`.
+   mueve en la salida, recortada por esa ventana fija (estudio, riesgos). Un
+   cambio de R#16 da un cuadro de entrada de ± 16 líneas y una línea de ± 60
+   puntos (ver Interfaz): el upscan tiene que aguantarlo (un cuadro de salida
+   corto o largo) sin perder el enganche. Si no se quiere el efecto o falta
+   sitio: `T9990 #(.ENABLE_R16(0))`.
 4. **Parámetros.** Por defecto los tres a 1. Para medir o recortar:
    `T9990 #(.ENABLE_PAL(0) | .ENABLE_CURSOR_EOR(0) | .ENABLE_R16(0))` en
    `cartridge_v9990.sv`.
