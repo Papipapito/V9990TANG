@@ -212,7 +212,30 @@ Pruebas de `run_t9990_core.sh` (todas exigen `LOST_SLOTS=0` salvo `assert`):
 | `hito1` | salida de vídeo (HS, VS, R, G, B, DE, EO, IL en cada `DCLK_EN`) idéntica punto a punto a la del core del hito 1 en B1, P1, P2, B3, B2, B4 y B1 entrelazado | `video identico` |
 | `replay` | `REPLAY=<.rpl> VRAMOUT=<.bin> OMSX=<vram>`: diff de la VRAM | `VRAM identica a openMSX` |
 
-RESULTADOS_AQUI
+### Resultados (26/10/2026, RTL final `ae3e7a5` + banco `7237f5f`)
+
+Corridas en WSL con Verilator 5.020, en tres tandas en paralelo (objetos
+distintos con `OBJTAG`), más la paleta y el *replay*:
+
+| Prueba | Orden (desde `fpga/`) | Resultado |
+|---|---|---|
+| `geom` (15 casos) | `OBJTAG=finA bash tb/core/run_t9990_core.sh geom pal blit ports eor` | **pasa**: 6840 ciclos de `CLK` y 1368 enables de 21 MHz por línea en todos; 262 líneas (1 792 080 ciclos) en NTSC y 313 (2 140 920) con PAL en B1, P1, B2 y B4 + R#16 = 78h; VS de 3 líneas con HS; latencia del ACK 13 ciclos en todos los accesos, cero accesos fuera de ranura, `LOST_SLOTS=0` |
+| `pal` | (misma) | **pasa** (`PALT_OK`): B1/B3/P1/P2 PAL 313 líneas, DE 290 desde la 18, imagen 212, bordes 41/37; B2/B4 PAL imagen 290 sin bordes; B1 PAL entrelazado igual; B5 con el bit PAL sigue en 440 líneas con PAL = 0; vuelta a NTSC 262 |
+| `blit` | (misma) | **pasa** (`BLIT_OK`): LMMV, LMMM, LMMC, PSET, LINE (20 puntos), POINT, LMCM, LMCM/POINT por carril y P#0 |
+| `ports` | (misma) | **pasa** (`PORTS_OK`): P#4, P#7, P#8-P#15 leen FFh (con P#5 = 60h justo antes) |
+| `eor` | (misma) | **pasa** (`EOR_OK`): cero puntos distintos del modelo de openMSX en los 14 casos (B1 BD16 con EOR CC = 0 y CC ≠ 0, solape, oculto, invisible, R#28, fuera de pantalla, Y = 500 / 0, entrelazado campos 0 y 1; B1 BP4; B2 BP4 NTSC y PAL) |
+| `r16` | `OBJTAG=r16b bash .../run_t9990_core.sh r16chg r16` (copia del árbol con el mismo RTL; banco sin `7237f5f`, que solo puede bajar la cuenta de `eo_win_bad`) | RESULTADO_R16 |
+| `r16chg` | `OBJTAG=finC bash tb/core/run_t9990_core.sh r16chg assert hito1` | **pasa** (`R16CHG_OK`): B1 entrelazado 247..277 líneas y 327..357 puntos; B4 PAL entrelazado 298..328 líneas y 852..972 puntos; HS de ancho fijo (25 y 68 puntos), VS siempre de 3 líneas con HS, FIELD alterna en los 18 VS; de vuelta en 00h, 262 × 342 y 313 × 912 con el VS en el (0,0). Con el RTL anterior (`108f2bb`, reajuste en el (0,0)) **falla**: cuadros de 1 a 516 líneas (B1) y de 1 a 618 (B4), líneas de 2 puntos, HS de 1 punto, VS de 1 línea, FIELD sin alternar 13 veces |
+| `assert` | (misma) | **pasa** (`ASSERT_SELFTEST_OK`): con el ACK 8 ciclos tarde la aserción salta 29 366 veces |
+| `hito1` | (misma) | **pasa**: salida de vídeo idéntica punto a punto al core del hito 1 en B1, P1, P2, B3, B2, B4 y B1 entrelazado (de 716 832 a 1 911 552 bytes por caso) |
+| paleta | `bash tb/core/run_t9990_palette.sh` | **pasa** (`PAL_OK`): 404 lecturas por P#1, cero componentes mal, puntero R#14 bien, cero ranuras perdidas |
+| `replay` GNG | traza nueva con `mk_trace.py`/`mk_replay.py` (`GNG2M.ROM`, `KonamiSCC`, 10 s, C-BIOS_MSX2+ + gfx9000, en `tb/core/trace/`) y `OBJTAG=finA REPLAY=... VRAMOUT=... OMSX=... bash tb/core/run_t9990_core.sh replay` | **pasa**: 161 794 escrituras, 471 comandos; **0 bytes distintos de 524 288** frente a la VRAM de openMSX; `LOST_SLOTS=0`. La traza sale idéntica byte a byte a la de la sesión anterior (openMSX es determinista aquí) |
+| parámetros a 0 | `VOPT="-GENABLE_PAL=0 -GENABLE_CURSOR_EOR=0 -GENABLE_R16=0" bash tb/core/run_t9990_core.sh geom pal ports blit r16chg` | RESULTADO_OFF |
+
+Con los parámetros a 0 la prueba `eor` falla a propósito (el cursor es el del
+hito 1, de color plano y en la línea Y: 839 puntos distintos del modelo en el
+primer caso, corrida de la sesión anterior sobre `ef22537`): es la prueba de
+que `eor` no pasa por construcción.
 
 ## Síntesis (Gowin 1.9.12.03, solo `run syn`, top `T9990`)
 
