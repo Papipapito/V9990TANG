@@ -30,7 +30,12 @@ pre-WAIT de memoria es imprescindible también a 3,58 MHz**, apartado 4), acabó
 el banco del host de `tncrom` (`tools/tncrom/test/`) y la variante del banco
 que reproduce sus trazas (apartado 7), añadió una comprobación de simulación de
 `RAM_IF_EXPANSION_USES_FF` (apartado 4) y volvió a correr todo: banco, openMSX y
-síntesis con P&R.
+síntesis con P&R. La cuarta (26/10/2026, noche) arregló los hallazgos de la
+revisión adversarial del área (apartado 11): `tncrom` r3 (relleno de PLAIN0 con
+FFh y `-S` comprobado) y el aviso sobre el contrato de `ACK_n`/`DOUT` del canal
+0 (apartado 4); el hallazgo de severidad media (los supuestos del Z80 del banco)
+ya lo había resuelto la tercera. Volvió a correr el banco, el banco del host,
+`build.sh`, openMSX y la síntesis con P&R.
 
 ## 1. Configuración `v9990_megaram`
 
@@ -383,7 +388,7 @@ otra instrucción). Aquí con SDCC 4.5 (`C:/Program Files/SDCC/bin`):
 
 ```
 bash tools/tncrom/build.sh        # Git Bash; SDCC_BIN=/ruta si no esta en el PATH
--> tools/tncrom/bin/TNCROM.COM (13 375 bytes, codigo y datos hasta 39F1h)
+-> tools/tncrom/bin/TNCROM.COM (r3: 13 700 bytes, codigo y datos hasta 3B36h)
 ```
 
 `build.sh` ensambla `sdcc/crt0_msxdos.s` (jp en 0100h, borra `_DATA`/`_BSS`,
@@ -394,20 +399,22 @@ de `main.c` vive en 6000h-7FFFh). `sdcc/crt_msxdos.c` parte la cola de 0080h en
 durante la copia) y sale con `_TERM`. Los bloques `#asm` de z88dk pasan a
 funciones `__naked` que toman los registros de variables globales: no dependen
 del convenio de llamada de SDCC y guardan IX/IY. La compilación es
-reproducible (dos builds, mismo binario). Los ganchos del banco del host (abajo)
-no cambian el binario: con ellos `build.sh` da el mismo `TNCROM.COM` byte a byte
-(comprobado con `cmp` el 26/10/2026 por la tarde).
+reproducible (dos builds, mismo binario; r3, md5 `8fba3c9e`, comprobado dos
+veces el 26/10/2026 por la noche). Los ganchos del banco del host (abajo)
+no cambian el binario: con ellos `build.sh` dio el mismo `TNCROM.COM` r2 byte a
+byte (comprobado con `cmp` el 26/10/2026 por la tarde).
 
 **Extensiones** (las líneas llevan `V9990TANG`):
 
 | | |
 |---|---|
-| `-T PLAIN0` | atributo plano (protección, 16 KB, sin registros de banco, bancos iniciales 0/1/2) con 1Fh.b0 = 1; máximo 48 KB |
+| `-T PLAIN0` | atributo plano (protección, 16 KB, sin registros de banco, bancos iniciales 0/1/2) con 1Fh.b0 = 1; máximo 48 KB. Desde r3 una imagen menor se **rellena con FFh hasta 48 KB** (`xfer_file`, `xfer_fill_ff`): lo que no cubre lee FFh, como las páginas sin mapear de openMSX (apartado 2). El total (imagen + relleno) decide el último banco, que se escribe el último: el byte que cada escritura a 7000h deja en el banco 0 (abajo) queda tapado |
+| `-S` | desde r3, con slot explícito `tncrom` también llama a `check_cartridge` y da "cartridge not found" si no está la megaROM o tiene PLAIN0 activo. Antes (y en upstream) no comprobaba nada: con PLAIN0 activo leía en 3Eh un byte de la demo como tamaño de la ventana y daba "complete." sin cargar (o un "too large" engañoso), y en un slot sin el cartucho escribía la imagen en lo que hubiera, la RAM incluida |
 | Tamaño | cada tipo lleva su máximo (`max_kb`, después del nombre: no entra en los 20 bytes que `rom_attr_xfer` escribe en 0Ch-1Fh): los de 16 KB (ASCII16, R-TYPE) 4096 KB, los de 8 KB (ASCII8, KONAMI, KONAMI_SCC_I, KONAMI_WO_SCC) 2048, 32K 32, 16K/16K2 16, PLAIN0 48. Se comprueba antes de tocar el cartucho (fichero vacío o mayor que el tipo) y, ya encontrado, frente a la ventana que lee 3Eh. Antes no se comparaba y el banco de 8 bits daba la vuelta: SOCCER12 (8 MB) se habría escrito con *wrap* |
 | Máscara de banco | KONAMI y KONAMI_WO_SCC llevan en la tabla de upstream la máscara 3Fh (64 bancos de 8 KB = 512 KB): con ella GNG2M (2 MB) y LIFEARTH (1 MB), Konami SCC, no funcionarían. Con una imagen de más de 512 KB `tncrom` escribe en 0Dh, tras el atributo, la máscara de la tabla OR la que pide la imagen redondeada a potencia de 2 (1 MB: 7Fh, 2 MB: FFh). Es lo que hace openMSX: `RomKonamiSCC::writeMem` pasa el valor de 8 bits entero y `RomBlocks::setRom` da la vuelta con `blockMask = nrBlocks - 1`. Con 512 KB o menos no cambia nada (3Fh, como upstream) |
 | MSX-DOS 1 | "MSX-DOS 2 or Nextor required." (`_DOSVER`; `DEFAB`, `_TERM` y los handles son de DOS 2) |
 | 32K | banco 1 inicial = 1 (apartado 5) |
-| Mensajes | la ayuda da el máximo de cada tipo; "cartridge not found" recuerda PLAIN0; versión "v0.07 (V9990TANG r2)" |
+| Mensajes | la ayuda da el máximo de cada tipo; "cartridge not found" recuerda PLAIN0; versión "v0.07 (V9990TANG r3)" (r2: la máscara de KONAMI; r3: el relleno de PLAIN0 y `-S`) |
 
 Para GNG2M y LIFEARTH el tipo es `-T KONAMI` (con protección). `-T KONAMI_SCC_I`
 también admite 2 MB, pero tras un /RESET del MSX queda escribible (apartado 5)
@@ -416,7 +423,9 @@ y la primera escritura a un registro de banco caería en la ROM cargada.
 **Probado en openMSX** (`C:/Program Files/openMSX`; salida de cada orden por
 redirección a un fichero y `get_screen` desde un Tcl). El 26/10/2026 con el
 binario de `bfc5748` (r2), dos veces (mañana y tarde: los 17 ficheros de salida
-salen idénticos, y el de MSX-DOS 1 igual): Philips NMS 8250 con una Sunrise IDE de Nextor 2.1.4
+salen idénticos, y el de MSX-DOS 1 igual), y por la noche con el r3 de
+`9820c0d`: los 17 iguales a los de r2 salvo la versión, el de MSX-DOS 1 igual,
+y cuatro órdenes nuevas (abajo). Philips NMS 8250 con una Sunrise IDE de Nextor 2.1.4
 (extensión `v99tang_tncrom_ide.xml` en la carpeta `share/extensions` de
 OneDrive) y una imagen FAT16 de 128 MB hecha con
 `SymbOS-MSXimus/tools/build_sd.py` (las imágenes de 2-8 MB no caben en un
@@ -425,7 +434,7 @@ sacaron de la imagen con `extract.py`:
 
 | Orden | Resultado |
 |---|---|
-| `TNCROM` | versión `v0.07 (V9990TANG r2)` y `USAGE` |
+| `TNCROM` | versión `v0.07 (V9990TANG r3)` y `USAGE` |
 | `TNCROM -H` | ayuda con los 10 tipos y su máximo |
 | `-T PLAIN0 P49K.ROM` (48 KB + 1 byte) | `rom image too large for PLAIN 0000h~BFFFh: 49KB, max 48KB.` |
 | `-T PLAIN0 Z0.ROM` (0 bytes) | `empty rom image file(Z0.ROM).` |
@@ -434,6 +443,7 @@ sacaron de la imagen con `extract.py`:
 | `-T 32K B32K.ROM` (32 KB + 1 byte) | `rom image too large for NO BANK 32KB: 33KB, max 32KB.` |
 | `-T FOO P48K.ROM` | `unknown rom type(FOO).` |
 | `-T PLAIN0 P48K.ROM`, `-T KONAMI` con 512, 513 y 2048 KB, `-T ASCII16 A4096.ROM` | pasan la comprobación y dan `cartridge not found (if PLAIN0 is active, reset the MSX first).`: openMSX no tiene la megaROM de tnCart |
+| r3: `-T PLAIN0 P32K.ROM`, `-S 1 -T PLAIN0 P32K.ROM`, `-S 30 -T 32K P32K.ROM`, `-S 2 -T ASCII16 A4096.ROM` | `cartridge not found (...)`: con `-S` ya no se carga a ciegas |
 | `TNCROM` bajo MSX-DOS 1 (NMS 8250 sin Nextor, el `MSXDOS.SYS` de `msx_z80bench/dsk`, "MSX-DOS version 1.8", COMMAND 1.12) | `MSX-DOS 2 or Nextor required.` y vuelve al indicador |
 
 La revisión r1 (`b7c21e1`) se probó igual con MSX-DOS 2.20 (extensión `msxdos2`)
@@ -447,7 +457,7 @@ la cubren el banco del host y la reproducción de sus trazas contra el RTL
 
 ```
 wsl -e bash -lc "cd /mnt/c/<repo>/tools/tncrom/test && ./run.sh"
-# -> ~/.cache/v99tang_tncrom_test/test_tncrom.log y tncrom_{plain0,ascii16,scci}.trc
+# -> ~/.cache/v99tang_tncrom_test/test_tncrom.log y tncrom_{plain0,plain0s,ascii16,scci}.trc
 ```
 
 Compila `src/` y `lib/` de `tncrom` tal cual para el host, con
@@ -464,7 +474,8 @@ escritura (la RAM con los bancos de antes). Ganchos en `tncrom`, todos tras
 `TNCROM_HOST_TEST`: `EXPTBL()` en `main.c` en lugar de leer FCC1h a mano, el
 búfer de 8 KB como array y las llamadas a la BIOS de `lib/rom_tools.c` hacia el
 modelo; además dos casts a `unsigned long` en los `printf` de `%lu` (en SDCC no
-cambian nada). 71 comprobaciones, todas bien el 26/10/2026:
+cambian nada). 90 comprobaciones, todas bien el 26/10/2026 por la noche (71
+hasta r2; de las 19 de r3, 8 fallan con el `tncrom` r2: el relleno y `-S`):
 
 - ayuda y errores de línea de órdenes y de tamaño (PLAIN0 de 48 KB + 1, vacío,
   tipo desconocido, ASCII16 de 4 MB + 1 KB, KONAMI y ASCII8 de 2 MB + 1 KB, 32K
@@ -474,12 +485,20 @@ cambian nada). 71 comprobaciones, todas bien el 26/10/2026:
 - PLAIN0 de 48 KB: atributo (`flags` C3h, 1Fh = 01h), ventana = imagen, lectura
   lineal de 0000h-BFFFh, C000h sin respuesta, la llave y las escrituras no hacen
   nada, un segundo `tncrom` no encuentra el cartucho, el /RESET borra PLAIN0 y
-  ENABLE, `-R` reinicia con PLAIN0 activo y sin el aviso, `-O`;
+  ENABLE, `-R` reinicia con PLAIN0 activo y sin el aviso, `-O`; con PLAIN0
+  activo `-S 10` da "cartridge not found" y no toca la ventana (r3);
+- PLAIN0 de 32 KB recién encendido (8000h-BFFFh con el patrón de la SDRAM) y
+  de 16 KB después de la de 32 KB (4000h con su "AB"): ventana = imagen, FFh
+  hasta 48 KB, nada pasado 48 KB, y el Z80 lee FFh en lo que la imagen no
+  cubre (r3; con r2, 268 y 535 lecturas mal);
 - ASCII16 de 40 KB (dos páginas, protección, /RESET con y sin `-O`) y de 4 MB
   (los 256 bancos, FFh y 80h); KONAMI de 512 / 513 KB / 2 MB con la máscara
   3Fh / 7Fh / FFh en 0Dh y los bancos FFh y 41h; KONAMI_WO_SCC y ASCII8 de 2 MB
   (FFh); KONAMI_SCC_I de 32 KB (BFFEh = 00h deja los cuatro bancos protegidos,
-  10h todo RAM como hace SofaRun); 32K (banco 1 = 1 tras /RESET) y `-N`.
+  10h todo RAM como hace SofaRun); 32K (banco 1 = 1 tras /RESET) y `-N`;
+- `-S 10` con el cartucho carga como sin `-S`; `-S 2` (vacío), `-S 30` (RAM)
+  y `-S 0` (BIOS) dan "cartridge not found" sin escribir nada (r3; con r2 los
+  tres daban "complete.").
 
 Lo que enseñó: `tncrom` escribe un byte fuera de la imagen. Pone el banco 0 en
 el último antes de cargar (`xfer_file`) y cada escritura al registro de banco 1
@@ -488,9 +507,11 @@ imagen acaba antes (último banco incompleto: la de 40 KB) ahí queda el número
 del último banco. Está fuera de la imagen y no molesta; es de upstream y no se
 ha cambiado.
 
-Tres casos dejan su traza de bus con la megaROM desde el encendido (`W aaaa dd`,
-`R aaaa dd` con el dato que dio el modelo, `Z` para el /RESET): PLAIN0 (148 543
-operaciones), ASCII16 de 40 KB (82 589) y KONAMI_SCC_I de 32 KB (33 241). La
+Cuatro casos dejan su traza de bus con la megaROM desde el encendido (`W aaaa dd`,
+`R aaaa dd` con el dato que dio el modelo, `Z` para el /RESET): PLAIN0 (148 560
+operaciones; 148 543 antes del `-S` de r3), PLAIN0 de 32 y 16 KB con el relleno
+(`tncrom_plain0s.trc`, 100 204, nueva en r3), ASCII16 de 40 KB (82 589) y
+KONAMI_SCC_I de 32 KB (33 241). La
 variante `tncrom` del banco de Verilator las reproduce contra el RTL (apartado
 7).
 
@@ -541,8 +562,8 @@ eso la cadena del /WAIT sola llegaba. `EXTRA_G="-GD_CTRL=9"` cambia los
 supuestos en todas las variantes.
 
 **Variante `tncrom`** (`TRACE = 1`): en lugar del programa, tras el borrado,
-lanza el banco del host de `tools/tncrom/test` (apartado 6) y reproduce sus tres
-trazas desde el encendido: cada `W` es una escritura del Z80 por el bus, cada `R`
+lanza el banco del host de `tools/tncrom/test` (apartado 6) y reproduce sus
+cuatro trazas desde el encendido: cada `W` es una escritura del Z80 por el bus, cada `R`
 una lectura (una de cada ocho como M1, con su refresco) que tiene que dar en el
 RTL el dato que dio el modelo en C, cada `Z` un /RESET; páginas 0-2 en el
 cartucho. Es el `tncrom` real contra el RTL real, con el monitor del /WAIT
@@ -564,7 +585,7 @@ medida del /WAIT (`noprewait`, `noprewait_opt`, `wait_rd9`, `wait_rd10`,
 | Variante | Qué | Resultado |
 |---|---|---|
 | `wait` | estricta, 3,58 MHz, /WAIT + modelo de pre-WAIT | 241 lecturas de la megaROM, todas con WAIT; 0 errores; VRAM: 13 012 lecturas, 0 malas, 0 ranuras perdidas; borrado en 163 837 ciclos (1,52 ms), 8192 escrituras |
-| `tncrom` | estricta, las trazas del `tncrom` real | PLAIN0: 147 834 escrituras y 706 lecturas (652 de la megaROM, todas con WAIT), 3 /RESET; ASCII16: 82 172 y 415 (382), 2 /RESET; KONAMI_SCC_I: 32 897 y 344 (328). 0 errores; el canal 1 sin ranuras perdidas en 905 000, 507 000 y 209 000 lecturas |
+| `tncrom` | estricta, las trazas del `tncrom` real (r3) | PLAIN0: 147 844 escrituras y 713 lecturas (659 de la megaROM, todas con WAIT), 3 /RESET; PLAIN0 de 32 y 16 KB con el relleno: 98 544 y 1 658 (1 626), 2 /RESET; ASCII16: 82 172 y 415 (382), 2 /RESET; KONAMI_SCC_I: 32 897 y 344 (328). 3 130 lecturas iguales al modelo, 0 errores; el canal 1 sin ranuras perdidas en 905 000, 613 000, 507 000 y 209 000 lecturas |
 | `wait_hito4` | estricta, con el `uma.sv` de `hito/sdram` | 0 errores; borrado en 165 937 ciclos (1,54 ms) |
 | `inj_hito4` | estricta, refresco inyectado en el canal 0 a +0..+30 ciclos | 0 de 31 lecturas rompen el contrato (liberación 15-53 ciclos) |
 | `inj_main` | medida, igual con el UMA de `main` | 8 de 31 rompen el contrato (defecto del UMA, apartado 4; eran 7 con los supuestos del Z80 de antes) |
@@ -662,7 +683,12 @@ a compilar (sus cifras de lógica y registros son las del estudio, exactas):
   `noprewait`, apartado 7). Para turbo, ver las cifras del apartado 4.
 - **`hito/sdram`**: fusionar su `uma.sv` (DOUT solo tras un R/W) antes o a la
   vez que su refresco interno; con el `uma.sv` de `main` el contrato del /WAIT
-  solo se cumple mientras la megaROM sea el único cliente del canal 0.
+  solo se cumple mientras la megaROM sea el único cliente del canal 0. **Ojo**:
+  la tabla de interfaces de `docs/notas/sdram.md` (`hito/sdram`) dice que el
+  `ACK_n` del canal 0 no importa a la megaROM; desde este hito sí importa.
+  Las tres reglas de `ACK_n`/`DOUT` del canal 0 del apartado 4 van a
+  `ARCHITECTURE.md` como contrato del UMA: quien toque `uma.sv` tiene que
+  mantenerlas o el /WAIT de memoria se soltará con el dato malo.
 - **UMA libre**: `MEGAROM_CLEAR` necesita las ranuras del canal 0 con el MSX
   apagado o en reset: `SYNC_CPU_UMA = 0` (lo es en las dos variantes de
   `hito/integ`). Con `SYNC_CPU_UMA = 1` el contador del UMA se para sin
@@ -682,7 +708,7 @@ a compilar (sus cifras de lógica y registros son las del estudio, exactas):
   de este hito son `fpga/tb/megaram/run.sh` (Verilator; la variante `tncrom`
   necesita además gcc y lanza `tools/tncrom/test/run.sh`) y
   `fpga/check_megaram.tcl`; `tools/tncrom/build.sh` rehace `TNCROM.COM`.
-- **`tools/tncrom/bin/TNCROM.COM`** es el binario de `build.sh` (r2, 13 375
+- **`tools/tncrom/bin/TNCROM.COM`** es el binario de `build.sh` (r3, 13 700
   bytes); la LEEME de la 1.0 lo distribuye en lugar del de tnCart.
 
 ## 10. Pendiente y riesgos
@@ -727,7 +753,7 @@ a compilar (sus cifras de lógica y registros son las del estudio, exactas):
   (apartado 2).
 - El banco del host de `tncrom` usa un modelo en C del cartucho escrito a mano
   desde el RTL. Lo que se compara con el RTL de verdad son las lecturas de las
-  tres trazas (1 465, todas iguales); las imágenes grandes (4 MB, 2 MB) y los
+  cuatro trazas (3 130, todas iguales); las imágenes grandes (4 MB, 2 MB) y los
   KONAMI de más de 512 KB solo pasan por el modelo, porque reproducir 4 M
   escrituras por el Z80 del banco de Verilator llevaría horas. Y es el `tncrom`
   compilado con gcc, no el binario de SDCC: lo que dependa del compilador o del
@@ -746,3 +772,19 @@ a compilar (sus cifras de lógica y registros son las del estudio, exactas):
   diff no se pudo ver). Cuadra con la variante `nowait` del banco: sin /WAIT el
   dato llega tarde según la fase entre el Z80 y la ranura del canal 0. Con
   `ENABLE_MEM_WAIT = 1` la megaROM no depende de esa fase.
+
+## 11. Revisión adversarial del área y arreglos (26/10/2026)
+
+El revisor del área (veredicto "aceptable con arreglos") repitió las nueve
+variantes del banco que había entonces, recompiló `TNCROM.COM` y releyó el diff
+y openMSX. Dio cuatro hallazgos; los cuatro eran reales y ninguno se rechaza:
+
+| # | Severidad | Hallazgo | Qué se hizo |
+|---|---|---|---|
+| 1 | media | `noprewait` era estricta y la nota decía que a 3,58 MHz el Z80 esperaba bien con y sin pre-WAIT, pero solo con supuestos del Z80 más optimistas que los del área bus (`/RD` a 46 ns, NPN 30 ns) y con margen 0; con los de `bus.md` (`/RD` a 75 ns, NPN 50 + setup 70) fallan 71 de 253 lecturas | Ya resuelto en la tercera tanda (`5157a33`, posterior a la revisión): `D_CTRL = 8`, `D_WAIT = 13` y `D_ADDR = 12` por defecto como parámetros, `noprewait` de medida, variantes `noprewait_opt`, `wait_rd9`, `wait_rd10`, y la nota (apartados 4, 7 y 9) y el contrato con `hito/bus` dicen que `PREWAIT_MEM_EN = 1` es imprescindible también a 3,58 MHz. Vuelto a medir en esta tanda: `noprewait` 71 de 253 mal, `noprewait_opt` 0 (margen 0), `wait` 0 (apartado 7) |
+| 2 | baja | PLAIN0 contesta en todo `0000h-BFFFh` con lo que haya en la SDRAM; openMSX deja sin mapear (FFh) lo que la imagen no cubre. Con una demo de 32 KB, 8000h-BFFFh daba basura de encendido o la ROM anterior | `tncrom` r3 (`9820c0d`) rellena con FFh hasta 48 KB (apartados 2 y 6). Prueba: el caso nuevo del banco del host (PLAIN0 de 32 KB recién encendido y de 16 KB tras la de 32) falla con r2 (268 y 535 lecturas mal, la ventana sin FFh) y pasa con r3; su traza `tncrom_plain0s.trc` pasa además contra el RTL en la variante `tncrom` (apartado 7). Arreglo en `tncrom` y no en el RTL: el RTL no sabe cuánto mide la imagen y no hace falta un registro más |
+| 3 | baja | Con `-S` `tncrom` no comprobaba el cartucho: con PLAIN0 activo leía en 3Eh un byte de la demo y daba "complete." sin cargar | `tncrom` r3 llama a `check_cartridge` también con `-S` (apartado 6). Prueba: con r2, `-S 10` con PLAIN0 activo y `-S 2`/`-S 30`/`-S 0` daban "complete." (4 fallos); con r3 "cartridge not found" sin tocar la megaROM. En openMSX las cuatro órdenes nuevas con r3 dan "cartridge not found" |
+| 4 | baja | La nota de `hito/sdram` dice que el `ACK_n` del canal 0 no afecta a la megaROM ("no mira el ACK"), falso desde este hito | Apartado 4 (`75badec`): el aviso, por qué el cambio de `hito/sdram` es compatible y las tres reglas de `ACK_n`/`DOUT` del canal 0 que la integración tiene que escribir en `ARCHITECTURE.md` como contrato del UMA (apartado 9) |
+
+El RTL no ha cambiado en esta tanda (`git diff 6353696 -- fpga/src fpga/config`
+vacío); la síntesis con P&R se volvió a correr igualmente (apartado 8).
