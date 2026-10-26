@@ -248,8 +248,13 @@ module T9990_COLOR_DECODE (
         //
         // その他の画面モード
         //
+        // V9990TANG: en los modos de paleta la salida vuelve al valor del reset (bit 15 = 1, "sin color
+        // directo"). Antes se quedaba como estaba (OUT <= OUT) y T9990_SELECTOR la usa donde la paleta es
+        // transparente (indice 0 de BP2/BP4, fondo de P1/P2): tras un BD8/BD16 (bit 15 a 0) esos puntos
+        // salian con el ultimo color directo en vez del fondo, hasta el siguiente reset (revision del
+        // area; prueba bdbp de fpga/tb/core). Desde el reset no cambia nada: la salida ya valia esto.
         else begin
-            OUT <= OUT;
+            OUT <= 16'b1_00000_00000_00000;
         end
     end
 endmodule
