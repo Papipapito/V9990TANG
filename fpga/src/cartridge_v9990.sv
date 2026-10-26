@@ -73,7 +73,7 @@ module CARTRIDGE_V9990 #(
      *    de 2 ciclos) o uno de IORQ (que con el mux dura una vuelta, 9 ciclos,
      *    con RD_n/WR_n quietos) no presenta otro flanco al core. Se mira solo
      *    RD_n/WR_n, no cs_n, justo por eso: entre dos ciclos del Z80 RD_n y WR_n
-     *    siempre vuelven a 1 al menos 1 T (10 ciclos a 10,74 MHz).
+     *    siempre vuelven a 1 al menos T - 5 ns (9,5 ciclos a 10,74 MHz).
      *  - el bus de datos se conduce mientras 'served' marque una lectura: ni
      *    un rebote de IORQ ni uno de 2 muestras de RD_n lo sueltan a mitad de
      *    la lectura (antes, un rebote de RD_n que pasara el filtro dejaba el
