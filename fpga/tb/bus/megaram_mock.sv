@@ -2,8 +2,11 @@
 // megaram_mock.sv -- MegaRAM de mentira para probar la segunda fuente del
 // pre-WAIT (PREWAIT_MEM_EN = 1). Cumple el contrato de docs/notas/bus.md:
 // baja Bus.WAIT_n como mucho 3 ciclos despues de ver la lectura por el camino
-// retrasado (WAIT_DLY, 1..3) y lo mantiene hasta que Bus.DOUT tiene el dato
-// (LAT ciclos despues), en el mismo flanco en que sube WAIT_n.
+// retrasado (en el flanco WAIT_DLY + 1 contando desde el primer ciclo en que
+// la ve: con WAIT_DLY = 2, el valor por defecto, esta en el limite del
+// contrato, y con el slot expandido la placa ve su WAIT_n en D+5) y lo
+// mantiene hasta que Bus.DOUT tiene el dato (LAT ciclos despues), en el mismo
+// flanco en que sube WAIT_n.
 // Contesta lecturas de memoria de su subranura en 4000h-BFFFh con un dato que
 // depende de la direccion (dato_mock); fuera de esa ventana no pide espera.
 //

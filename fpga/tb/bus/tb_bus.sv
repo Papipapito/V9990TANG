@@ -317,6 +317,8 @@ module tb_bus;
     bit  phase_normal = 1'b1;       // fase de uso normal (cuenta para el timeout y las rafagas)
     bit  bounce_cyc = 1'b0;
     int  bounce_kind = 0;           // 1 rebote de /RD o /WR, 2 de /IORQ
+    int  bounce_bn = 0;
+    real bounce_off = 0.0;
     int  bb_bad [0:2];              // P#0 con rebote: dato mal, por tipo de rebote
     int  bb_sv  [0:2];              // ciclos con rebote: /WAIT activado dentro del setup del Z80, por tipo
     bit  iorq_bounce_cyc = 1'b0;    // ciclo con rebote de IORQ (Bus.IORQ_n puede estar a 1 al llegar el RD/WR)
@@ -388,9 +390,12 @@ module tb_bus;
     bit        exp_armed = 1'b0;
     reg [15:0] chk_a = 16'h0000;       // copia de cur_a/cur_kind para la comprobacion del ciclo
     int        chk_k = 0;
+    bit        chk_bn = 1'b0;           // el ciclo lleva rebote (bounce_cyc ya se ha borrado cuando llega el retrasado de una escritura)
     reg brd_q = 1'b1, bwr_q = 1'b1;
     bit io_pw_cyc = 1'b0;               // el ciclo es de E/S a P#0/P#1 (para la latencia de la cadena)
     int chain_cnt = -1, chain_max = -1, chain_mem_max = -1, chain_kind = 0;
+    bit dbg_chain = 1'b0;               // +DBGCHAIN: cada nuevo maximo de la cadena
+    initial dbg_chain = $test$plusargs("DBGCHAIN");
     always @(posedge clk) begin
         brd_q <= Bus.RD_n;
         bwr_q <= Bus.WR_n;
@@ -400,6 +405,8 @@ module tb_bus;
         // suelta por K mientras n <= PREWAIT_K (PREWAIT_MEM_K en memoria).
         if (chain_cnt >= 0) begin
             if (!Bus.WAIT_n) begin
+                if (chain_kind == 1 && chain_cnt + 1 > chain_max && dbg_chain)
+                    $display("  [cadena %0t] Bus.WAIT_n en D+%0d (A=%04h)", $time, chain_cnt + 1, chk_a);
                 if (chain_kind == 1 && chain_cnt + 1 > chain_max)     chain_max = chain_cnt + 1;
                 if (chain_kind == 2 && chain_cnt + 1 > chain_mem_max) chain_mem_max = chain_cnt + 1;
                 chain_cnt = -1;
@@ -419,7 +426,7 @@ module tb_bus;
                     n_iorq_mis = n_iorq_mis + 1;
                     if (n_iorq_mis <= 6) $display("  [FAIL %0t] E/S: Bus.IORQ_n = 1 al llegar el RD/WR retrasado (A=%04h)", $time, chk_a);
                 end
-                if (io_pw_cyc && expect_drive && !bounce_cyc) begin chain_cnt = 0; chain_kind = 1; end
+                if (io_pw_cyc && expect_drive && !chk_bn) begin chain_cnt = 0; chain_kind = 1; end
             end
             else if (chk_k == 2) begin
                 n_mem_chk = n_mem_chk + 1;
@@ -531,6 +538,7 @@ module tb_bus;
                 cur_kind = kind;
                 chk_a = a;
                 chk_k = kind;
+                chk_bn = bounce_cyc;
                 exp_armed = (kind != 0);
             end
         join_none
@@ -751,7 +759,11 @@ module tb_bus;
         if (ls > st_wslot[c]) st_wslot[c] = ls;
         if (ntw > st_tw[c]) st_tw[c] = ntw;
         if (cyc_sv) begin
-            if (bounce_cyc) bb_sv[bounce_kind] = bb_sv[bounce_kind] + 1;
+            if (bounce_cyc) begin
+                bb_sv[bounce_kind] = bb_sv[bounce_kind] + 1;
+                if (bb_sv[1] + bb_sv[2] <= 6) $display("  [rebote %0t] /WAIT activado dentro del setup del Z80 en un ciclo con rebote %s de %0d muestra(s) a %0.1f ns del strobe: /WAIT en el pin a %0.1f ns, en el slot a %0.1f ns",
+                                                        $time, bounce_kind == 1 ? "de /RD-/WR" : "de /IORQ", bounce_bn, bounce_off, lp, ls);
+            end
             else            st_sv[c] = st_sv[c] + 1;
         end
         if (!expect_drive) need_wait = 1'b0;
@@ -772,6 +784,8 @@ module tb_bus;
         pc = pc + 16'd2;
         bounce_cyc = (bk != 0);
         bounce_kind = bk;
+        bounce_bn = bn;
+        bounce_off = boff;
         io_cycle(1'b1, {v, port}, v, dmy, ntw, bk, bn, boff);
         c = cat_of(port, 1'b1);
         st_n[c] = st_n[c] + 1;
@@ -787,6 +801,8 @@ module tb_bus;
         pc = pc + 16'd2;
         bounce_cyc = (bk != 0);
         bounce_kind = bk;
+        bounce_bn = bn;
+        bounce_off = boff;
         io_cycle(1'b0, {areg, port}, 8'h00, rv, ntw, bk, bn, boff);
         areg = rv;
         c = cat_of(port, 1'b0);
