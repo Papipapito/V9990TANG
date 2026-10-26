@@ -46,6 +46,10 @@
 //                  del UMA de tnCart).
 //
 //   D_ADDR, D_CTRL, D_WAIT, D_DATA: supuestos de pines del Z80 (abajo)
+//   TRACE    0/1   1: en lugar del programa, reproduce la traza de tncrom de
+//                  +TRACE=<fichero> (run.sh tncrom). Es un parametro y no solo
+//                  el plusarg porque con las dos ramas vivas Verilator 5.020
+//                  inlinea el programa entero y el C++ pasa de 0,5 a 24 MB
 //
 // Supuestos de pines del Z80 (Z80A, en ciclos de 108 MHz = 9,26 ns), los
 // mismos que el banco del area bus (docs/notas/bus.md de hito/bus, apartado
@@ -75,7 +79,8 @@ module tb_megaram #(
     parameter D_ADDR    = 12,
     parameter D_CTRL    = 8,
     parameter D_WAIT    = 13,
-    parameter D_DATA    = 6
+    parameter D_DATA    = 6,
+    parameter TRACE     = 0
 ) ();
 
     /***************************************************************
@@ -552,8 +557,12 @@ module tb_megaram #(
                     else fail($sformatf("WAIT suelto con Bus.DOUT=%02x BUSDIR_n=%0d (esperado %02x)", Bus.DOUT, Bus.BUSDIR_n, cur_exp));
                 end
             end
-            // del WAIT suelto al fin de la lectura el dato no cambia
-            if(released && cur_exp_valid && (Bus.DOUT != cur_exp || Bus.BUSDIR_n)) begin
+            // del WAIT suelto al fin de la lectura el dato no cambia. Salvo con
+            // el /RESET del MSX: msx_reset lo baja nada mas acabar la lectura en
+            // el pin, cuando en el camino retrasado aun no ha acabado, y
+            // EXPANSION_SLOT pone sus salidas en reposo (el Z80 ya tomo el dato;
+            // lo encontro la traza de tncrom, que hace "R" y luego "Z")
+            if(released && cur_exp_valid && Bus.RESET_n && (Bus.DOUT != cur_exp || Bus.BUSDIR_n)) begin
                 if(cur_inj && !STRICT) begin
                     if(!cur_viol) n_viol_inj <= n_viol_inj + 1;
                     cur_viol <= 1;
@@ -794,6 +803,45 @@ module tb_megaram #(
     endfunction
 
     /***************************************************************
+     * traza de tncrom (+TRACE=<fichero>, run.sh tncrom)
+     *  Las operaciones de bus que el tncrom real (compilado para el host,
+     *  tools/tncrom/test) hizo con el modelo en C del cartucho, desde el
+     *  encendido: "W aaaa dd" escritura, "R aaaa dd" lectura con el dato
+     *  que dio el modelo (aqui tiene que dar lo mismo el RTL), "Z 0000 00"
+     *  /RESET del MSX, "#" comentario. Las paginas 0-2 van al cartucho; una
+     *  de cada ocho lecturas es un M1 (con su refresco).
+     ***************************************************************/
+    string trace_file = "";
+    initial if(TRACE != 0 && !$value$plusargs("TRACE=%s", trace_file)) trace_file = "";
+    task automatic replay_trace();
+        int fd, r;
+        string line;
+        int unsigned n_line = 0, n_w = 0, n_r = 0, n_z = 0;
+        logic [15:0] ta;
+        logic [7:0]  td;
+        fd = $fopen(trace_file, "r");
+        if(trace_file == "" || fd == 0) begin fail({"TRACE = 1 sin +TRACE=<fichero> legible: '", trace_file, "'"}); return; end
+        slot_sel = 4'b0111;
+        while(!$feof(fd)) begin
+            r = $fgets(line, fd);
+            if(r <= 0) break;
+            n_line++;
+            if(line.len() < 9 || line[0] == "#") continue;
+            ta = 16'(line.substr(2, 5).atohex());
+            td = 8'(line.substr(7, 8).atohex());
+            case (line[0])
+                "W": begin z_write(ta, td); n_w++; end
+                "R": begin rd_chk(ta, td, $sformatf("traza linea %0d", n_line), (n_r % 8) == 3); n_r++; end
+                "Z": begin msx_reset(30); n_z++; end
+                default: fail($sformatf("traza linea %0d: '%s'", n_line, line));
+            endcase
+        end
+        $fclose(fd);
+        $display("traza %s: %0d lineas, %0d escrituras, %0d lecturas comprobadas, %0d /RESET",
+                 trace_file, n_line, n_w, n_r, n_z);
+    endtask
+
+    /***************************************************************
      * programa
      ***************************************************************/
     int unsigned banks16 [9] = '{8'h00, 8'h01, 8'h02, 8'h7F, 8'h80, 8'hBF, 8'hC0, 8'hFE, 8'hFF};
@@ -845,6 +893,10 @@ module tb_megaram #(
         if(ExpRam[1].DIN_SIZE !== RAM::DIN_SIZE_8 || ExpRam[1].ADDR !== 0 || ExpRam[1].WE_n !== 1)
             fail("borrado: el puerto no queda en reposo tras DONE");
         idle_T(20);
+
+        // ---------------- traza de tncrom (en lugar del programa) ----------------
+        if(TRACE != 0) replay_trace();
+        else begin
 
         // ---------------- Konami SCC-I RAM por defecto ----------------
         slot_sel = 4'b0110;     // paginas 1 y 2 en el slot del cartucho
@@ -1083,6 +1135,8 @@ module tb_megaram #(
         rd_chk(16'h001F, 8'h00, "1Fh tras /RESET");
         rd_chk(16'h000C, F_WP | F_BANK16 | F_SCC | F_CONT, "flags tras /RESET (ENABLE a 0 pese a ENABLE_CONTINUOUS)");
         lock();
+
+        end     // programa (TRACE = 0)
 
         // ---------------- informe ----------------
         idle_T(10);

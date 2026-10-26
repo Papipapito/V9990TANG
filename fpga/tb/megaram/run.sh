@@ -32,6 +32,12 @@
 #   wait_hito4 ESTRICTA  como wait, con el uma.sv de la rama hito/sdram (refresco
 #                        interno activo, DOUT solo tras un R/W)
 #   inj_hito4  ESTRICTA  INJ=1 con el uma.sv de hito/sdram
+#   tncrom     ESTRICTA  como wait, pero en lugar del programa del banco
+#                        reproduce las trazas del tncrom real (compilado para el
+#                        host y corrido contra un modelo en C del cartucho por
+#                        tools/tncrom/test/run.sh, que se lanza aqui): cada
+#                        lectura tiene que dar en el RTL lo que dio el modelo
+#                        (out_tncrom_<traza>.log; necesita gcc)
 # Las *_hito4 usan el uma.sv de $UMA_SV si esta definido; si no, lo sacan de la
 # rama $UMA_REF (por defecto hito/sdram) con git show. El git de WSL no lee los
 # worktrees creados desde Windows: entonces hay que sacarlo antes, p. ej.
@@ -93,11 +99,12 @@ declare -A PARAMS=(
     [inj_main]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GINJ=1 -GSTRICT=0"
     [wait_hito4]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1"
     [inj_hito4]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GINJ=1 -GSTRICT=1"
+    [tncrom]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 -GTRACE=1"
 )
 UMA_REF=${UMA_REF:-hito/sdram}
 
 VARIANTS=("$@")
-[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4)
+[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait tncrom noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4)
 
 rc=0
 for v in "${VARIANTS[@]}"; do
@@ -128,11 +135,30 @@ for v in "${VARIANTS[@]}"; do
             $p --Mdir "$OUT/obj_$v" -o tb "${files[@]}" > "$OUT/build_$v.log" 2>&1; then
         echo "  error de compilacion ($OUT/build_$v.log)"; grep -E "%Error" "$OUT/build_$v.log" | head -20; rc=1; continue
     fi
-    "$OUT/obj_$v/tb" > "$OUT/out_$v.log" 2>&1
-    grep -E "^(Z80:|borrado|lecturas|refrescos|pre-WAIT|/RD|Bus\.|rd_mem_n|histograma|SDRAM|VRAM|fallos|RESULTADO)" "$OUT/out_$v.log"
-    nerr=$(grep -c "ERROR" "$OUT/out_$v.log")
-    [ "$nerr" -gt 0 ] && { echo "  primeros errores:"; grep "ERROR" "$OUT/out_$v.log" | head -8; }
-    grep -q "RESULTADO: PASA" "$OUT/out_$v.log" || rc=1
+    runs=("$v:")
+    if [ "$v" = tncrom ]; then
+        # el tncrom real contra el modelo en C (tools/tncrom/test) deja las trazas
+        echo "  banco del host de tncrom:"
+        rm -f "$OUT"/tncrom_host/tncrom_*.trc
+        if OUT="$OUT/tncrom_host" "$HERE/../../../tools/tncrom/test/run.sh" > "$OUT/tncrom_host.log" 2>&1; then
+            grep -E "^(  traza|comprobaciones|RESULTADO)" "$OUT/tncrom_host.log" | sed 's/^/    /'
+        else
+            grep -E "^(  FALLO|comprobaciones|RESULTADO)|error" "$OUT/tncrom_host.log" | head -20 | sed 's/^/    /'
+            echo "  el banco del host de tncrom FALLA ($OUT/tncrom_host.log)"; rc=1
+        fi
+        runs=()
+        for t in "$OUT"/tncrom_host/tncrom_*.trc; do runs+=("tncrom_$(basename "$t" .trc | sed 's/^tncrom_//'):+TRACE=$t"); done
+    fi
+    for r in "${runs[@]}"; do
+        name=${r%%:*}; [ -z "$name" ] && name=$v
+        arg=${r#*:}
+        [ "$name" != "$v" ] && echo "  --- $name"
+        "$OUT/obj_$v/tb" $arg > "$OUT/out_$name.log" 2>&1
+        grep -E "^(Z80:|borrado|traza|lecturas|refrescos|pre-WAIT|/RD|Bus\.|rd_mem_n|histograma|SDRAM|VRAM|fallos|RESULTADO)" "$OUT/out_$name.log"
+        nerr=$(grep -c "ERROR" "$OUT/out_$name.log")
+        [ "$nerr" -gt 0 ] && { echo "  primeros errores:"; grep "ERROR" "$OUT/out_$name.log" | head -8; }
+        grep -q "RESULTADO: PASA" "$OUT/out_$name.log" || rc=1
+    done
 done
 echo "salidas en $OUT"
 exit $rc
