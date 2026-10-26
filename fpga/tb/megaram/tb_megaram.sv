@@ -468,6 +468,7 @@ module tb_megaram #(
      * monitor del contrato del /WAIT en Bus (top) y en el puerto
      ***************************************************************/
     logic [7:0]  exp_data = 8'h00;      // lo pone el Z80 antes de cada lectura
+    logic [15:0] exp_addr = 16'h0000;   // y la direccion que quiere leer
     logic        exp_valid = 0;
     logic        exp_hard = 1;          // 0: el dato esperado no sale de la SDRAM (SCC): solo lo comprueba el Z80
     logic        prev_rdmem_n = 1, prev_twait_n = 1, prev_pwait_n = 1, prev_trd_n = 1, prev_ack_n = 1;
@@ -488,6 +489,12 @@ module tb_megaram #(
     int unsigned d_low_min = 999;                        // duracion del pulso bajo
     int unsigned hist_rel [0:63];
     int unsigned n_rfsh_cand = 0;                        // refrescos que sin !RFSH_n serian lecturas
+    // lecturas en las que el controlador ve otra direccion que la del Z80: es
+    // el BOARD_REV1_BUS de main (sin el escaneo adaptativo de hito/bus) que no
+    // ha capturado la direccion a tiempo, no el /WAIT de la megaROM. Con
+    // STRICT es fallo; si no, se cuentan y la lectura no pasa por las
+    // comprobaciones del dato del contrato (el Z80 la cuenta igual como mal)
+    int unsigned n_addr_bad = 0;
     initial for(int i = 0; i < 64; i++) hist_rel[i] = 0;
 
     wire rdmem_n   = u_megarom.u_rom.rd_mem_n;
@@ -517,7 +524,11 @@ module tb_megaram #(
             n_mread <= n_mread + 1;
             if(!ack0_n) n_ack_low_start <= n_ack_low_start + 1;
             cur_exp <= exp_data;
-            cur_exp_valid <= exp_valid && exp_hard;
+            cur_exp_valid <= exp_valid && exp_hard && (!exp_valid || ExpBus[0].ADDR == exp_addr || STRICT);
+            if(exp_valid && ExpBus[0].ADDR != exp_addr) begin
+                n_addr_bad <= n_addr_bad + 1;
+                if(STRICT) fail($sformatf("el controlador lee %04xh y el Z80 %04xh (direccion del bus a destiempo)", ExpBus[0].ADDR, exp_addr));
+            end
             cur_inj <= inj_active;
             cur_viol <= 0;
         end
@@ -700,7 +711,7 @@ module tb_megaram #(
     // lectura con comprobacion: m1 = 1 usa un M1 (fetch), si no una lectura
     task automatic rd_chk(input logic [15:0] a, input logic [7:0] e, input string what, input bit m1 = 0);
         logic [7:0] d;
-        exp_data = e; exp_valid = 1;
+        exp_data = e; exp_addr = a; exp_valid = 1;
         if(m1) z_fetch(a, d); else z_read(a, d);
         exp_valid = 0;
         z_reads++;
@@ -1147,6 +1158,7 @@ module tb_megaram #(
         if(INJ) $display("lecturas con refresco inyectado que rompen el contrato del WAIT (dato malo al soltarlo o despues): %0d de %0d",
                          n_viol_inj, n_inj);
         $display("refrescos que sin !RFSH_n habrian sido lecturas: %0d", n_rfsh_cand);
+        $display("lecturas con otra direccion en el camino retrasado (bus de main a destiempo): %0d", n_addr_bad);
         if(PREWAIT) $display("pre-WAIT (modelo): %0d disparos, %0d soltados por K; /RD del pin -> /WAIT del pin: %0d..%0d ciclos",
                              pw_fires, pw_rel_k, d_pinw_min, d_pinw_max);
         else        $display("/RD del pin -> /WAIT del pin (solo la cadena): %0d..%0d ciclos", d_pinw_min, d_pinw_max);
