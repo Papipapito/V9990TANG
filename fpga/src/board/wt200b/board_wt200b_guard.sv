@@ -47,7 +47,11 @@
 //    19 veces el TLOCKMAX), o si se pierde (LOCK bajo LOSS_CYCLES ciclos
 //    seguidos, o en sync el reloj del slot ausente o fuera de frecuencia),
 //    quita PLL_OK, resetea el rPLL PLL_RST_CYCLES ciclos y lo reintenta. No
-//    hay lock pegajoso: PLL_OK sigue al PLL en todo momento.
+//    hay lock pegajoso: PLL_OK sigue al PLL en todo momento. "En frecuencia"
+//    son dos medidas: una ventana de 151,7 us (+-1,5 %) y un control rapido
+//    del periodo de 4,47 us (salta seguro fuera de -4,2/+4,9 %, con tres
+//    medidas seguidas), para un rPLL que siga al reloj del slot sin soltar
+//    LOCK por encima de la Fmax de CLK_BASE.
 //  - Guardia de lock:
 //    DRIVE_EN_27 = PLL_OK, LOCK alto en este momento (lock_s, sin filtro) y
 //      el sistema listo (SYS_READY, sincronizado con 2 FF). Si LOCK baja, los
@@ -97,7 +101,10 @@ module BOARD_WT200B_GUARD #(
     parameter int   SLOT_GAP        = 32,           // 1,19 us sin flanco de subida del reloj del slot: ausente
     parameter int   SLOT_WINDOW     = 4_096,        // ventana de medida de la frecuencia del slot (151,7 us)
     parameter int   SLOT_MIN        = 535,          // flancos por ventana: 543,0 a 3,579545 MHz; -1,5 %
-    parameter int   SLOT_MAX        = 551           //                                             +1,5 %
+    parameter int   SLOT_MAX        = 551,          //                                             +1,5 %
+    parameter int   FAST_EDGES      = 16,           // control rapido del periodo: periodos del slot por medida (4,47 us)
+    parameter int   FAST_MIN        = 117,          // ciclos de 27 MHz por medida (120,7 a 3,579545 MHz): pasa seguro
+    parameter int   FAST_MAX        = 124           //   de -1,9 a +2,3 %, salta seguro por debajo de -4,2 % o encima de +4,9 %
 ) (
     input  wire     CLK_27M,
 
@@ -180,7 +187,62 @@ module BOARD_WT200B_GUARD #(
             edge_cnt <= edge_next;
         end
     end
-    assign SLOT_OK = SLOT_PRESENT && freq_ok;
+    // Control rapido del periodo, para lo que la ventana tarda en ver: un rPLL
+    // que sigue al reloj del slot sin perder LOCK hasta una frecuencia por
+    // encima de su Fmax (en sync, CLK_BASE = slot x30). Cuenta los ciclos de
+    // 27 MHz entre un flanco de subida del reloj del slot y el FAST_EDGES-esimo
+    // siguiente (16 periodos, 4,47 us; 120,7 ciclos a 3,579545 MHz). La
+    // cuantificacion (+-1) y la metaestabilidad de los dos extremos (+-1)
+    // dejan pasar seguro de -1,9 a +2,3 % (la ventana de +-1,5 % cabe dentro)
+    // y saltan seguro por debajo de -4,2 % o por encima de +4,9 %. Hacen falta
+    // tres medidas seguidas fuera de banda para quitar fast_ok: un flanco
+    // espurio aislado (ruido en el CLOCK del slot) estropea como mucho dos, la
+    // que lo contiene y, si la cierra el, la siguiente, que empieza a mitad de
+    // un periodo (15 + x y 16 - x periodos: cerca de +1,5 % las dos pueden
+    // quedar por debajo de FAST_MIN; con dos medidas, el banco resetea el
+    // diseno con un solo espurio). Un cambio de frecuencia fuera de banda
+    // quita SLOT_OK en tres o cuatro medidas, menos de 20 us, en lugar de los
+    // 152-303 us de la ventana; en S_LOCKED eso baja PLL_OK y DRIVE_EN un
+    // ciclo despues. En xtal SLOT_OK no se usa y la sintesis lo quita.
+    localparam int FC_W = $clog2(FAST_MAX + 2);
+    localparam logic [FC_W-1:0] FC_TOP  = FC_W'(FAST_MAX + 1);
+    localparam logic [FC_W-1:0] FC_MIN  = FC_W'(FAST_MIN);
+    localparam logic [FC_W-1:0] FC_MAX  = FC_W'(FAST_MAX);
+    localparam int FE_W = $clog2(FAST_EDGES);
+    localparam logic [FE_W-1:0] FE_LAST = FE_W'(FAST_EDGES - 1);
+    reg [FE_W-1:0] fe_cnt   = '0;   // flancos de subida en la medida
+    reg [FC_W-1:0] fc_cnt   = '0;   // ciclos desde el primer flanco (satura en FC_TOP)
+    reg            fast_ok  = 1'b0;
+    reg [1:0]      fast_bad = 2'd0; // medidas seguidas fuera de banda (hasta 2)
+    wire [FC_W-1:0] fc_next = (fc_cnt == FC_TOP) ? FC_TOP : fc_cnt + 1'd1;
+    wire            fc_band = (fc_next >= FC_MIN) && (fc_next <= FC_MAX);
+    always_ff @(posedge CLK_27M) begin
+        if(!SLOT_PRESENT) begin
+            // sin reloj del slot: al volver, la primera medida empieza en su
+            // primer flanco y hace falta una dentro de banda
+            fast_ok  <= 1'b0;
+            fast_bad <= 2'd0;
+            fe_cnt   <= '0;
+            fc_cnt   <= '0;
+        end
+        else if(sclk_rise && fe_cnt == FE_LAST) begin
+            // fin de la medida: fc_next = ciclos entre el primer flanco y este,
+            // que abre la siguiente
+            if(fc_band) begin
+                fast_ok  <= 1'b1;
+                fast_bad <= 2'd0;
+            end
+            else if(fast_bad == 2'd2) fast_ok  <= 1'b0;     // la tercera seguida
+            else                      fast_bad <= fast_bad + 2'd1;
+            fe_cnt <= '0;
+            fc_cnt <= '0;
+        end
+        else begin
+            if(sclk_rise) fe_cnt <= fe_cnt + 1'd1;
+            fc_cnt <= fc_next;
+        end
+    end
+    assign SLOT_OK = SLOT_PRESENT && freq_ok && fast_ok;
 
     // en xtal el rPLL base no depende del reloj del slot
     wire clk_in_ok = (SYNC != 0) ? SLOT_OK : 1'b1;

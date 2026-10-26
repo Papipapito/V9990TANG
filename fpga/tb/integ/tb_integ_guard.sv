@@ -30,6 +30,12 @@
 //   turbo_marcha  el reloj del slot pasa a 5,37 MHz con el sistema listo y
 //            vuelve a los 2 ms: en sync, pines sueltos en cuanto cae LOCK,
 //            reset y reenganche; en xtal, nada
+//   deriva   con el sistema listo, el reloj del slot a -1,4 % y a +1,4 %, y a
+//            +1,0 % ocho rebotes aislados en el reloj del slot (nada); despues a
+//            4,0 MHz y a 3,40 MHz,
+//            dentro del rango del rPLL (el modelo no suelta LOCK): en sync el
+//            control rapido del periodo baja PLL_OK y DRIVE_EN en menos de
+//            20 us, sin esperar a la ventana de 151,7 us; en xtal, nada
 // En todos: /WAIT retenido (BOOT_HOLD) desde el fin de la configuracion (xtal)
 // o desde el primer flanco del reloj del slot (sync) hasta que el sistema
 // queda listo, sin huecos y como mucho 50 ms; DRIVE_EN nunca sin PLL_OK ni con
@@ -72,6 +78,7 @@ module tb_integ_guard #(
     bit   slot_on     = 1'b1;
     real  slot_period = 279.365;
     logic slot_clk    = 1'b0;
+    logic slot_spur   = 1'b0;           // pulso espurio sumado al pin (escenario deriva)
     initial begin
         forever begin
             if(slot_on) begin
@@ -150,7 +157,7 @@ module tb_integ_guard #(
     ) u_guard (
         .CLK_27M        (clk27),
         .PLL_LOCK       (pll_lock),
-        .SLOT_CLK       (slot_clk),
+        .SLOT_CLK       (slot_clk ^ slot_spur),
         .SYS_READY      (sys_reset_n),
         .WAIT_TIMEOUT   (wait_timeout),
         .PLL_RESET      (pll_reset),
@@ -274,7 +281,24 @@ module tb_integ_guard #(
     int sysrst_falls = 0;
     always @(negedge sys_reset_n) if($time > 0) sysrst_falls++;
     realtime t_drive_fall = 0.0;
-    always @(negedge drive_en) t_drive_fall = $realtime;
+    int drive_falls = 0;
+    always @(negedge drive_en) begin t_drive_fall = $realtime; if($time > 0) drive_falls++; end
+
+    // control rapido del periodo (escenario deriva): medidas fuera de banda
+    // y racha mas larga de medidas seguidas fuera de banda
+    bit fast_mon = 1'b0;
+    int fast_run = 0, fast_run_max = 0, fast_bad_n = 0;
+    always @(posedge clk27) begin
+        // fin de una medida: flanco de subida con FAST_EDGES - 1 contados
+        if(fast_mon && u_guard.SLOT_PRESENT && u_guard.sclk_rise && int'(u_guard.fe_cnt) == 15) begin
+            if(u_guard.fc_band) fast_run = 0;
+            else begin
+                fast_bad_n++;
+                fast_run++;
+                if(fast_run > fast_run_max) fast_run_max = fast_run;
+            end
+        end
+    end
 
     // BOOT_HOLD: subidas, duracion de cada pulso y el mas largo
     int      hold_rises = 0;
@@ -590,6 +614,92 @@ module tb_integ_guard #(
                         check_led(5, "listo");
                     end
                     check_invariants("turbo en marcha");
+                end
+
+                if(scen == "deriva") begin
+                    int  falls0;
+                    // 1) dentro de banda y ruido aislado: nada
+                    falls0 = drive_falls;
+                    slot_period = 279.365 / 0.986;      // -1,4 %
+                    wait_us(1_000.0);
+                    slot_period = 279.365 / 1.014;      // +1,4 %
+                    wait_us(1_000.0);
+                    // flancos espurios aislados con el slot a +1,0 %: un
+                    // rebote de 60 ns poco despues del flanco de bajada (un
+                    // flanco de subida de mas si un ciclo de 27 MHz cae en el
+                    // hueco bajo), uno por ventana de 151,7 us (la ventana
+                    // admite uno: 548,4 flancos de 551) y en distintos puntos
+                    // de la medida del control rapido. Del tercero en
+                    // adelante la cierran: esa medida dura unos 15,52 periodos
+                    // (115,9 ciclos) y la siguiente, que empieza en el
+                    // espurio, 15,48 (115,6): las dos fuera de banda
+                    // (FAST_MIN = 117), y con dos medidas seguidas bastaria
+                    // para resetear el diseno
+                    slot_period = 279.365 / 1.010;      // +1,0 %
+                    wait_us(200.0);
+                    fast_mon = 1'b1;
+                    for(int g = 0; g < 8; g++) begin
+                        int  at;
+                        real gap;
+                        at  = (g == 0) ? 3 : (g == 1) ? 0 : 15;
+                        gap = (g < 3) ? 5.0 : (g < 6) ? 5.0 + 4.0 * (g - 2) : 40.0 + 5.0 * (g - 6);
+                        wait(int'(u_guard.fe_cnt) == at);
+                        @(negedge slot_clk);
+                        #(gap) slot_spur = 1'b1;
+                        #60.0  slot_spur = 1'b0;
+                        wait_us(160.0);
+                    end
+                    wait_us(400.0);
+                    fast_mon = 1'b0;
+                    slot_period = 279.365;
+                    check(fast_run_max == 2 && fast_bad_n >= 3,
+                          $sformatf("deriva: los espurios estropean %0d medidas del control rapido, hasta %0d seguidas (esperado 2: el caso que con dos medidas reseteaba)",
+                                    fast_bad_n, fast_run_max));
+                    check(pll_ok && drive_en && sys_reset_n && pll_ok_rises == 1 && sysrst_falls == 0 && drive_falls == falls0,
+                          $sformatf("deriva: slot a -1,4 %% y a +1,4 %% (1 ms cada uno) y, a +1,0 %%, ocho rebotes aislados (seis al final de una medida del control rapido): sin perdida ni reset, DRIVE_EN sin cortes (bajadas: %0d)",
+                                    drive_falls - falls0));
+                    // 2) fuera de banda pero dentro del rango del rPLL: LOCK no cae
+                    for(int step = 0; step < 2; step++) begin
+                        real   per;
+                        string nm;
+                        bit    lock_at_loss;
+                        int    rises0;
+                        per = (step == 0) ? 250.0 : 294.118;
+                        nm  = (step == 0) ? "4,0 MHz (+11,7 %)" : "3,40 MHz (-5,0 %)";
+                        rises0 = hold_rises;
+                        t_loss_ref = $realtime;
+                        slot_period = per;
+                        if(SYNC != 0) begin
+                            wait(!pll_ok);
+                            t_lost = ($realtime - t_loss_ref) / 1000.0;
+                            lock_at_loss = pll_lock;
+                            @(posedge clk27); @(posedge clk27); #1;
+                            t_mute = (t_drive_fall - t_loss_ref) / 1000.0;
+                            check(lock_at_loss && t_lost > 0.0 && t_lost < 20.0 && t_mute >= t_lost && (t_mute - t_lost) < 0.1,
+                                  $sformatf("sync, slot a %s con LOCK alto (%0d): PLL_OK cae a los %0.3f us y DRIVE_EN a los %0.3f us (limite 20 us; la ventana tarda 152-303)",
+                                            nm, lock_at_loss, t_lost, t_mute));
+                            check(!drive_en && !boot_hold && !sys_reset_n,
+                                  $sformatf("sync, slot a %s: DRIVE_EN y BOOT_HOLD a 0, sistema en reset", nm));
+                            wait_us(2_000.0);
+                            check(!pll_ok && pll_reset,
+                                  $sformatf("sync, slot a %s durante 2 ms: el rPLL sigue en reset", nm));
+                            slot_period = 279.365;
+                            wait_ready(12_000.0, t_ready);
+                            check(drive_en && sys_reset_n && relocked,
+                                  $sformatf("sync, el slot vuelve a 3,58 MHz: listo otra vez a los %0.3f ms y RELOCKED", t_ready / 1000.0));
+                            check(hold_rises == rises0 + 1 && hold_rise >= t_pllok && hold_len > 0.0 && hold_len < 2_000.0,
+                                  $sformatf("sync, reenganche sin que se parara el reloj del slot: BOOT_HOLD solo de PLL_OK a listo (%0.1f ns)", hold_len));
+                        end
+                        else begin
+                            wait_us(2_000.0);
+                            check(pll_ok && drive_en && sys_reset_n && pll_ok_rises == 1 && drive_falls == falls0,
+                                  $sformatf("xtal, slot a %s durante 2 ms: el rPLL (cristal) sigue enganchado y el sistema listo", nm));
+                            slot_period = 279.365;
+                        end
+                    end
+                    if(SYNC != 0) check_led(4, "listo tras reenganchar");
+                    else          check_led(5, "listo");
+                    check_invariants("deriva");
                 end
             end
         end
