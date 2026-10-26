@@ -4,7 +4,8 @@
 // BSD 3-Clause License
 // 
 // Copyright (c) 2024, Shinobu Hashimoto
-// Modificaciones del V9990TANG (escaneo adaptativo): Copyright (c) 2026, Papipapito
+// Modificaciones del V9990TANG (escaneo adaptativo, pre-WAIT, timeout y
+// guardias de salida): Copyright (c) 2026, Papipapito
 // 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -44,16 +45,42 @@
  *    repasa el grupo que el salto dejo a medias y vuelve al grupo 2, de modo
  *    que la direccion que ve el dispositivo cuando le llega el RD_n/WR_n
  *    retrasado se latchea en el grupo 2 con los grupos 0/1 frescos.
- *  - Bus.ADDR quieta mientras el RD_n/WR_n retrasado esta a 0 (ADDR_HOLD).
+ *  - Pre-WAIT: IORQ confirmado en esa muestra rapida y A[7:1] = 60h/61h
+ *    (P#0/P#1 del V9990) -> /WAIT de NIVEL hasta que el WAIT_n de la cadena baje
+ *    y vuelva a subir; se suelta tambien si no baja PREWAIT_K ciclos despues de
+ *    que el evento llegue al dispositivo, o si RD_n/WR_n filtrados vuelven a 1
+ *    (3 muestras). Segunda fuente opcional (PREWAIT_MEM_EN) para la MegaRAM.
+ *  - Timeout fail-open de 2^WAIT_TMO_BITS ciclos con salida pegajosa.
+ *  - Guardias: datos, BUSDIR, DATA_DIR e INT solo con bus_ok && DRIVE_EN;
+ *    /WAIT = BOOT_HOLD || (bus_ok && DRIVE_EN && wait). bus_ok = reloj del
+ *    slot vivo (>= 64 flancos en 2^18 ciclos) y /RESET del slot suelto.
+ *    Ademas, D0-D7 no se conducen con la cola retrasada de Bus.BUSDIR_n de
+ *    la lectura anterior (DRIVE_TAIL_GUARD).
  ***************************************************************/
 module BOARD_REV1_BUS #(
     parameter               ADAPTIVE_SCAN   = 1,        // 1 = salto al grupo 2 con RD_n/WR_n filtrados (0 = escaner fijo de tnCart)
+    parameter               PREWAIT_IO_EN   = 1,        // 1 = pre-WAIT en los puertos PREWAIT_IO_BASE/MASK
+    parameter [7:0]         PREWAIT_IO_BASE = 8'h60,    // puertos que piden pre-WAIT (P#0/P#1 del V9990)
+    parameter [7:0]         PREWAIT_IO_MASK = 8'hFE,    // bits de A[7:0] que se comparan
+    parameter               PREWAIT_K       = 6,        // ciclos de espera al WAIT_n de la cadena tras el evento retrasado (E/S)
+    parameter               PREWAIT_MEM_EN  = 0,        // 1 = pre-WAIT tambien en lecturas de memoria del slot (MegaRAM)
+    parameter               PREWAIT_MEM_K   = 7,        // idem para lecturas de memoria
+    parameter               WAIT_TMO_BITS   = 12,       // timeout fail-open del /WAIT: 2^12 ciclos (37,9 us a 108 MHz)
+    parameter               ALIVE_WIN_BITS  = 18,       // ventana de la guardia de bus vivo: 2^18 ciclos (2,43 ms a 108 MHz)
+    parameter               ALIVE_MIN_EDGES = 64,       // flancos de CLOCK pedidos por ventana (potencia de 2)
     parameter               JUMP_HOLD       = 12,       // ciclos sin otro salto tras un salto (>= 11; con <= 6 el g1 puede no revisitarse nunca)
+    parameter               DRIVE_TAIL_GUARD = 1,       // 1 = no conducir D0-D7 con la cola de Bus.BUSDIR_n de la lectura anterior
     parameter               ADDR_HOLD       = 1         // 1 = Bus.ADDR quieta mientras Bus.RD_n/WR_n (retrasados) estan a 0
 ) (
     input wire              RESET_n,
     input wire              CLK,
     input wire              CLK_21M,
+
+    // Guardias (las calcula la integracion en el dominio de 27 MHz)
+    input   wire            DRIVE_EN,       // 1 = se puede conducir el slot (guardia de lock)
+    input   wire            BOOT_HOLD,      // 1 = retener al MSX con /WAIT (arranque del cartucho), sin timeout
+    output  wire            WAIT_TIMEOUT,   // pegajosa: salto el timeout fail-open del /WAIT (para el LED)
+    output  wire            BUS_OK,         // reloj del slot vivo y /RESET del slot suelto
 
     output  wire            CART_BUSDIR_n,
     output  wire            CART_INT_n,
@@ -135,11 +162,15 @@ module BOARD_REV1_BUS #(
      ***************************************************************/
     localparam [1:0] G0 = 2'd0, G1 = 2'd1, G2 = 2'd2;
     localparam [3:0] JHOLD4  = JUMP_HOLD;
+    localparam [3:0] PWK4    = PREWAIT_K;
+    localparam [3:0] PWKMEM4 = PREWAIT_MEM_K;
 
     // synthesis translate_off
     initial begin
         if(JUMP_HOLD < 7 || JUMP_HOLD > 15)
             $error("BOARD_REV1_BUS: JUMP_HOLD = %0d fuera de 7..15 (con <= 6 el grupo 1 puede no revisitarse nunca; el contador es de 4 bits)", JUMP_HOLD);
+        if(PREWAIT_K < 1 || PREWAIT_K > 14 || PREWAIT_MEM_K < 1 || PREWAIT_MEM_K > 14)
+            $error("BOARD_REV1_BUS: PREWAIT_K/PREWAIT_MEM_K = %0d/%0d fuera de 1..14 (contador de 4 bits)", PREWAIT_K, PREWAIT_MEM_K);
     end
     // synthesis translate_on
 
@@ -318,10 +349,107 @@ module BOARD_REV1_BUS #(
     end
 
     /***************************************************************
+     * Muestras frescas del grupo 2: cuantas muestras del g2 se han tomado
+     * desde el ultimo flanco de bajada de RD_n/WR_n filtrados (la del propio
+     * flanco E0 cuenta). Con 2, IORQ/MERQ/SLTSL y ff_addr son de este ciclo.
+     * Un flanco dentro de la retencion de JUMP_HOLD no vuelve a empezar la
+     * cuenta: dos flancos de bajada de RD_n/WR_n de ciclos distintos del Z80
+     * estan a >= 2 T (escritura de memoria seguida de lectura: 20 ciclos a
+     * 10,74 MHz, mas que JUMP_HOLD + 1), asi que ese es un rebote del
+     * mismo ciclo y las muestras ya tomadas siguen valiendo (si no, el rebote
+     * retrasaria el pre-WAIT hasta la siguiente visita al g2).
+     ***************************************************************/
+    logic [1:0] fresh_cnt;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n)                                    fresh_cnt <= 2'd0;
+        else if(trig && jhold == 4'd0)                  fresh_cnt <= mux_active[2] ? 2'd1 : 2'd0;
+        else if(mux_active[2] && fresh_cnt != 2'd2)     fresh_cnt <= fresh_cnt + 2'd1;
+    end
+    wire fresh = (fresh_cnt == 2'd2);
+
+    /***************************************************************
+     * Guardia de bus vivo (como el MoonTANG): flancos del CLOCK filtrado en
+     * una ventana de 2^ALIVE_WIN_BITS ciclos; con >= ALIVE_MIN_EDGES el reloj
+     * del slot esta presente. bus_ok ademas exige /RESET del slot suelto.
+     ***************************************************************/
+    localparam ALIVE_CNT_BITS = $clog2(ALIVE_MIN_EDGES) + 1;
+    logic [ALIVE_WIN_BITS-1:0]  ck_win;
+    logic [ALIVE_CNT_BITS-1:0]  ck_edges;
+    logic                       ck_alive;
+    logic                       clock_q;
+    logic                       bus_ok;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            ck_win   <= 0;
+            ck_edges <= 0;
+            ck_alive <= 0;
+            clock_q  <= 0;
+            bus_ok   <= 0;
+        end
+        else begin
+            clock_q <= CLOCK;
+            ck_win  <= ck_win + 1'd1;
+            if(ck_win == 0) begin
+                ck_alive <= ck_edges[ALIVE_CNT_BITS-1];
+                ck_edges <= 0;
+            end
+            else if((CLOCK != clock_q) && !ck_edges[ALIVE_CNT_BITS-1]) begin
+                ck_edges <= ck_edges + 1'd1;
+            end
+            bus_ok <= ck_alive && SLOT_RESET_n;
+        end
+    end
+    assign BUS_OK = bus_ok;
+
+    // DRIVE_EN y BOOT_HOLD llegan de otro dominio: sincronizados solo para el
+    // contador del timeout (en los pines van directos, combinacionales)
+    logic [1:0] drive_en_s;
+    logic [1:0] boot_hold_s;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            drive_en_s  <= 2'b00;
+            boot_hold_s <= 2'b00;
+        end
+        else begin
+            drive_en_s  <= { drive_en_s[0], DRIVE_EN };
+            boot_hold_s <= { boot_hold_s[0], BOOT_HOLD };
+        end
+    end
+
+    /***************************************************************
+     * Guardia de cola del bus de datos: Bus.BUSDIR_n llega por el camino
+     * retrasado (filtro + 9 + slot + registro del cartucho: ~14 ciclos
+     * despues del /RD del pin) y sigue a 0 ese tiempo tras el fin de la
+     * lectura. Si el siguiente /RD del Z80 baja antes (el M1 que sigue a un
+     * IN cae T - 5 ns despues con cifras de Z80A: 9,5 ciclos a 10,74 MHz,
+     * 14,5 a 7,16), la placa conduciria el dato viejo contra la memoria del
+     * MSX. drv_arm solo deja conducir en una lectura que empezo con el
+     * dispositivo en reposo: se arma con Bus.BUSDIR_n = 1 y se desarma con
+     * RD_n filtrado en reposo 3 muestras seguidas (un rebote de 2 no lo
+     * desarma).
+     ***************************************************************/
+    logic [1:0] rd_hi_cnt;
+    logic       drv_arm;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            rd_hi_cnt <= 2'd0;
+            drv_arm   <= 1'b0;
+        end
+        else begin
+            if(!RD_n)                   rd_hi_cnt <= 2'd0;
+            else if(rd_hi_cnt != 2'd3)  rd_hi_cnt <= rd_hi_cnt + 2'd1;
+            if(Bus.BUSDIR_n)                        drv_arm <= 1'b1;
+            else if(RD_n && rd_hi_cnt >= 2'd2)      drv_arm <= 1'b0;
+        end
+    end
+    wire drv_ok = (DRIVE_TAIL_GUARD == 0) || drv_arm;
+
+    /***************************************************************
      * データバス
      ***************************************************************/
     logic [7:0] DIN;
-    wire dir = !(!CART_RD_n && !Bus.BUSDIR_n);
+    wire drive = bus_ok && DRIVE_EN && drv_ok && !CART_RD_n && !Bus.BUSDIR_n;  // guardias de salida (combinacional)
+    wire dir = !drive;
     assign  CART_DATA_DIR = dir;
     assign  CART_BUSDIR_n = dir;
     assign  CART_DATA_SIG = dir ? 8'bZZZZ_ZZZZ : Bus.DOUT;
@@ -378,15 +506,109 @@ module BOARD_REV1_BUS #(
     always_ff @(posedge CLK) if(mux_active[2] && !addr_hold) ff_addr <= ADDR;
 
     /***************************************************************
-     * その他の信号の出力
+     * Pre-WAIT
+     *
+     * Dispara cuando, con las dos muestras del g2 frescas (de despues del
+     * flanco de RD_n/WR_n filtrados), IORQ esta confirmado y A[7:1] es 60h/61h
+     * con RD_n o WR_n filtrados a 0 (o, con PREWAIT_MEM_EN, SLTSL y MERQ con
+     * RD_n). Mantiene /WAIT de nivel hasta que el WAIT_n de la cadena (Bus.WAIT_n)
+     * baje y vuelva a subir. Liberacion sin esperar al timeout:
+     *  - el WAIT_n de la cadena no ha bajado PREWAIT_K (PREWAIT_MEM_K) ciclos
+     *    con el RD_n/WR_n retrasado ya en Bus (el evento llego al dispositivo y
+     *    este no pidio espera: puerto de otro, core en reset...);
+     *  - RD_n y WR_n filtrados en reposo 3 muestras seguidas (fin del ciclo o
+     *    falso disparo; un rebote de 2 muestras no lo suelta).
+     * Un disparo por ciclo: se rearma con esas mismas 3 muestras en reposo.
      ***************************************************************/
+    logic [1:0] rw_idle_cnt;
+    wire        rw_idle_now = RD_n && WR_n;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n)                    rw_idle_cnt <= 2'd0;
+        else if(!rw_idle_now)           rw_idle_cnt <= 2'd0;
+        else if(rw_idle_cnt != 2'd3)    rw_idle_cnt <= rw_idle_cnt + 2'd1;
+    end
+    wire rw_idle3 = rw_idle_now && (rw_idle_cnt >= 2'd2);    // 3a muestra en reposo seguida
+
+    wire io_match = (((ff_addr[7:0] ^ PREWAIT_IO_BASE) & PREWAIT_IO_MASK) == 8'h00);
+    wire io_hit   = (PREWAIT_IO_EN != 0) && fresh && !IORQ_n && io_match && (!RD_n || !WR_n);
+    wire mem_hit  = (PREWAIT_MEM_EN != 0) && fresh && !SLTSL_n && !MERQ_n && IORQ_n && !RD_n;
+    wire dly_act  = !delay_rd_n[0] || !delay_wr_n[0];           // el evento ya esta en Bus
+
+    logic       pw_armed;
+    logic       pw_hold;
+    logic       pw_mem;
+    logic       pw_seen;
+    logic [3:0] pw_k;
+    wire  [3:0] pw_kmax = pw_mem ? PWKMEM4 : PWK4;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            pw_armed <= 0;
+            pw_hold  <= 0;
+            pw_mem   <= 0;
+            pw_seen  <= 0;
+            pw_k     <= 0;
+        end
+        else begin
+            if(rw_idle3) pw_armed <= 1;
+            if(!pw_hold) begin
+                if(pw_armed && (io_hit || mem_hit)) begin
+                    pw_hold  <= 1;
+                    pw_armed <= 0;
+                    pw_mem   <= !io_hit;
+                    pw_seen  <= 0;
+                    pw_k     <= 0;
+                end
+            end
+            else begin
+                if(!Bus.WAIT_n) pw_seen <= 1;
+                if(dly_act && !pw_seen && pw_k != 4'hF) pw_k <= pw_k + 4'd1;
+                if((pw_seen && Bus.WAIT_n) ||                       // la cadena bajo y subio
+                   (!pw_seen && Bus.WAIT_n && pw_k >= pw_kmax) ||   // la cadena no lo pidio a tiempo
+                   rw_idle3) begin                                  // RD_n/WR_n filtrados en reposo
+                    pw_hold <= 0;
+                    pw_seen <= 0;
+                end
+            end
+        end
+    end
+
+    /***************************************************************
+     * /WAIT al slot con timeout fail-open
+     *
+     * El contador corre mientras la espera logica es la que sujeta el pin:
+     * con BOOT_HOLD a 1 no cuenta (la retencion de arranque no tiene
+     * timeout y no debe encender WAIT_TIMEOUT), y con bus_ok o DRIVE_EN a 0
+     * tampoco (el pin no sale). Se pone a 0 en cuanto la espera logica cae,
+     * asi que el siguiente acceso vuelve a tener /WAIT.
+     ***************************************************************/
+    wire wait_req = pw_hold || !Bus.WAIT_n;
+    wire wait_drv = wait_req && bus_ok && drive_en_s[1] && !boot_hold_s[1];
+    logic [WAIT_TMO_BITS:0] wtmo;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n)                    wtmo <= 0;
+        else if(!wait_drv)              wtmo <= 0;
+        else if(!wtmo[WAIT_TMO_BITS])   wtmo <= wtmo + 1'd1;
+    end
+    wire wtmo_hit = wtmo[WAIT_TMO_BITS];
+
+    logic wait_timeout_ff;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n)        wait_timeout_ff <= 0;
+        else if(wtmo_hit)   wait_timeout_ff <= 1;
+    end
+    assign WAIT_TIMEOUT = wait_timeout_ff;
+
+    /***************************************************************
+     * その他の信号の出力 (con las guardias; el pin a 1 activa el NPN)
+     ***************************************************************/
+    wire int_act = bus_ok && DRIVE_EN && !Bus.INT_n;
     if(CONFIG_BOARD::BOARD_ID == BOARD_ID::WonderTANG_101c) begin
-        assign  CART_INT_n = Bus.INT_n;
+        assign  CART_INT_n = !int_act;
     end
     else begin
-        assign  CART_INT_n = !Bus.INT_n;
+        assign  CART_INT_n = int_act;
     end
-    assign  CART_WAIT_n = !Bus.WAIT_n;
+    assign  CART_WAIT_n = BOOT_HOLD || (bus_ok && DRIVE_EN && wait_req && !wtmo_hit);
 
     /***************************************************************
      * 信号を Bus I/F に出力
