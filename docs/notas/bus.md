@@ -525,7 +525,7 @@ integración):
 
 | Puerto | Dir. | Qué conectar |
 |---|---|---|
-| `DRIVE_EN` | entrada | la guardia de lock: PLL enganchado y sistema listo, en el dominio de 27 MHz (en `hito/integ`, `BOARD_WT200B_GUARD.DRIVE_EN_27`). **Sin conectar o a 0, el cartucho no saca nada al slot.** |
+| `DRIVE_EN` | entrada | la guardia de lock: PLL enganchado y sistema listo, en el dominio de 27 MHz (en `hito/integ`, `BOARD_WT200B_GUARD.DRIVE_EN_27`). **A 0 el cartucho no saca nada al slot** (ni datos, ni `/INT`, ni `/WAIT` salvo `BOOT_HOLD`); sin conectar, el valor lo decide la herramienta (no comprobado): hay que conectarla. |
 | `BOOT_HOLD` | entrada | retención de arranque, de 27 MHz y con tope propio de tiempo (en `hito/integ`, `BOOT_HOLD_27`, 50 ms): saca `/WAIT` sin mirar `bus_ok` ni `DRIVE_EN` y sin timeout, así que **tiene que estar acotada en la integración** (si no, un PLL sin enganchar dejaría el MSX congelado) |
 | `WAIT_TIMEOUT` | salida | pegajosa, al LED |
 | `BUS_OK` | salida | informativa (LED o depuración); se puede dejar sin conectar |
