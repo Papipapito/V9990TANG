@@ -1,5 +1,5 @@
-# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-26 04:22
-# arbol: b54b870 docs/notas/sdram.md: nota del hito 4 (refresco y SDRAM)   referencia hito 1: 20936e6   2000 us por caso
+# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-26 08:41
+# arbol: 94d0e76 docs/notas/sdram.md: revision del 26/10 (manual del V9990, banco ampliado)   referencia hito 1: 20936e6   2000 us por caso
 # Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
 ## 108000 kHz
 idle_standby_108000        new    +MHZ=108000 +CH0=0 +V99=0                    gap 7.445 us (804)     init 2 | INT=269 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 
