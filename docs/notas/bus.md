@@ -308,9 +308,19 @@ encendida): el timeout está a 18 veces eso.
   a un `IN` baja su `/RD` T - 5 ns después del fin del `IN` (9,5 ciclos a
   10,74 MHz, 14,5 a 7,16): sin la guardia la placa conduciría el dato viejo contra
   la memoria del MSX. `drv_arm` solo deja conducir en una lectura que empezó con
-  `Bus.BUSDIR_n` en reposo; se desarma con `RD_n` filtrado en reposo 3 muestras.
-  Con el bus de tnCart el choque ya existía a 10,74 MHz (variante `tncart` del
-  banco).
+  `Bus.BUSDIR_n` en reposo; se desarma con el `/RD` del pin en reposo 3
+  muestras **crudas** seguidas (`rd_tail`: un flop sobre `CART_RD_n`, sin el
+  `PIN_FILTER`), y `rd_tail` corta además en el mismo ciclo, de forma
+  combinacional. Eso deja la guardia cerrada 2-3 ciclos (19-29 ns) después de
+  que suba `/RD`. Hasta la cuarta sesión se desarmaba con `RD_n` filtrado
+  3 muestras (4-5 ciclos), y con un M1 cuyo `/RD` bajara 30-45 ns después del
+  fin del `IN` (`+M1RD=30` a 10,74 MHz: dentro de especificación, porque Zilog
+  no da mínimos) la placa conducía hasta 3,2 ns el dato viejo (225-231 veces
+  por corrida; sección 9). Un rebote de 2 muestras de `/RD` sigue sin
+  desarmarla; uno de 3 es un ciclo nuevo (sección 3). Con el bus de tnCart el
+  choque ya existía a 10,74 MHz (variante `tncart` del banco).
+- **`ALIVE_CHECK`** (nuevo, 1 por defecto): con 0, `bus_ok` solo pide el
+  `/RESET` del slot suelto, sin el reloj (sección 12).
 
 ## 6. Lo que hace el chip real (fuentes)
 
@@ -343,7 +353,8 @@ Cifras del banco (las del estudio y el MoonTANG): dirección a 110 ns del flanco
 de T1; `/IORQ` a 70 y `/RD`/`/WR` a 75 ns de la subida de T2 en E/S; `/MREQ` y
 `/RD` a 70/75 ns de la bajada de T1 en memoria; `/WAIT` muestreado en la bajada
 de TW (de T2 en memoria) con 70 ns de setup; dato en la bajada de T3 con 50 ns.
-Son retardos máximos fijos: el banco no barre los mínimos. NPN: 50 ns en entrar,
+Son retardos máximos fijos (con dos plusargs de sensibilidad para adelantar el
+`/RD` del M1 y retrasar la subida de `/IORQ`, sección 8). NPN: 50 ns en entrar,
 300 en soltar con el pull-up del MSX (supuestos).
 
 | Z80 | T | `/WAIT` en E/S (1,5 T - 145) | dato de E/S (2,5 T - 125) | `/WAIT` en memoria (T - 145) |
@@ -363,6 +374,7 @@ Son retardos máximos fijos: el banco no barre los mínimos. NPN: 50 ns en entra
 | `dpb_sim.sv` | modelo de la DPB de Gowin para compilar el core |
 | `scan_model.py` | modelo del escáner (revisitas, tabla de latch y de la decisión del pre-WAIT) |
 | `tb_scan_eq.sv`, `run_eq.sh` | equivalencia ciclo a ciclo con el `BOARD_REV1_BUS` de `main` donde el hito no cambia nada a propósito (sección 9) |
+| `tb_m1spur.sv`, `run_m1spur.sh` | banco dirigido: un `IN`/`OUT` a 60h (o una lectura de nuestra ranura con `PREWAIT_MEM_EN`) seguido de un M1 de la memoria del MSX, barriendo el hueco (30-135 ns), la fase y el retraso de `/IORQ` (0/10/20 ns); 400 casos por hueco; cuenta los pre-WAIT espurios en el M1 (sección 2) |
 | `run.sh` | compila y corre la matriz en WSL |
 | `resumen.py` | tabla Markdown con lo esencial de los logs (la de la sección 9) |
 | `syn_rsc.py` | recursos por módulo del `_syn_rsc.xml` de Gowin (sección 10) |
@@ -397,7 +409,8 @@ a nuestros puertos y ninguno en los demás, con su MODE y su dato; la dirección
 `IORQ`/`MERQ` en `Bus` al llegar el `RD_n`/`WR_n` retrasado, en E/S, en nuestra
 memoria y en la ajena (M1 y memoria del MSX); `/WAIT` en el slot dentro del
 presupuesto en P#0/P#1 y que no se active dentro del setup del Z80; que el
-pre-WAIT no salte en un `IN`/`OUT` a un puerto que no sea 60h/61h; el dato
+pre-WAIT no salte en un `IN`/`OUT` a un puerto que no sea 60h/61h, ni en un M1
+o un ciclo de memoria que no lo pida (desde la cuarta sesión); el dato
 leído en la bajada de T3 (2,5 T - 125) y su estabilidad en la ventana de setup;
 la latencia de la cadena (para K); que la placa no conduzca D0-D7 sin una
 lectura legítima, ni 30 ns después de subir `/RD`, ni contra la memoria del MSX;
@@ -408,7 +421,8 @@ Criterio por velocidad (`BUS_OK` / `BUS_FAIL` al final del log):
 
 - siempre: eventos, dirección de E/S, conducción, timeout, guardias, `/INT`,
   cadena ≤ K, pre-WAIT en otro puerto (hasta 7,16 MHz; a 10,74 es un fallo
-  esperado), escrituras de registros, escrituras por `OTIR` a P#0/P#1 (21 T
+  esperado), pre-WAIT en un M1 o en un ciclo de memoria que no lo pide (a
+  todas las velocidades), escrituras de registros, escrituras por `OTIR` a P#0/P#1 (21 T
   entre bytes: 5,9 µs a 3,58 MHz, 1,96 a 10,74, más que los 1,62 µs que el
   estudio da a la espera más larga) y puertos ajenos;
 - a 3,58 y 5,37: todo lo de E/S y de memoria, con las direcciones de memoria
@@ -421,6 +435,18 @@ Criterio por velocidad (`BUS_OK` / `BUS_FAIL` al final del log):
   nuestra ranura;
 - a 10,74: además, lecturas de P#2-6 (108 ns de presupuesto frente a 148 ns).
 
+"Siempre" quiere decir a las cuatro velocidades **con los retardos del modelo**,
+que son los máximos del Z80A (Zilog no da mínimos). Para ver qué pasa con una
+CPU más rápida en las líneas que importan hay dos plusargs de sensibilidad
+(desde la cuarta sesión): `+M1RD=<ns>` adelanta el `/RD` y el `/MREQ` del M1
+(el hueco desde el fin del `IN`/`OUT` anterior pasa de T - 5 ns a
+T + M1RD - 80 ns: con `+M1RD=30`, 43 ns a 10,74 MHz y 90 a 7,16) e
+`+IORQLATE=<ns>` retrasa la subida de `/IORQ` frente a la de `/RD`/`/WR` al
+final de la E/S. La matriz se corre también con `+M1RD=30 +IORQLATE=20`
+(sección 9), con los mismos criterios. Con `-GALIVE=0` el banco prueba
+`ALIVE_CHECK` = 0 (`bus_ok` sigue a 1 con el reloj del slot parado y los
+accesos funcionan).
+
 Uso (desde Git Bash o WSL):
 
 ```
@@ -431,8 +457,12 @@ GEN="-GAHOLD=0" TAGX=sinahold fpga/tb/bus/run.sh 0:60:0   # variante
 git show main:fpga/src/cartridge_v9990.sv > fpga/tb/bus/out/cart_main.sv
 CART_SV="$PWD/fpga/tb/bus/out/cart_main.sv" TAGX=sinrearme fpga/tb/bus/run.sh 0:60:0 1:60:0   # mutante sin rearme
 EXTRA=+DBGPW fpga/tb/bus/run.sh 0:60:0     # traza de los pre-WAIT lentos
+EXTRA="+M1RD=30 +IORQLATE=20" TAGX=sens fpga/tb/bus/run.sh   # pasada de sensibilidad
+GEN="-GALIVE=0" TAGX=alive0 fpga/tb/bus/run.sh 0:60:0          # ALIVE_CHECK = 0
+git show <commit>:fpga/src/board/rev1/board_rev1_bus.sv > f; BUS_SV=f TAGX=x fpga/tb/bus/run.sh ...   # otro bus
 python3 fpga/tb/bus/scan_model.py [--barrido]
 fpga/tb/bus/run_eq.sh                      # equivalencia con el bus de main (desde Git Bash)
+fpga/tb/bus/run_m1spur.sh                  # banco dirigido del M1 (tambien con BUS_SV=)
 ```
 
 Logs en `fpga/tb/bus/out/` (ignorado por git); objetos en `~/.tb_bus_obj` (disco
@@ -618,7 +648,7 @@ integración):
 | `DRIVE_EN` | entrada | la guardia de lock: PLL enganchado y sistema listo, en el dominio de 27 MHz (en `hito/integ`, `BOARD_WT200B_GUARD.DRIVE_EN_27`). **A 0 el cartucho no saca nada al slot** (ni datos, ni `/INT`, ni `/WAIT` salvo `BOOT_HOLD`); sin conectar, Gowin 1.9.12 la ata a 0 (comprobado, aviso `EX2565`, sección 10): hay que conectarla. |
 | `BOOT_HOLD` | entrada | retención de arranque, de 27 MHz y con tope propio de tiempo (en `hito/integ`, `BOOT_HOLD_27`, 50 ms): saca `/WAIT` sin mirar `bus_ok` ni `DRIVE_EN` y sin timeout, así que **tiene que estar acotada en la integración** (si no, un PLL sin enganchar dejaría el MSX congelado) |
 | `WAIT_TIMEOUT` | salida | pegajosa, al LED |
-| `BUS_OK` | salida | reloj del slot vivo y `/RESET` del slot suelto (registro de `CLK_BASE`); sube 2,43 ms después de `RESET_n` y hasta entonces no sale nada al slot salvo `BOOT_HOLD`. `hito/integ` la quiere en `SYS_READY` de su guardia (`sys_ready && bus_ok`, comentario `FUSION hito/bus` de su top) para que `BOOT_HOLD` cubra esa ventana: es lo recomendable. Si no, se puede dejar sin conectar |
+| `BUS_OK` | salida | reloj del slot vivo y `/RESET` del slot suelto (registro de `CLK_BASE`); sube 2,43 ms después de `RESET_n` y hasta entonces no sale nada al slot salvo `BOOT_HOLD`. `hito/integ` la quiere en `SYS_READY` de su guardia (`sys_ready && bus_ok`, comentario `FUSION hito/bus` de su top) para que `BOOT_HOLD` cubra esa ventana: es lo recomendable. **Además, que se vea**: a un LED o al diagnóstico, porque con `BUS_OK` a 0 el cartucho está mudo (un slot sin `CLOCK`, sección 12) y sin indicador eso es indistinguible de un cartucho roto |
 
 - **La retención del arranque tiene que ir por `BOOT_HOLD`.** En `main` el MSX
   queda retenido mientras corre el bootloader porque `EXPANSION_SLOT`, en reset
@@ -643,8 +673,10 @@ integración):
   defecto: `ADAPTIVE_SCAN` (1), `PREWAIT_IO_EN` (1), `PREWAIT_IO_BASE` (60h),
   `PREWAIT_IO_MASK` (FEh), `PREWAIT_K` (6), `PREWAIT_MEM_EN` (0),
   `PREWAIT_MEM_K` (7), `WAIT_TMO_BITS` (12), `ALIVE_WIN_BITS` (18),
-  `ALIVE_MIN_EDGES` (64), `JUMP_HOLD` (12), `DRIVE_TAIL_GUARD` (1),
-  `ADDR_HOLD` (1). Con `ADAPTIVE_SCAN` = `PREWAIT_IO_EN` = `ADDR_HOLD` =
+  `ALIVE_MIN_EDGES` (64), `ALIVE_CHECK` (1), `JUMP_HOLD` (12),
+  `DRIVE_TAIL_GUARD` (1), `ADDR_HOLD` (1). `ALIVE_CHECK` = 0 es la salida si
+  aparece un MSX o un expansor que no lleve `CLOCK` al cartucho (sección 12).
+  Con `ADAPTIVE_SCAN` = `PREWAIT_IO_EN` = `ADDR_HOLD` =
   `DRIVE_TAIL_GUARD` = 0 el bus es el de tnCart con las guardias de salida y el
   timeout (comprobado ciclo a ciclo contra el de `main`, sección 9): es la
   vuelta atrás si algo del escáner falla en placa. Si el V9990 se
@@ -694,7 +726,39 @@ integración):
   del g2, lo ve en 0 a 2 lecturas de P#0 por corrida a 5,37 MHz (semillas 1 a
   4, 60 a 200 accesos por fase). A 3,58 MHz cabe. La tarea pide `IORQ` "confirmado" (dos
   muestras) para el disparo; aceptar una sola muestra lo evitaría a cambio de
-  pre-WAIT falsos con un pico de `IORQ`.
+  pre-WAIT falsos con un pico de `IORQ`. La revisión propuso alargar la f2 de
+  la visita rápida uno o dos ciclos (sin cambiar el CS) cuando el `IORQ_n`
+  filtrado no confirme la última muestra cruda; **no se ha hecho**, por esto:
+  el CS que sigue a la f2 se decide en el ciclo que acaba con la 2.ª muestra
+  fresca (E0+3), así que alargar solo puede depender de lo ya registrado, la
+  1.ª muestra (E0+2). Meter la 2.ª muestra cruda en la lógica del escáner
+  llevaría un pin asíncrono a la vez a `grp`, `ph` y `mux_cs_ff`, y un cambio
+  del pin junto al flanco podría dejarlos incoherentes (el CS en un grupo y el
+  escáner en otro). Con solo la 1.ª muestra, la regla posible es "alargar si
+  en ella no hay ni `IORQ` ni `MERQ`" (es lo único anómalo que se ve a tiempo,
+  porque un M1 o una lectura de memoria traen `MERQ`): cubre el rebote de 1
+  muestra en la 1.ª (confirma en E0+4, +9 ns: cabría a 5,37 MHz), no cubre el
+  rebote en la 2.ª (no se ve hasta que el CS ya ha cambiado), y con el de 2
+  muestras confirma en E0+5 (+18,5 ns: unos 139 ns en el slot con la peor
+  fase, frente a 134). Arreglaría una parte de los casos a cambio de rehacer el
+  escáner, `scan_model.py`, las tablas de revisita y la equivalencia con
+  `main`; para 0-2 lecturas por corrida a 5,37 MHz con rebotes inyectados a
+  propósito en la muestra crítica no compensa. Queda como límite conocido
+  (y como fallo esperado del banco a 5,37 MHz).
+- **El cartucho necesita el `CLOCK` del slot** (pin 42). Con `bus_ok` = reloj
+  vivo y `/RESET` suelto (la guardia que pide la tarea, como el MoonTANG), un
+  MSX o un expansor de ranuras que no lleve `CLOCK` al cartucho deja el
+  cartucho mudo: ni datos, ni `/INT`, ni `/WAIT` salvo `BOOT_HOLD` (el banco,
+  con el reloj del slot parado: `bus_ok` cae entre 2,5 y 4,7 ms después y la lectura de
+  P#3 da FFh). En el hito 1 el V9990 no dependía de él (`SYNC_CPU_UMA` = 0 en
+  `board_wt200b_config.sv`: el UMA no usa `Bus.CLK_EN`), así que eso es una
+  regresión posible frente al hito 1 en ese hardware. Dos medidas: `BUS_OK` a
+  un LED o al diagnóstico (sección 11), y el parámetro `ALIVE_CHECK` = 0, que
+  deja `bus_ok` = `/RESET` del slot suelto (probado en el banco con
+  `-GALIVE=0`: `bus_ok` sigue a 1 6 ms con el reloj parado y los accesos
+  funcionan). Con `ALIVE_CHECK` = 0 se pierde lo que la guardia protege: con la
+  placa alimentada por USB y sin MSX, el `/RESET` del multiplexor puede leerse
+  suelto y la placa sacaría `/WAIT` y datos hacia un slot apagado.
 - **Rebotes de 3 muestras o más** son un ciclo nuevo (sección 3).
 - **A7-A0 de la decisión del pre-WAIT a 10,74 MHz** (sección 1): la decisión
   puede ver la dirección del ciclo anterior; a lo sumo retrasa el pre-WAIT o mete
