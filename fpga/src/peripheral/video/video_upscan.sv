@@ -49,11 +49,14 @@
  *    en el estado 0) no lee nunca el punto 1 de cada 16, asi que BLEND = 0
  *    usa su propio R_ADDR (+2 en el estado 7: se salta el punto 8) y saca
  *    siempre R_DATA_C. Ver docs/notas/video.md.
- *  - OUT.PAL: IN.PAL pasado al dominio de DCLK (dos flops) y fijado en el
- *    flanco de VSYNC de entrada, el mismo que reinicia los contadores de
- *    salida: vale para todo el cuadro que empieza. Con 313 lineas de entrada
- *    salen 626 (out_v_rst sigue a 0: el contador vertical solo lo reinicia el
- *    VSYNC de entrada).
+ *  - OUT.PAL: IN.PAL pasado al dominio de DCLK (dos flops) y fijado al
+ *    acabar el VSYNC de entrada (el flanco de bajada es el que reinicia los
+ *    contadores de salida): vale para todo el cuadro que empezo con ese
+ *    VSYNC y cambia hacia la linea 6 de salida, antes de que
+ *    BOARD_REV1_TMDS_OUT lo tome (linea 20). Con 313 lineas de entrada
+ *    salen 626 (out_v_rst sigue a 0: el contador vertical solo lo reinicia
+ *    el VSYNC de entrada); el buffer de 3 lineas, IN_LINE/OUT_LINE y el bob
+ *    se reinician en cada VSYNC y no dependen del numero de lineas.
  ***********************************************************************/
 module VIDEO_UPSCAN #(
     parameter ENABLE_SCANLINE = 0,
@@ -258,9 +261,14 @@ module VIDEO_UPSCAN #(
     end
 
     /***************************************************************
-     * PAL (V9990TANG): IN.PAL viene de CLK_BASE y es cuasi estatico
-     * (R#7 bit 3); dos flops en el dominio de salida y se fija en el
-     * flanco de VSYNC de entrada para todo el cuadro que empieza
+     * PAL (V9990TANG): IN.PAL viene de CLK_BASE y solo cambia de un
+     * cuadro a otro; dos flops en el dominio de salida y se toma al
+     * ACABAR el VSYNC de entrada (3 lineas de entrada despues de su
+     * flanco de bajada, que es el que reinicia los contadores de
+     * salida): IN.PAL puede llegar hasta ~3 lineas tarde respecto de
+     * VS_n, o cambiar en cualquier punto del cuadro anterior despues
+     * de su VSYNC. OUT.PAL cambia hacia la linea 6 de salida y vale
+     * para el cuadro que empezo con ese VSYNC.
      ***************************************************************/
     logic [1:0] out_pal_sync;
     always_ff @(posedge DCLK or negedge RESET_n) begin
@@ -271,7 +279,7 @@ module VIDEO_UPSCAN #(
     logic out_pal;
     always_ff @(posedge DCLK or negedge RESET_n) begin
         if(!RESET_n)                              out_pal <= 0;
-        else if(out_prev_in_vs_n && !out_in_vs_n) out_pal <= out_pal_sync[1];   // IN.VSYNC
+        else if(!out_prev_in_vs_n && out_in_vs_n) out_pal <= out_pal_sync[1];   // fin de IN.VSYNC
     end
     assign OUT.PAL = out_pal;
 
