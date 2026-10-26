@@ -42,8 +42,10 @@ Sobre el chip real hay dos fuentes, y no dicen lo mismo de la VRAM en standby:
 **Decisión: la VRAM se conserva en todos los modos, también en standby.** Es
 más de lo que garantiza el chip real (su VRAM es DRAM y sin refresco se pierde
 pasado el tiempo de retención, que el manual no da) y es lo que hace openMSX.
-Motivos: un AUTO REFRESH de la SDRAM refresca el chip entero, y en la misma
-SDRAM viven, en otras configuraciones, la MegaRAM (en 0) y Nextor (en
+Motivos: el AUTO REFRESH no distingue regiones (cada uno refresca una fila, la
+que marca el contador interno de la SDRAM: `WonderTANG-ref/fpga/src/sdram.v:17-21`),
+así que no se puede dejar sin refresco la VRAM y refrescar el resto, y en la
+misma SDRAM viven, en otras configuraciones, la MegaRAM (en 0) y Nextor (en
 `70_0000h`), que no pueden perderse por que el V9990 entre en standby; el
 estudio pone como puerta del hito 4 que la VRAM sobreviva 1 h en standby; y no
 conozco ningún programa que dependa de perder la VRAM en standby (tampoco
@@ -184,9 +186,10 @@ dice AUTO REFRESH (`sdram.sv` de tnCart, líneas 261-267; igual en
 no recibía ningún AUTO REFRESH antes del MRS. Ahora mandan `CMD_REF`
 (`sdram.sv:270-280`). Los estados y los ciclos son los mismos: 8 ciclos de PRE
 a REF, de REF a REF y de REF al MRS, 74 ns a 108 MHz, por encima del tRC ≥ 55 ns
-del modelo. La secuencia PRE, dos REF y MRS es la de nand2mario para esta misma
-SDRAM (`WonderTANG-ref/fpga/src/sdram.v:157-174`). El resto de `sdram.sv` no
-cambia: la cadencia es intocable.
+del modelo y de los 60 ns que usa nand2mario para esta SDRAM (`T_RC`,
+`WonderTANG-ref/fpga/src/sdram.v:44`). La secuencia PRE, dos REF y MRS es la de
+nand2mario (`WonderTANG-ref/fpga/src/sdram.v:157-174`). El resto de `sdram.sv`
+no cambia: la cadencia es intocable.
 
 Hay un segundo cambio en `sdram.sv`, solo para simulación (`sdram.sv:109-118`).
 Verilator 5.020 no compila `localparam ADDR8_BIT_WIDTH = $bits(Ram.ADDR)`
@@ -194,7 +197,10 @@ Verilator 5.020 no compila `localparam ADDR8_BIT_WIDTH = $bits(Ram.ADDR)`
 `sdram.sv` no compilaba en ningún banco de Verilator. Con `` `ifdef VERILATOR ``
 el localparam vale 24, y un `initial` comprueba que `Ram.ADDR` es de 24 bits.
 La síntesis sigue usando la línea de tnCart: Gowin no define `VERILATOR`, y
-`u_sdram` tiene los mismos 144 FF que en el hito 1.
+`u_sdram` tiene los mismos 144 FF que en el hito 1. Va con `` `ifdef VERILATOR ``
+y no con `` `ifndef SYNTHESIS `` porque no es código que sobre en síntesis,
+sino una alternativa a una línea que Verilator no acepta: las dos ramas definen
+el localparam, y cualquier otra herramienta usa la línea original.
 
 ## Interfaces: qué cambia y qué tiene que hacer la integración
 
@@ -259,7 +265,7 @@ fpga/tb/sdram/run.sh [US]        # desde Git Bash o WSL; US = µs por caso (2000
 Compila siete builds de Verilator 5.020 en `/tmp` (WSL) y corre la matriz a 108
 y a 107,386 MHz. Escribe `fpga/tb/sdram/resultados.txt` (en el repositorio: la
 salida de la última ejecución, 2 ms por caso) y sale con 1 si algún caso no da
-lo esperado. Tarda entre 30 s y 1,5 min, según lo que corra a la vez en WSL.
+lo esperado. Tarda entre 30 s y 2 min, según lo que corra a la vez en WSL.
 `fpga/tb/sdram/resultados_20ms.txt` es la misma matriz con 20 ms por caso
 (`run.sh 20000`, de 5 a 15 min). Para escribirla ahí hay que lanzarlo desde
 WSL con `OUT=.../resultados_20ms.txt` (las variables de Git Bash no pasan a
@@ -414,18 +420,26 @@ de esta configuración: en `v9990` los mismos módulos del hito 1 miden 171 / 21
 
 Los 16 FF son `rf_age` (12), `int_req`, `int_esc` y los dos `proc_rw`. Los
 contadores de depuración se podan porque el top no los conecta. **Conectados**
-(medido en una copia temporal con las seis salidas llevadas por una XOR a un
-puerto nuevo del top): `u_uma` pasa a 215 LUT / 310 FF / 72 ALU, es decir
-+8 LUT, +77 FF y +72 ALU sobre la versión podada; la XOR de la medida (27 LUT
-en el top) no cuenta. Los avisos de la síntesis son los mismos 8 que en el
-hito 1 (CV0016 x2, NL0002 x6), ninguno de `uma.sv` ni de `sdram.sv`.
+(medido en dos copias temporales con las seis salidas llevadas a un puerto
+nuevo del top) cuestan **+77 FF y +71/72 ALU** en `u_uma`; las LUT dependen de
+cómo se conecten, por el reparto que hace Gowin entre el UMA y la lógica de
+fuera:
+
+| Conexión de la medida | `u_uma` LUT / FF / ALU | LUT de la XOR en el top |
+|---|---|---|
+| XOR de reducción de los 77 bits a un pin | 215 / 310 / 72 (+8 LUT) | 27 |
+| XOR de los contadores a un bus de 16 bits | 239 / 310 / 71 (+32 LUT) | 29 |
+
+Para presupuestar, +32 LUT, +77 FF y +72 ALU. Los avisos de la síntesis son los
+mismos 8 que en el hito 1 (CV0016 x2, NL0002 x6), ninguno de `uma.sv` ni de
+`sdram.sv`.
 
 **Build completa (P&R).** `gw_sh` con un script de dos líneas,
-`source check_sdram.tcl` y `run pnr`, desde `fpga/` (19 a 29 min en total,
+`source check_sdram.tcl` y `run pnr`, desde `fpga/` (de 19 a 38 min en total,
 según las otras builds de Gowin que corran en paralelo). La puerta del hito 1 (`tools/check_build.py
 fpga/impl/pnr/check_sdram` con los mismos argumentos que
-`docs/VERIFICATION.md` da para `v9990_xtal`) **pasa**. Se ha hecho tres veces
-sobre el mismo RTL (25/10 y dos el 26/10) con cifras idénticas:
+`docs/VERIFICATION.md` da para `v9990_xtal`) **pasa**. Se ha hecho cuatro veces
+sobre el mismo RTL (25/10 y tres el 26/10) con cifras idénticas:
 
 | | Hito 1 (`fpga/reports/hito1`) | Hito 4 |
 |---|---|---|
@@ -443,73 +457,58 @@ de `u_tg` → `u_sp`). La mejora de Fmax y los −28 CLS son variación del
 P&R, no algo que se deba a este cambio. El `.fs` (`impl/pnr/check_sdram.fs`) no
 se ha archivado ni probado en la placa: `fpga/reports/` es de la integración.
 
-## Revisiones
+## Verificación repetida
 
-### Primera revisión (26/10/2026, madrugada)
+El hito lo han hecho tres sesiones seguidas; las dos primeras se cortaron por
+el límite de sesión. Cada una releyó lo de la anterior frente a `main` y volvió
+a correr todo. **El RTL es el de los commits `737b755`, `19653d3`, `adfabdc`,
+`3b883c8` y `cbf65ea`, y no ha cambiado desde entonces.**
 
-El hito lo empezó otra sesión, que se cortó por un límite de tiempo. Se ha
-revisado todo lo suyo y se ha vuelto a comprobar lo que daba por hecho. **El
-RTL no cambia**; el banco gana un caso y un control:
-
-- `uma.sv` y `sdram.sv` releídos frente a los de `main`: los tres arreglos
-  hacen lo que dice esta nota y nada más. El cambio de `DOUT` solo tras un R/W
-  (`proc_rw`) es necesario y no un extra: sin él, un cliente con handshake que
-  pida R/W y RFSH a la vez lee tras el ACK la lectura del canal 1 que se copió
-  al terminar su RFSH aplazado. El banco no lo cubría (el caso R/W + RFSH solo
-  corría con el V9990 en standby, donde no hay lecturas del canal 1); ahora
-  corre también con el V9990 activo (`rw_rfsh_v99`), y el control `mutrw`
-  demuestra que lo detecta.
-- Banco vuelto a correr (`run.sh` y `run.sh 20000`): `TOTAL: PASA`; los casos
-  que ya había dan cifras idénticas a las de la sesión anterior (el banco es
-  determinista). `run.sh` apunta ahora el código de salida del simulador si
-  muere sin informe (ver "Cómo se prueba").
-- Síntesis (`check_sdram.tcl`) y P&R vueltas a hacer sobre el árbol: mismas
-  cifras por módulo, mismo informe de timing y la puerta pasa (arriba).
-- Citas (fichero:línea) comprobadas en sus ficheros; openMSX descargado en el
-  master `a557de7` del 25/10/2026.
-- **Corregido:** la nota decía que ninguna afirmación tocaba al chip real salvo
-  la de openMSX. El manual del V9990 dice que en standby no hay refresco de
-  VRAM; ahora está en "Fuentes" y la conservación de la VRAM en standby figura
-  como desviación consciente del chip. La decisión de diseño no cambia.
-- Comprobados también el aviso `PINMISSING` de Verilator (tabla de interfaces)
-  y que Icarus 12 no compila `ram.sv` ni `uma.sv`.
-
-### Segunda revisión (26/10/2026, mañana)
-
-La sesión de la primera revisión también se cortó. Se ha vuelto a revisar y a
-correr todo. **El RTL y el banco no cambian**; la nota gana el reset del UMA
-(en "Cómo funciona"), los puntos 5 y 6 de la integración, un riesgo (ranura con
-la SDRAM ocupada) y cómo lanzar la matriz de 20 ms sin pisarla.
-
-- `uma.sv` y `sdram.sv` releídos otra vez frente a `main`: los tres arreglos y
-  `proc_rw`, nada más. Las líneas citadas de los dos ficheros siguen siendo
-  las de la nota.
-- `run.sh` (2 ms) y `run.sh 20000`: `TOTAL: PASA`, y las cifras de cada caso
-  son las mismas que en la primera revisión; en los dos ficheros de resultados
-  solo cambia la cabecera (fecha y commit).
-- Síntesis (`check_sdram.tcl`) sobre el árbol y sobre `main` (`20936e6`) en una
-  copia de ruta corta: `u_uma` 207 / 233 frente a 171 / 217, `u_sdram`
-  243 / 144 frente a 246 / 144, total 11 549 / 2 167 / 6 189 / 24 frente a
-  11 565 / 2 166 / 6 173 / 24, mismos 8 avisos. Con las seis salidas de
-  depuración conectadas (copia temporal, XOR a un puerto nuevo del top),
-  `u_uma` 215 LUT / 310 FF / 72 ALU. Todo igual que lo medido antes. Las cifras
-  del encargo (178 / 217 y 245 / 144) son de la tabla de módulos de la síntesis
-  `full` del estudio (sección 3), como ya decía la nota.
-- P&R y puerta de `check_build.py`: **PASA**, con las cifras de la tabla de
-  arriba (14 123 / 8 651 / 24, Fmax 110,303 MHz, slack 0,193 / 0,074 ns, 0
-  endpoints violados) y ningún camino de `u_uma` ni de `u_sdram` entre los 25
-  peores de setup.
-- Comprobado otra vez a mano: el error de Verilator 5.020 con
-  `$bits(Ram.ADDR)` en un `localparam` (`sdram.sv` de `main`, línea 109), los
-  seis `PINMISSING`, el `syntax error` de Icarus 12, las líneas de openMSX
-  (`V9990.cc:123-125` y `:374-380`, `V9990.hh:270`, en `a557de7`), el texto
-  del manual en la página 80 (el PDF es escaneado, sin capa de texto: se ha
-  leído en la imagen de la página 86) y una muestra de las citas de tnCart,
-  MoonTANG y nand2mario (`megarom_controller.sv:309/323/326/342/345`,
-  `t9990_timing.sv:543-546`, `wv_to_sdram.v:40`,
-  `board_wt200b_clock.sv:128/181-184`, `WonderTANG-ref/fpga/src/sdram.v:17-21`).
-- No se ha probado en la placa: sigue pendiente la puerta del hito 4 (punto 2
-  de la integración).
+- **Primera revisión (26/10, madrugada).** El banco ganó el caso R/W + RFSH con
+  el V9990 activo (`rw_rfsh_v99`) y el control `mutrw`: demuestran que
+  `proc_rw` hace falta (sin él, un cliente con handshake que pida R/W y RFSH a
+  la vez lee tras el ACK la lectura del canal 1 copiada al acabar su RFSH
+  aplazado). `run.sh` apunta el código de salida del simulador si muere sin
+  informe. La nota pasó a citar el manual del V9990 (sin refresco de VRAM en
+  standby) y a tratar la conservación de la VRAM en standby como desviación
+  consciente del chip.
+- **Segunda revisión (26/10, mañana).** Sin cambios de RTL ni de banco. La nota
+  ganó el reset del UMA, los puntos 5 y 6 de la integración, el riesgo de la
+  ranura con la SDRAM ocupada y cómo lanzar la matriz de 20 ms sin pisarla.
+- **Tercera revisión (26/10, tarde).** Sin cambios de RTL ni de banco.
+  - `uma.sv` y `sdram.sv` releídos frente a `main`, también los casos límite
+    (escalación con RFSH del canal 0 pendiente, `INT_REFRESH = 0`, alternancia
+    estricta de `exec_timing[0]` y `[1]` con `SYNC_CLK_EN = 0`, `DOUT` del
+    canal 1 tras un `RAM_RF`): los tres arreglos y `proc_rw`, nada más.
+  - `run.sh` y `run.sh 20000`: `TOTAL: PASA` en los 48 casos de cada matriz,
+    con las mismas cifras caso por caso; solo cambia la cabecera.
+  - Síntesis del árbol y de `main` (`20936e6`, copia en ruta corta): las cifras
+    de la tabla de arriba, mismos 8 avisos. **Corregido:** el coste de las
+    salidas de depuración conectadas depende de cómo se conecten; la nota daba
+    solo la medida con la XOR de reducción (+8 LUT), y con un bus de 16 bits
+    salen +32 LUT (tabla de "Síntesis").
+  - P&R (37 min, con otras tres builds de Gowin a la vez) y puerta de
+    `check_build.py`: **PASA**, con las cifras de la tabla de "Síntesis"
+    (14 123 / 8 651 / 24, Fmax 110,303 MHz, slack 0,193 / 0,074 ns, 0
+    endpoints violados, mismos avisos) y ningún camino de `u_uma` ni de
+    `u_sdram` entre los 25 peores de setup.
+  - `DBG_RF_MAXGAP` leído en el banco: 1579 con el cliente al 100 % (con el
+    V9990 activo y en standby), 799 con el canal 0 libre y 839 con el Z80 a
+    7,16 MHz sin `/RFSH`; los 1584 y 804 de la columna `gap` son el primer
+    intervalo, desde el último REF de la inicialización.
+  - Comprobado a mano: el error de Verilator 5.020 con `$bits(Ram.ADDR)` en el
+    `sdram.sv` de `main` (línea 109) y que el del árbol compila; los seis
+    `PINMISSING` y los tres `WIDTHEXPAND` de `--lint-only`; el `syntax error`
+    de Icarus 12 en los puertos de `ram.sv` y `uma.sv`; openMSX en el
+    master actual (`powerUp` borra la VRAM; en el reset por `SYSTEM_CONTROL`,
+    el comentario de que en un MSX real ni la paleta ni la VRAM se borran);
+    las líneas citadas de `megarom_controller.sv`, `bootloader.sv`,
+    `t9990_ram.sv`, `t9990_timing.sv`, `wv_to_sdram.v` y del `sdram.v` de
+    nand2mario. **Corregido:** la nota decía que un AUTO REFRESH refresca el
+    chip entero; refresca una fila (la del contador interno), y lo que importa
+    para la decisión de standby es que no distingue regiones.
+- Ninguna de las tres ha probado nada en la placa: sigue pendiente la puerta
+  del hito 4 (punto 2 de la integración).
 
 ## Riesgos y observaciones
 
