@@ -25,8 +25,10 @@
 // depuracion, +HB=<us> (latido), +DBGCHAIN (cada nuevo maximo de la cadena) y
 // +DBGPW (cada pre-WAIT de mas de 8 ciclos, con el estado del ultimo salto); de
 // sensibilidad (los retardos de arriba son maximos y Zilog no da minimos),
-// +M1RD=<ns> (/RD del M1 a <ns> de la bajada de T1 en vez de 75, y /MREQ 5 ns
-// antes: el hueco desde el fin del IN/OUT anterior pasa de T - 5 a T + M1RD - 80)
+// +M1RD=<ns> (/RD del M1 a <ns> de la bajada de T1 en vez de 75, /MREQ 5 ns
+// antes y la direccion del M1 adelantada lo mismo, para no mezclar un /RD
+// minimo con una direccion a su retardo maximo: el hueco desde el fin del
+// IN/OUT anterior pasa de T - 5 a T + M1RD - 80)
 // y +IORQLATE=<ns> (/IORQ sube <ns> despues que /RD o /WR al final de la E/S).
 // Salida: tabla de resultados y BUS_OK / BUS_FAIL (criterio por velocidad en
 // docs/notas/bus.md).
@@ -575,12 +577,14 @@ module tb_bus;
         if (t > $realtime) #(t - $realtime);
     endtask
 
-    task automatic addr_phase(input real t1, input [15:0] a, input int kind);
+    // adv: la direccion llega adv ns antes que con el retardo maximo (solo el
+    // M1 con +M1RD, para que la direccion siga a T/2 - 35 ns del /RD)
+    task automatic addr_phase(input real t1, input [15:0] a, input int kind, input real adv);
         fork
             begin
                 at(t1 + T_AGL);
                 s_a = 16'($urandom);
-                at(t1 + T_AD);
+                at(t1 + T_AD - adv);
                 s_a = a;
                 prev_a = cur_a;
                 cur_a = a;
@@ -629,7 +633,7 @@ module tb_bus;
         win_next(is_ours(a[7:0]) ? 1 : 0, wr, a[3:0] - V99_BASE[3:0], wd);
         cyc_sv = 1'b0;
         io_pw_cyc = is_ours(a[7:0]) && (a[3:1] == 3'b000);
-        addr_phase(t1, a, 1);
+        addr_phase(t1, a, 1, 0.0);
         if (wr) fork begin at(t1 + TZ / 2.0 + T_DOUT); z_val = wd; z_drv = 1'b1; end join_none
         t2 = t1 + TZ;
         fork begin at(t2 + T_IORQ); s_iorq_n = 1'b0; end join_none
@@ -699,7 +703,7 @@ module tb_bus;
         at(t1);
         zc_kind = 2; zc_a = pc;
         win_next(0, 1'b0, 4'h0, 8'h00);
-        addr_phase(t1, pc, 3);
+        addr_phase(t1, pc, 3, T_STB - t_m1rd);
         fork begin at(t1 + 80.0); s_m1_n = 1'b0; end join_none
         fork begin at(t1 + TZ / 2.0 + T_MREQ + (t_m1rd - T_STB)); s_mreq_n = 1'b0; end join_none
         fork begin at(t1 + TZ / 2.0 + t_m1rd); s_rd_n = 1'b0; end join_none
@@ -728,7 +732,7 @@ module tb_bus;
         zc_kind = ours ? 3 : 4; zc_a = a;
         win_next(0, 1'b0, 4'h0, 8'h00);
         cyc_sv = 1'b0;
-        addr_phase(t1, a, ours ? 2 : 3);
+        addr_phase(t1, a, ours ? 2 : 3, 0.0);
         fork begin at(t1 + TZ / 2.0 + T_MREQ); s_mreq_n = 1'b0; end join_none
         ts = t1 + TZ / 2.0 + T_STB;
         t_stb = ts;
@@ -764,7 +768,7 @@ module tb_bus;
         at(t1);
         zc_kind = 5; zc_a = a;
         win_next(0, 1'b0, 4'h0, 8'h00);
-        addr_phase(t1, a, ours ? 2 : 3);
+        addr_phase(t1, a, ours ? 2 : 3, 0.0);
         fork begin at(t1 + TZ / 2.0 + T_MREQ); s_mreq_n = 1'b0; end join_none
         if (ours) fork begin at(t1 + TZ / 2.0 + T_SLT); s_sltsl_n = 1'b0; end join_none
         fork begin at(t1 + TZ / 2.0 + T_DOUT); z_val = d; z_drv = 1'b1; end join_none
