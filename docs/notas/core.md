@@ -86,6 +86,21 @@ nibble): 0 posición estándar, 1..7 = 1..7 pasos a la izquierda/arriba, Fh..8 =
   openMSX (`DISPLAY_START` y `VSCAN` se programan con `getTopBorder` y
   `getBottomBorder`). Con R#16 = 00h HS, VS y EO son, ciclo a ciclo, los del
   hito 1 (prueba `hito1`).
+- **Cuándo se toma R#16.** En la línea 12 de la ventana, en el punto
+  `H_SYNC_PERIOD + 40`, se lee R#16 y se ponen los contadores de sincronismo
+  en ventana + desplazamiento (en régimen estable ya están ahí y no cambia
+  nada). Ahí el sincronismo está en su línea 5..20, después del VS y lejos
+  del final del cuadro, y el punto cae después del HS y antes del final de la
+  línea en todos los modos, así que un cambio de R#16 deja **un** cuadro de
+  sincronismo de 262/313 ± 16 líneas y **una** línea de ± 60 puntos (en el
+  borrado superior de la ventana, sin DE), nunca dos VS seguidos ni un cuadro
+  sin VS. La primera versión reajustaba en el (0,0) de la ventana, que está a
+  −9..+8 líneas del límite del cuadro de sincronismo: con R#16 de F0h a 10h
+  salían dos VS a 2 líneas y de 70h a 80h 509 líneas sin VS (lo encontró la
+  revisión de Codex; prueba `r16chg`). En openMSX el sincronismo es regular
+  (`frameStart` cada 262/313 líneas) y lo que se mueve es el principio de la
+  imagen dentro del cuadro (`getTopBorder`); aquí, para no tocar los
+  contadores de la ventana, se mueve el sincronismo, una vez por cambio.
 - **PAL y R#16.** El bit PAL se toma al empezar el cuadro de sincronismo
   (`pal_s`, que da la salida `PAL`) y la ventana lo copia al pasar de su
   línea 9 a la 10 (`pal_w`): con R#16 el VS cae como mucho 9 líneas antes o 7 después del
@@ -192,6 +207,7 @@ Pruebas de `run_t9990_core.sh` (todas exigen `LOST_SLOTS=0` salvo `assert`):
 | `ports` | P#4, P#7, P#8-P#11, P#12-P#15 leen FFh después de una lectura de P#5 | `PORTS_OK` |
 | `eor` | cursores frente a un modelo de openMSX píxel a píxel: B1 BD16 (EOR con CC = 0 y con CC ≠ 0, solape, oculto, invisible, R#28, fuera de pantalla, Y con vuelta por arriba), B1 BD16 entrelazado (los dos campos), B1 BP4 y B2 BP4 en NTSC y PAL | `EOR_OK` |
 | `r16` | diez valores de R#16 en B1, P1, B3, P2, B2, B4, B1 entrelazado, B1 PAL y B4 PAL entrelazado: posición del VS en la ventana, subida de DE frente a HS y primera línea de DE frente a VS | `R16_OK` |
+| `r16chg` | R#16 escrito doce veces a mitad de cuadro en B1 entrelazado y B4 PAL entrelazado, con cambios que cruzan el límite del cuadro de sincronismo (F0h→10h, 10h→80h, 80h→70h, 0Fh→01h, 08h→07h, 88h→77h...): cuadros de total ± 16 líneas, líneas de ± 60 puntos, HS de ancho fijo, VS de 3 líneas con HS, FIELD que alterna en cada VS; de vuelta en 00h, régimen exacto | `R16CHG_OK` |
 | `assert` | con el ACK 8 ciclos tarde la aserción salta | `ASSERT_SELFTEST_OK` |
 | `hito1` | salida de vídeo (HS, VS, R, G, B, DE, EO, IL en cada `DCLK_EN`) idéntica punto a punto a la del core del hito 1 en B1, P1, P2, B3, B2, B4 y B1 entrelazado | `video identico` |
 | `replay` | `REPLAY=<.rpl> VRAMOUT=<.bin> OMSX=<vram>`: diff de la VRAM | `VRAM identica a openMSX` |
@@ -292,5 +308,21 @@ del hito 1 era del blitter) los tiene que medir el P&R de la integración.
   influye; aquí no influye.
 - **Fuera del alcance** (estudio, sección 9): B0/B7, B5/B6, ROM kanji (P#8-P#11
   solo leen FFh), prelectura de P#0.
-- Codex no ha revisado el diff: la llamada de segunda opinión se quedó sin cuota
-  (`You've hit your usage limit`).
+- **Revisión de Codex** (segunda opinión sobre el diff del core, 26/10/2026,
+  solo lectura). Tres hallazgos:
+  1. *R#16 cambiado en marcha sacaba dos VS seguidos o se saltaba uno*: real,
+     **arreglado** (ver R#16, "Cuándo se toma R#16"; prueba `r16chg`, que
+     falla con el RTL anterior y pasa con el nuevo).
+  2. *El +1/+2 de la Y del cursor toma IL en vivo; openMSX fija `interlaced`
+     en `frameStart`*: cierto, pero solo cambia algo si se escribe el bit IL de
+     R#7 a mitad de cuadro, y solo en ese cuadro; el bitmap del tiny9990
+     (`BG_Y`) también usa R#7 en vivo y el cursor va con él. No se toca.
+  3. *EO sin IL (R#7 = 04h)*: en openMSX el bit EO del estado alterna en cada
+     cuadro siempre (`frameStart`: `status ^= 0x02`) y con EO activo se
+     alternan las líneas pares e impares aunque no haya entrelazado
+     (`V9990SDLRasterizer.cc` `drawBxMode`, `isEvenOddEnabled`). El tiny9990
+     solo lo hace con IL y EO juntos, también en el bitmap (`STATUS.EO`
+     forzado a 0 sin IL, `BG_Y`): es anterior a este hito y el cursor sigue al
+     bitmap. No se toca (cambiaría el bitmap del hito 1).
+  Lo demás que miró (EOR/CC, el anillo de la paleta, anchuras, síntesis,
+  `ifndef SYNTHESIS`) lo dio por bueno.
