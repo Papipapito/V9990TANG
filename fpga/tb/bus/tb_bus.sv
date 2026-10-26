@@ -321,6 +321,7 @@ module tb_bus;
     real bounce_off = 0.0;
     int  bb_bad [0:2];              // P#0 con rebote: dato mal, por tipo de rebote
     int  bb_sv  [0:2];              // ciclos con rebote: /WAIT activado dentro del setup del Z80, por tipo
+    real bb_wslot [0:2];            // ciclos con rebote: peor /RD|/WR -> /WAIT en el slot, por tipo
     bit  iorq_bounce_cyc = 1'b0;    // ciclo con rebote de IORQ (Bus.IORQ_n puede estar a 1 al llegar el RD/WR)
     bit  tb_go = 1'b0;              // arranque hecho (bus_ok a 1): antes no se cuentan eventos
     bit  expect_drive = 1'b1;       // DRIVE_EN = 1 y bus vivo: se espera /WAIT en P#0/P#1
@@ -755,8 +756,12 @@ module tb_bus;
         real lp, ls;
         lp = w_pin0  ? 0.0 : (wpin_seen  ? (t_wpin  - t_stb) + T_FPGA_CO : -1.0);
         ls = w_slot0 ? 0.0 : (wslot_seen ? (t_wslot - t_stb) : -1.0);
-        if (lp > st_wpin[c])  st_wpin[c]  = lp;
-        if (ls > st_wslot[c]) st_wslot[c] = ls;
+        // W_pin / W_slot: peor latencia sin rebotes; la de los ciclos con rebote va aparte
+        if (!bounce_cyc) begin
+            if (lp > st_wpin[c])  st_wpin[c]  = lp;
+            if (ls > st_wslot[c]) st_wslot[c] = ls;
+        end
+        else if (ls > bb_wslot[bounce_kind]) bb_wslot[bounce_kind] = ls;
         if (ntw > st_tw[c]) st_tw[c] = ntw;
         if (cyc_sv) begin
             if (bounce_cyc) begin
@@ -1290,7 +1295,7 @@ module tb_bus;
             st_n[c] = 0; st_bad[c] = 0; st_unst[c] = 0; st_wbud[c] = 0; st_sv[c] = 0; st_bn[c] = 0;
             st_wpin[c] = -1.0; st_wslot[c] = -1.0; st_tw[c] = 0;
         end
-        for (int i = 0; i < 3; i++) begin bb_bad[i] = 0; bb_sv[i] = 0; end
+        for (int i = 0; i < 3; i++) begin bb_bad[i] = 0; bb_sv[i] = 0; bb_wslot[i] = -1.0; end
         $display("== tb_bus: TOPO=%0d (%s) V99_BASE=%02h MEMPW=%0d Z80 a %0.3f MHz (T = %0.1f ns) SEED=%0d N=%0d",
                  TOPO, TOPO == 0 ? "con EXPANSION_SLOT" : "sin EXPANSION_SLOT", V99_BASE, MEMPW, mhz, TZ, seed, NACC);
         $display("   BOARD_REV1_BUS: ADAPTIVE_SCAN=%0d PREWAIT_IO_EN=%0d ADDR_HOLD=%0d DRIVE_TAIL_GUARD=%0d PREWAIT_K=%0d PREWAIT_MEM_K=%0d",
@@ -1357,6 +1362,7 @@ module tb_bus;
         fail = 0; expd = 0;
         slow = (hz > 6000000) ? ((hz > 9000000) ? 2 : 1) : 0;   // 0: 3,58/5,37; 1: 7,16; 2: 10,74
         $display("");
+        $display("   (W_pin, W_slot: peor latencia /RD|/WR del Z80 -> /WAIT, sin los ciclos con rebote; W>pres y W_setup tampoco los cuentan)");
         $display("   categoria            accesos  dato_mal inestab  rebote  W>pres  W_setup  W_pin(ns) W_slot(ns) TW_max");
         for (int c = 0; c < NCAT; c++) if (st_n[c] > 0)
             $display("   %-18s %8d %9d %7d %7d %7d %8d %10.1f %10.1f %6d", cat_name[c], st_n[c], st_bad[c], st_unst[c], st_bn[c], st_wbud[c], st_sv[c], st_wpin[c], st_wslot[c], st_tw[c]);
@@ -1372,8 +1378,8 @@ module tb_bus;
         $display("   revisita maxima (ciclos entre parejas): g0 %0d, g1 %0d, g2 %0d", revisit_max[0], revisit_max[1], revisit_max[2]);
         $display("   pre-WAIT: %0d disparos en P#0/P#1, peor /RD|/WR -> pw_hold %0d ciclos; /WAIT seguido maximo en uso normal %0d ciclos",
                  pw_fires, pw_lat_max, wait_run_max);
-        $display("   ciclos con rebote: P#0 con dato mal / /WAIT dentro del setup del Z80: rebote de /RD o /WR %0d / %0d, de /IORQ %0d / %0d",
-                 bb_bad[1], bb_sv[1], bb_bad[2], bb_sv[2]);
+        $display("   ciclos con rebote: P#0 con dato mal / /WAIT dentro del setup del Z80: rebote de /RD o /WR %0d / %0d, de /IORQ %0d / %0d; peor /WAIT en el slot %0.1f / %0.1f ns",
+                 bb_bad[1], bb_sv[1], bb_bad[2], bb_sv[2], bb_wslot[1], bb_wslot[2]);
         $display("   rebotes inyectados %0d; RD/WR sin E/S: %0d con /WAIT; sin dispositivo: rafaga maxima de /WAIT %0d ciclos",
                  n_bounce, glitch_wait, nodev_wait_max);
         $display("   conduccion: sin lectura legitima %0d, tarde %0d, choques %0d; Z80 colgado %0d; /WAIT soltado dentro del setup %0d (informativo)",
