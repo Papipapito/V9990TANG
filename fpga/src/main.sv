@@ -61,8 +61,12 @@
 //    eso (build_common.tcl)
 //  - en la configuracion v9990 todo lo de la MegaRAM queda en ramas de
 //    generate muertas que solo nombran modulos e interfaces sin definir (sin
-//    referencias con punto): asi elabora tambien en Verilator sin
-//    bootloader.sv (tb/integ/lint_top.sh)
+//    referencias con punto), y la build v9990 no compila bootloader.sv: asi
+//    elabora en GowinSynthesis (builds v9990_xtal y v9990_sync) y no rompe
+//    Verilator 5.020, que tolera modulos sin definir en una rama muerta pero
+//    no referencias con punto a una interfaz sin definir (comprobado con un
+//    caso minimo; el top entero no pasa por Verilator por las referencias con
+//    punto en constantes de tnCart, p. ej. $bits(SoundExternal[0].Signal))
 //
 // Hueco para la fusion con hito/megaram: MEGAROM_CLEAR (megarom_clear.sv:
 // RESET_n, CLK, RAM_IF.HOST Ram, output DONE) va tras HAVE_MEGAROM_CLEAR,

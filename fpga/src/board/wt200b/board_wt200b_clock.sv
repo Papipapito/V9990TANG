@@ -132,13 +132,15 @@ module BOARD_WT200B_CLOCK /* synthesis syn_preserve=1 */ (
      ***************************************************************/
     // FCLKIN 3,58, IDIV_SEL 0 (/1), FBDIV_SEL 29 (x30), ODIV_SEL 8:
     // CLKOUT = 3,579545 x 30 = 107,386 MHz, PFD = 3,58 MHz, VCO = CLKOUT x 8
-    // = 859 MHz. Limites del GW2AR-18 C8/I7 (DS226-2.7E, tabla 3-20): entrada
-    // y PFD 3-500 MHz, VCO 500-1250 MHz, jitter de periodo de la entrada
-    // < 20 % o 1 ns, ciclo de trabajo de la entrada >= 25 % (3-49 MHz). Con
-    // x30 y ODIV 8 el reloj del slot vale entre 3,0 y 5,2 MHz para el rPLL;
-    // BOARD_WT200B_GUARD solo lo suelta con 3,579545 MHz +-1,5 %. UG286-2.0.2E
-    // (nota a la tabla 5-2): si el reloj de entrada cambia o es inestable, el
-    // rPLL se resetea cuando vuelva a ser estable (lo hace la guardia).
+    // = 859 MHz. Limites del GW2AR-18 C8/I7 (DS226-1.9.1, tabla 4-18; la
+    // 2.7E no se pudo leer): CLKIN y PFD 3-500 MHz, VCO 500-1250 MHz, CLKOUT
+    // 3,906-625 MHz; UG286-2.0.2E, tabla 5-3: FCLKIN "3" a "500". Con x30 y
+    // ODIV 8 el reloj del slot vale entre 3,0 y 5,2 MHz para el rPLL (el PFD
+    // a 3,58 queda un 19 % sobre el minimo); BOARD_WT200B_GUARD solo lo suelta
+    // con 3,579545 MHz +-1,5 %. UG286-2.0.2E (nota a la tabla 5-2): si el
+    // reloj de entrada cambia o es inestable, el rPLL se resetea cuando vuelva
+    // a ser estable (lo hace la guardia). Los limites de jitter y de ciclo de
+    // trabajo de la entrada no estan en esas dos versiones: sin comprobar.
 if(CONFIG_BOARD::SYNC_CPU_CLK) begin
     rPLL u_pll_base (
         .CLKOUT(CLK_MEM),

@@ -40,12 +40,13 @@
 //  - Gestor del rPLL: suelta el reset (en sync, solo con el reloj del slot
 //    presente y en frecuencia), espera LOCK seguido LOCK_STABLE ciclos y da
 //    PLL_OK (2,43 ms: UG286-2.0.2E, nota a la tabla 5-2, avisa de que LOCK
-//    puede dar glitches mientras engancha y pide vigilarlo al menos 2 ms;
-//    DS226-2.7E, tabla 3-20: TLOCKMAX 1 ms); sin enganche en LOCK_TIMEOUT, o
-//    si se pierde (LOCK bajo
-//    LOSS_CYCLES ciclos seguidos, o en sync el reloj del slot ausente o fuera
-//    de frecuencia), quita PLL_OK, resetea el rPLL PLL_RST_CYCLES ciclos y lo
-//    reintenta. No hay lock pegajoso: PLL_OK sigue al PLL en todo momento.
+//    puede dar glitches mientras engancha y pide vigilarlo al menos 2 ms; el
+//    tiempo maximo de enganche no esta en las versiones del DS226 que se han
+//    podido leer: LOCK_TIMEOUT lo da por perdido a los 19,4 ms); sin
+//    enganche en LOCK_TIMEOUT, o si se pierde (LOCK bajo LOSS_CYCLES ciclos
+//    seguidos, o en sync el reloj del slot ausente o fuera de frecuencia),
+//    quita PLL_OK, resetea el rPLL PLL_RST_CYCLES ciclos y lo reintenta. No
+//    hay lock pegajoso: PLL_OK sigue al PLL en todo momento.
 //  - Guardia de lock: DRIVE_EN_27 = PLL_OK y el sistema listo (SYS_READY,
 //    sincronizado con 2 FF); BOOT_HOLD_27 = PLL_OK y el sistema aun no listo,
 //    con un tope de HOLD_CYCLES (50 ms) que solo se rearma cuando el sistema
