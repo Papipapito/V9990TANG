@@ -20,37 +20,46 @@ sección 8.
 
 ## Resultados
 
-Gowin 1.9.12.03, GW2AR-LV18QN88C8/I7, place 2, route 1, el mismo árbol en las
-dos variantes. Las dos pasan la puerta (`PUERTA: PASA`, salida completa en
+Gowin 1.9.12.03, GW2AR-LV18QN88C8/I7, el RTL de `f00c622` (con los arreglos de
+la revisión, sección 10) en las dos variantes, cada una con su juego de
+opciones de síntesis y P&R (sección 6: con las del hito 1 ninguna de las dos
+pasa). Las dos pasan la puerta (`PUERTA: PASA`, salida completa en
 `fpga/reports/hito3/check_build.txt` y `fpga/reports/hito6/check_build.txt`).
+Las builds del árbol `83940f4` (antes de la revisión: 13 258 / 8 189 / 110,19
+MHz en `xtal`, 13 124 / 8 180 / 109,59 MHz en `sync`) quedan en la historia
+de git (`288c808`, `94e11db`).
 
 | | Hito 1 (`v9990_xtal`) | **Hito 3: `v9990_xtal`** | **Hito 6: `v9990_sync`** |
 |---|---|---|---|
 | CLK_BASE | 108,000 MHz (27 x 4) | 108,000 MHz | 107,386 MHz (reloj del slot x 30) |
-| Lógica (LUT + ALU) | 14 140 (11 551 + 2 589) | **13 258** (10 663 + 2 595): **−882** (−6,2 %) | 13 124 (10 518 + 2 606) |
-| Registros | 6 173 | 5 780 (−393) | 5 805 |
-| CLS | 8 679 (84 %) | **8 189 (79 %): −490** (−5,6 %) | 8 180 (79 %) |
+| Opciones (síntesis / place / route) | map 1 / 2 / 1 | **map 2 / 2 / 0** | map 1 / **0** / 1 |
+| Lógica (LUT + ALU) | 14 140 (11 551 + 2 589) | **13 247** (10 658 + 2 589): **−893** (−6,3 %) | 13 404 (10 803 + 2 601) |
+| Registros | 6 173 | 5 781 (−392) | 5 820 |
+| CLS | 8 679 (84 %) | **8 267 (80 %): −412** (−4,7 %) | 8 366 (81 %) |
 | BSRAM | 24/46 | 24/46 | 24/46 |
-| rPLL / CLKDIV / PRIMARY / LW | 2/2, 3/8, 8/8, 7/8 | 2/2, 3/8, 8/8, 7/8 | 2/2, 3/8, 8/8, 7/8 |
+| rPLL / CLKDIV / PRIMARY / LW | 2/2, 3/8, 8/8, 7/8 | 2/2, 3/8, 8/8, 6/8 | 2/2, 3/8, 8/8, 7/8 |
 | `set_clock_groups` | Actived | Actived (16 órdenes, todas activas) | Actived (16 órdenes, todas activas) |
 | Endpoints violados: setup / hold | 0 / 0 | 0 / 0 | 0 / 0 |
-| Peor slack: setup / hold | +0,092 / +0,074 ns | +0,184 / +0,076 ns | +0,187 / +0,074 ns |
-| Peor slack: recovery / removal | +5,990 / +0,460 ns | +5,224 / +0,451 ns | +4,870 / +0,451 ns |
-| **Fmax CLK_BASE** (≥ 109) | 109,08 MHz | **110,19 MHz** | **109,59 MHz** |
-| Carrera CLK_BASE → DCLK (setup / hold) | +1,912 / +4,351 ns | +0,847 / +4,241 ns | **+0,277** / +4,877 ns |
-| Modelo de DCLK (`-offset` / flanco real del SDF) | 8,2 / 8,362 ns | 8,2 / 8,362 ns (+0,162) | 7,55 / 7,724 ns (+0,174) |
-| Fmax DCLK / CLK_TMDS_P / CLK_27M | 146,4 / 65,9 / — MHz | 142,9 / 70,0 / 177,1 MHz | 131,6 / 64,4 / 168,8 MHz |
+| Peor slack: setup / hold | +0,092 / +0,074 ns | +0,097 / +0,074 ns | +0,183 / +0,077 ns |
+| Peor slack: recovery / removal | +5,990 / +0,460 ns | +1,118 / +0,730 ns | +4,965 / +0,459 ns |
+| **Fmax CLK_BASE** (≥ 109) | 109,08 MHz | **109,15 MHz** | **112,84 MHz** |
+| Carrera CLK_BASE → DCLK (setup / hold) | +1,912 / +4,351 ns | **+0,106** / +4,502 ns | +0,183 / +4,923 ns |
+| Modelo de DCLK (`-offset` / flanco real del SDF) | 8,2 / 8,362 ns | 8,2 / 8,380 ns (+0,180) | 7,55 / 7,719 ns (+0,169) |
+| Fmax DCLK / CLK_TMDS_P / CLK_27M | 146,4 / 65,9 / — MHz | 186,4 / 64,0 / 164,4 MHz | 136,8 / 67,8 / 162,8 MHz |
 | Avisos (síntesis; P&R) | CV0016 x2, NL0002 x6; PR1014 x1 | CV0016 x3, NL0002 x5; PR1014 x1 | CK3000 x3, CV0016 x3, NL0002 x5; PR1014 x2 |
 
-- El peor camino de setup sigue siendo del blitter en las dos
-  (`u_blit/state_5` → `ENQUEUE_DATA_*/CE`, `SRC_NX_*`): la Fmax es la del
-  core, como en el hito 1.
-- **La carrera CLK_BASE → DCLK de `sync` tiene poco margen** (+0,277 ns,
-  `u_sel/OUT_4` → `video_b_7`, 3,259 ns de datos frente a 2,883 en `xtal`): es
-  colocación. Como el flanco real de DCLK llega 0,174 ns después que el
-  modelado, el margen real en el modelo lento es algo mayor; hay que vigilarlo
-  cuando entren los parches del core (`hito/core`) y el arreglo de `DCLK` de
-  `hito/bus`.
+- **Los márgenes son finos y dependen de la colocación.** En `xtal` el peor
+  camino de setup es del blitter (`u_blit/u_fifo/buffer_RAMREG_21` →
+  `DEQUEUE_DATA_1`, +0,097 ns: la Fmax es la del core, como en el hito 1) y la
+  carrera CLK_BASE → DCLK (`u_sel/OUT_3` → `video_b_6`) queda a +0,106 ns; en
+  `sync` el peor camino es la carrera (`u_sel/OUT_1` → `video_b_4`, +0,183
+  ns). La carrera es un solo hilo largo entre `u_sel` (columna 52) y los
+  `video_b_*` (columnas 3-9): en el barrido de la sección 6 sale de −0,586 a
+  +1,988 ns según dónde caigan. Hay que volver a mirarla cuando entren los
+  parches del core (`hito/core`) y el arreglo de `DCLK` de `hito/bus`.
+- El peor *recovery* de `xtal` (+1,118 ns) es la red de `SYS_RESET_n`
+  (`u_main/u_sysrst/SYS_RESET_n_s0` → `u_vdp/PB_DISABLE`), con mucho abanico:
+  también colocación.
 - Los avisos, leídos uno a uno: `CV0016` son las tres entradas sin carga
   (`mspi_miso`, `TF_DAT0`, `UART_RX`); `NL0002` son `EXPANSION_RAM`, los dos
   `SOUND_MIXER` y sus `LIMITER_FF`, barridos porque en `v9990` no hay ningún
@@ -62,8 +71,8 @@ dos variantes. Las dos pasan la puerta (`PUERTA: PASA`, salida completa en
   con CLK_TMDS_P): relojes de cristales distintos, o de otro rPLL, cuyos cruces
   son los asíncronos que corta el `set_clock_groups` (la síntesis no lee el
   `.sdc`; el STA del P&R sí). Ningún `TA*` en ninguna de las dos.
-- El *placement* del hito 3 no es el del hito 1, así que la Fmax (+1,1 MHz) y
-  los slacks cambian por colocación además de por el recorte.
+- El *placement* del hito 3 no es el del hito 1, así que la Fmax y los slacks
+  cambian por colocación además de por el recorte.
 
 ## 1. Recorte de la carcasa (hito 3)
 
@@ -113,12 +122,14 @@ dos variantes. Las dos pasan la puerta (`PUERTA: PASA`, salida completa en
 
 ### Ahorro medido
 
-Frente a la build del hito 1: **−882 de lógica, −393 registros, −490 CLS, 0
-BSRAM**, con la guardia, el POR y el LED nuevos ya dentro. El estudio esperaba
-−841 de lógica solo por el recorte (bootloader + flash + SPI + slot expandido)
-antes de añadir nada. Reparto por módulo, de la síntesis
-(`*_syn_rsc.xml`, LUT / FF / ALU; referencia: la build `v9990` del estudio en
-`Temp/v99wt/v9990`, mismo RTL que el hito 1, que reprodujo su lógica exacta):
+Frente a la build del hito 1: **−893 de lógica, −392 registros, −412 CLS, 0
+BSRAM**, con la guardia, el POR y el LED nuevos ya dentro (la build del hito 3
+de antes de la revisión daba −882 / −393 / −490: la lógica es casi la misma y
+los CLS dependen del empaquetado de cada colocación). El estudio esperaba −841
+de lógica solo por el recorte (bootloader + flash + SPI + slot expandido)
+antes de añadir nada. Reparto por módulo, de la síntesis (`*_syn_rsc.xml`, LUT
+/ FF / ALU; referencia: la build `v9990` del estudio en `Temp/v99wt/v9990`,
+mismo RTL que el hito 1, que reprodujo su lógica exacta):
 
 | Módulo | Referencia | Hito 3 | Diferencia |
 |---|---|---|---|
@@ -127,18 +138,21 @@ antes de añadir nada. Reparto por módulo, de la síntesis
 | `u_main/u_sltexp` (slot expandido) | 49 / 49 / 0 | — | −49 / −49 / 0 |
 | `u_uma` (el canal 0 se queda sin cliente) | 171 / 217 / 0 | 90 / 167 / 0 | −81 / −50 / 0 |
 | LED (`LED` de tnCart → `STATUS_LED`) | 63 / 50 / 25 | 5 / 26 / 24 | −58 / −24 / −1 |
-| `u_guard` (POR, gestor del rPLL, guardia) | — | 114 / 82 / 25 | +114 / +82 / +25 |
+| `u_guard` (POR, gestor del rPLL, guardia) | — | 119 / 83 / 20 | +119 / +83 / +20 |
 | `u_rst`, `u_sysrst`, `u_bus_guard`, `u_clk` | 1 / 0 / 0 | 5 / 4 / 0 | +4 / +4 / 0 |
-| `u_main/u_v9990` (mismo RTL; ruido de síntesis) | 8 700 / 4 809 / 748 | 8 652 / 4 809 / 767 | −48 / 0 / +19 |
-| **Total** | 11 565 / 6 173 / 2 166 | 10 678 / 5 780 / 2 193 | **−887 / −393 / +27** |
+| `u_main/u_v9990` (mismo RTL; ruido de síntesis) | 8 700 / 4 809 / 748 | 8 660 / 4 809 / 764 | −40 / 0 / +16 |
+| resto (`u_bus`, `u_sdram`, `u_dac_ext`, `u_tmds`, `u_upscan`) | 1 804 / 700 / 1 377 | 1 794 / 690 / 1 377 | −10 / −10 / 0 |
+| **Total** (con la celda propia del top) | 11 565 / 6 173 / 2 166 | 10 674 / 5 781 / 2 185 | **−891 / −392 / +19** |
 
-El recorte por sí solo son unos **−964 LUT / −469 FF / −41 ALU**; lo nuevo,
-**+123 LUT / +112 FF / +49 ALU**. En `sync` la guardia mide 152 / 107 / 36 (el
-medidor de frecuencia del reloj del slot no se poda). Para el plan del
-estudio (sección 9: si el recorte devuelve menos de 150 CLS, las palancas
-R#16/EOR/`BLEND=0` entran ya): en `v9990` devuelve 490 CLS netos; la
-configuración que aprieta es `v9990_megaram`, que aquí solo se ha podido
-ensayar (sección 8).
+El recorte por sí solo (bootloader, flash, SPI, slot expandido, el canal 0
+del UMA y el `LED` de tnCart entero) son **−969 LUT / −495 FF / −41 ALU**; lo
+nuevo (guardia, cadena de reset y `STATUS_LED`), **+128 LUT / +113 FF / +44
+ALU**; el resto, ruido de síntesis. En `sync` la guardia mide 188 / 122 / 31
+(el medidor de frecuencia y el control rápido del periodo del reloj del slot
+no se podan). Para el plan del estudio (sección 9: si el recorte devuelve
+menos de 150 CLS, las palancas R#16/EOR/`BLEND=0` entran ya): en `v9990`
+devuelve 412 CLS netos; la configuración que aprieta es `v9990_megaram`, que
+aquí solo se ha podido ensayar (sección 8).
 
 ## 2. Variantes de reloj (hito 6)
 
@@ -339,8 +353,9 @@ la placa.
   5/4` (134,23 MHz), `CLK_TMDS_P` /5 (26,85 MHz), `DCLK` con el modelo de
   `xtal` (`-divide_by 4`, en el grupo de `CLK_BASE`) y `-offset 7.55`: latencia
   del rPLL 4,686 + red 2,274 + tC2Q 0,232 + LUT más rápida 0,371 = 7,563 ns,
-  redondeado hacia abajo como el 8,2 de `xtal`. Lo confirma la build del hito
-  6: el `.sdf` da 7,724 ns de flanco real (+0,174 con la ruta a la OR). Con el
+  redondeado hacia abajo como el 8,2 de `xtal`. Lo confirman las builds del hito
+  6: el `.sdf` da 7,724 ns de flanco real en la de `83940f4` y 7,719 ns en la
+  rehecha tras la revisión (+0,174 y +0,169 con la ruta a la OR). Con el
   8,2 de `xtal` el modelo iría 0,476 ns por detrás del flanco real (eso lo vio
   una build de prueba de la sesión anterior que no se archivó; las cifras de
   latencia que da coinciden con las de esta). `CLK_3_58M` va en un grupo
@@ -365,29 +380,71 @@ la placa.
 ## 6. Scripts y puerta
 
 `fpga/build_common.tcl` tiene la lista de ficheros y las opciones; cada
-`build_<cfg>_<variante>.tcl` fija `CFG` y `VARIANT` y lo carga. Salida en
-`fpga/impl/pnr/<cfg>_<variante>.*` (las cuatro escriben en el mismo `impl/`:
-una cada vez, y archivar antes de la siguiente). La MegaRAM añade
-`cartridge_megarom.sv`, `megarom_configure.sv`, `megarom_controller.sv`,
+`build_<cfg>_<variante>.tcl` fija `CFG`, `VARIANT` y, si hace falta,
+`BUILD_OPTS` (opciones de síntesis y de P&R, pares `-opción valor` de
+`set_option`; por defecto las del hito 1, `-place_option 2 -route_option 1`) y
+lo carga. Salida en `fpga/impl/pnr/<cfg>_<variante>.*` (las cuatro escriben en
+el mismo `impl/`: una cada vez, y archivar antes de la siguiente). La MegaRAM
+añade `cartridge_megarom.sv`, `megarom_configure.sv`, `megarom_controller.sv`,
 `megarom_clear.sv`, `scc.sv` y `config/v9990_megaram.sv`, más `bootloader.sv`,
 `flash.sv` y `spi.sv` solo por sus definiciones (`XFER`, `XFER_IF`,
 `FLASH_IF`, `SPI_IF`; no se instancia nada de ellos) y
 `system/megarom_xfer_tie.sv`. Hasta la fusión las dos builds de MegaRAM se
-paran al empezar (comprobado: `gw_sh` sale con código 1 y "faltan 2
-fichero(s): config/v9990_megaram.sv, src/peripheral/msx/megarom_clear.sv");
-con los ficheros ya fusionados, se paran si `HAVE_MEGAROM_CLEAR` sigue
-comentado (comprobado en una copia con los dos ficheros puestos: código 1 y
-"en src/main.sv falta descomentar `define HAVE_MEGAROM_CLEAR"). Cada build tarda de 18 a 40 minutos en esta máquina (con otras
-builds en paralelo).
+paran al empezar (comprobado de nuevo sobre `6ebe4ff`: `gw_sh` sale con código
+1 y "faltan 2 fichero(s): config/v9990_megaram.sv,
+src/peripheral/msx/megarom_clear.sv"); con los ficheros ya fusionados, se
+paran si `HAVE_MEGAROM_CLEAR` sigue comentado (comprobado en una copia con los
+dos ficheros puestos: código 1 y "en src/main.sv falta descomentar `define
+HAVE_MEGAROM_CLEAR"). Cada build tarda de 5 a 40 minutos en esta máquina
+(con route 0 o 2, unos 5; con route 1, de 18 a 40, con otras builds en
+paralelo).
+
+**Opciones por variante.** Síntesis y P&R son deterministas (el cuerpo del
+`.fs` sale idéntico entre builds del mismo árbol con las mismas opciones),
+pero un cambio mínimo del RTL mueve la síntesis del core (±250 LUT de ruido en
+`u_v9990` y `u_upscan`) y la colocación entera, y la Fmax del core y la
+carrera CLK_BASE → DCLK no tienen margen. Con los arreglos de la revisión (solo
+la guardia, en `CLK_27M`) las opciones del hito 1 dejaron de pasar la puerta
+en las dos variantes, así que se barrieron sobre el RTL de `f00c622` (árbol
+`6ebe4ff`, copias en `Temp/v99wt/fx_*`, puerta con `--sin-ref`). Fmax de
+CLK_BASE en MHz, peor slack de setup y carrera en ns:
+
+| Opciones (síntesis / place / route) | `xtal`: Fmax · setup · carrera | `sync`: Fmax · setup · carrera |
+|---|---|---|
+| auto / 2 / 1 (hito 1; = place 1; = `-replicate_resources 1`) | 113,17 · −0,077 · −0,077: FALLA | 107,43 · +0,004 · +0,183: FALLA (Fmax) |
+| auto / 2 / 2 (= place 1; = `-clock_route_order 1`) | 108,65 · −0,182 · −0,182: FALLA | 113,25 · −0,044 · −0,044: FALLA |
+| auto / 2 / 0 (= `-opt_goal area`; = `-clock_route_order 1`) | 110,31 · −0,077 · −0,077: FALLA | 107,71 · +0,028 · +0,183: FALLA (Fmax) |
+| auto / 0 / 1 | 109,06 · −0,015 · −0,015: FALLA | **112,84 · +0,183 · +0,183: PASA** |
+| auto / 0 / 2 (= `-clock_route_order 1`) | 114,50 · −0,015 · −0,015: FALLA | 124,54 · −0,044 · −0,044: FALLA |
+| auto / 0 / 0 (= `-opt_goal area`) | 108,97 · −0,015 · −0,015: FALLA | 107,72 · +0,029 · +0,183: FALLA (Fmax) |
+| `-map_option 2` / 2 / 0 (= `-clock_route_order 1`) | **109,15 · +0,097 · +0,106: PASA** | 107,79 · +0,034 · +0,078: FALLA (Fmax) |
+| `-map_option 2` / 0 / 0 | 108,06 · −0,105 · −0,105: FALLA | 107,85 · −0,359 · −0,359: FALLA |
+| `-map_option 2` / 2 / 2 | — | 110,46 · −0,088 · −0,088: FALLA |
+| `-map_option 2` / 0 / 2 | — | 122,73 · −0,586 · −0,586: FALLA |
+| `-opt_goal timing` / 0 / 0 | 108,01 · +0,001 · +1,444: FALLA (Fmax) | 107,46 · +0,006 · +1,653: FALLA (Fmax) |
+| `-opt_goal timing` / 2 / 0 | 108,32 · +0,027 · +1,738: FALLA (Fmax) | 109,29 · +0,162 · +1,988: PASA, pero 14 663 de lógica y 8 798 CLS |
+
+"=" quiere decir el mismo cuerpo de `.fs`: `-place_option 1` coloca igual que
+2; `-replicate_resources 1`, `-clock_route_order 1` y `-opt_goal area` no
+cambian nada; `-place_option 3` y 4 no existen en este dispositivo ("unknown
+place option value"). `-map_option 2` (mapeo LUT5 sin más LUT) da la misma
+lógica que el mapeo por defecto con otro netlist; `-opt_goal timing` añade
+de 1 120 a 1 260 de lógica y arregla la carrera, pero no la Fmax. Se eligen
+`-map_option 2 -place_option 2 -route_option 0` en `xtal` y `-place_option 0
+-route_option 1` en `sync` (la síntesis por defecto, sin más lógica), fijados
+en `build_v9990_xtal.tcl` y `build_v9990_sync.tcl`. Las de MegaRAM siguen con
+las del hito 1 hasta su primera build. **Al cambiar el RTL (la fusión) hay
+que volver a barrer**: el juego que pasa hoy no tiene por qué pasar mañana; la
+palanca de fondo es el arreglo de `DCLK` de `hito/bus` y los parches del core.
 
 `tools/check_build.py` admite `--sin-ref "motivo"` (build sin referencia de
 recursos: el punto 4 frente a la referencia no se aplica y lo dice; sin él y
 sin `--ref-*` la puerta sigue saliendo `INCOMPLETA`), `--max-bsram`
 (obligatorio con `--sin-ref`) y `--compara LOGICA,CLS,BSRAM` (diferencia con
 otra build, informativa). El false path permitido sobre `DCLK` acepta el
-nombre nuevo `u_rst/reset_n_s0`. Comprobado sobre la build archivada del
-hito 3: sin `--ref-*` ni `--sin-ref`, y con `--sin-ref` sin `--max-bsram`,
-la puerta sale `INCOMPLETA` (código 2).
+nombre nuevo `u_rst/reset_n_s0`. Comprobado de nuevo sobre la build archivada
+del hito 3: sin `--ref-*` ni `--sin-ref`, y con `--sin-ref` sin
+`--max-bsram`, la puerta sale `INCOMPLETA` (código 2).
 
 Comandos de puerta, desde la raíz del repositorio y después de
 `cd fpga && gw_sh build_<cfg>_<variante>.tcl` (las mismas opciones fijas en
@@ -396,17 +453,17 @@ los logs son los que escribe `gw_sh` en `impl/`):
 
 - **`v9990_xtal`** (referencia: la build del hito 3, mismo árbol):
   ```
-  python tools/check_build.py fpga/impl/pnr/v9990_xtal --ref-logic 13258 --ref-cls 8189 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_xtal.log --log fpga/impl/pnr/v9990_xtal.log --sdc fpga/constraints/v9990_xtal.sdc
+  python tools/check_build.py fpga/impl/pnr/v9990_xtal --ref-logic 13247 --ref-cls 8267 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_xtal.log --log fpga/impl/pnr/v9990_xtal.log --sdc fpga/constraints/v9990_xtal.sdc
   ```
   La del hito 3 se pasó sin referencia: en lugar de `--ref-* --tol`,
   `--sin-ref "hito 3: recorte de la carcasa (...)" --compara 14140,8679,24
   --max-bsram 46`.
 - **`v9990_sync`** (referencia: la build del hito 6):
   ```
-  python tools/check_build.py fpga/impl/pnr/v9990_sync --ref-logic 13124 --ref-cls 8180 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_sync.log --log fpga/impl/pnr/v9990_sync.log --sdc fpga/constraints/v9990_sync.sdc
+  python tools/check_build.py fpga/impl/pnr/v9990_sync --ref-logic 13404 --ref-cls 8366 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_sync.log --log fpga/impl/pnr/v9990_sync.log --sdc fpga/constraints/v9990_sync.sdc
   ```
-  La del hito 6, con `--sin-ref "hito 6: primera build de la variante sync
-  (...)" --compara 13258,8189,24 --max-bsram 46`.
+  La del hito 6, con `--sin-ref "hito 6: variante sync (...)" --compara
+  13247,8267,24 --max-bsram 46`.
 - **`v9990_megaram_xtal`** y **`v9990_megaram_sync`**: la primera build tras
   la fusión no tiene referencia del mismo árbol (la del estudio es
   `v9990_mega`, 15 494 / 9 111 / 29):
@@ -422,20 +479,23 @@ los logs son los que escribe `gw_sh` en `impl/`):
   o bash). `fpga/reports/hito3/` es `v9990_xtal`; `fpga/reports/hito6/` es
   `v9990_sync` (la `xtal` del mismo árbol es la del hito 3).
 
-**Reproducibilidad.** La primera build `v9990_xtal` (03:58) leyó `main.sv`,
-`board_wt200b_clock.sv` y `board_wt200b_guard.sv` antes de un cambio solo de
-comentarios; se repitió desde el árbol ya commiteado (05:11) y el cuerpo del
-`.fs` salió **idéntico** (CheckSum `0xB677`, anotado en
-`fpga/reports/hito3/v9990_xtal.fs.txt`). Lo archivado en `hito3/` es esa
-segunda build. La `v9990_sync` se compiló ya con el árbol commiteado.
+**Reproducibilidad.** Las dos builds archivadas se compilaron en el propio
+worktree desde el árbol commiteado (`893eecd` y `32c70b5`, con las opciones
+ya en los `build_*.tcl`), y el cuerpo de cada `.fs` sale **idéntico** al de
+la build del barrido con las mismas opciones (anotado en
+`fpga/reports/hito3/v9990_xtal.fs.txt` y
+`fpga/reports/hito6/v9990_sync.fs.txt`). Además, la build por defecto de
+`sync` del árbol `6ebe4ff` da el mismo `.fs` que la de `f00c622`
+(`Temp/v99wt/integ_r3s`): los dos commits de en medio no tocan el RTL.
 
 ## 7. Banco (Verilator 5.020, WSL)
 
-`bash tb/integ/run.sh` desde `fpga/` (en WSL; de 3 a 9 min según lo que
+`bash tb/integ/run.sh` desde `fpga/` (en WSL; de 1 a 9 min según lo que
 corra en paralelo). Resultado del 26/10/2026 sobre `f00c622` (árbol
-commiteado, tras los arreglos de la revisión): **19 de 19 ejecuciones pasan**
-(pins: 64 casos y 273 comprobaciones; guardia: 9 escenarios en `xtal` y 9 en
-`sync`, de 13 a 35 comprobaciones cada uno; 175 en `xtal` y 181 en `sync`).
+commiteado, tras los arreglos de la revisión), repetido en la sesión de
+arreglos sobre el mismo RTL: **19 de 19 ejecuciones pasan** (pins: 64 casos y
+273 comprobaciones; guardia: 9 escenarios en `xtal` y 9 en `sync`, de 13 a 35
+comprobaciones cada uno; 175 en `xtal` y 181 en `sync`).
 
 - `tb_integ_guard`: `BOARD_WT200B_GUARD`, `SYSTEM_RESET`,
   `SYSTEM_RESET_HOLD` y `STATUS_LED` reales con sus parámetros de la build
@@ -495,20 +555,27 @@ commiteado, tras los arreglos de la revisión): **19 de 19 ejecuciones pasan**
   el relevo `BOOT_HOLD` → `DRIVE_EN` solape un ciclo como mucho y que el
   /WAIT del pin no tenga huecos con el V9990 pidiéndolo, con el PLL
   enganchado o en el arranque en frío.
-- **El banco nuevo contra la guardia anterior** (`board_wt200b_guard.sv` de
-  `83940f4` en una copia aparte, con los mismos `SYSTEM_RESET` y `STATUS_LED`;
-  seis ejecuciones): fallan todas, y solo por los dos hallazgos. En las seis,
-  `BOOT_HOLD` = 0 durante el POR (esperado 1) y en el arranque `BOOT_HOLD` no
-  sube hasta los 6 641,2 µs (`PLL_OK`) en lugar de a los 0,019 µs (`xtal`) o
-  0,278 µs (`sync`): `lento` 3 fallos de 15 en cada variante, `tope` 2 de 16.
-  En `xtal perdida` (6 de 31), además, `DRIVE_EN` no cae en el hueco de LOCK
-  de 50 µs ni en la pérdida hasta `PLL_OK` (5 442 ciclos de 27 MHz con
-  `DRIVE_EN` y LOCK bajo); en `sync perdida` (5 de 28) el arranque en frío
-  tras volver el reloj del slot empieza 5 583 µs tarde; en `sync
-  turbo_marcha` (5 de 30), 896 ciclos con `DRIVE_EN` y LOCK bajo.
+- **El banco de los hallazgos 1 y 2 contra la guardia anterior.** El banco
+  de `f00c622` no compila con la guardia de `83940f4` (mira por dentro el
+  control rápido: `u_guard.fe_cnt`, `u_guard.fc_band`), así que la prueba usa
+  el de `d09d121` (el commit de los dos arreglos, sin `deriva`) en dos copias
+  aparte con los mismos `SYSTEM_RESET` y `STATUS_LED`: con la guardia de
+  `d09d121` pasan las 17 ejecuciones; con la de `83940f4` **fallan 16 de 17**,
+  todas salvo `sync nunca` (sin reloj del slot no hay `BOOT_HOLD` en ninguna
+  de las dos). En las 16, `BOOT_HOLD` = 0 durante el POR (esperado 1) y en el
+  arranque no sube hasta los 6 641,2 µs (`PLL_OK`; 9 671 µs en `glitch`) en
+  lugar de con el primer flanco de 27 MHz (`xtal`) o del reloj del slot
+  (`sync`); en `nunca` y `turbo` el arranque en frío sin enganche no retiene
+  nada (0 ms en lugar de 50). En `xtal perdida` (6 de 31), además, `DRIVE_EN`
+  no cae en el hueco de LOCK de 50 µs ni en la pérdida hasta `PLL_OK` (5 442
+  ciclos de 27 MHz con `DRIVE_EN` y LOCK bajo); en `sync perdida` (5 de 28)
+  el arranque en frío tras volver el reloj del slot empieza 5 583 µs tarde y
+  hay 30 ciclos con `DRIVE_EN` y LOCK bajo; en `sync turbo_marcha` (5 de 30),
+  896.
 - **`deriva` contra el control rápido quitado o con dos medidas** (copias
   aparte de la guardia de `f00c622`, `sync`): con `SLOT_OK = SLOT_PRESENT &&
-  freq_ok` (solo la ventana) fallan 2 de 35: `PLL_OK` cae a los 69,7 µs (4,0
+  freq_ok` (solo la ventana; repetido en la sesión de arreglos: las otras 18
+  ejecuciones pasan) fallan 2 de 35: `PLL_OK` cae a los 69,7 µs (4,0
   MHz) y a los 185,0 µs (3,40 MHz), fuera del límite de 20 µs. Con el control
   rápido quitando `fast_ok` a la segunda medida mala en lugar de a la tercera
   fallan otras 2 de 35: un solo rebote resetea el diseño (`DRIVE_EN` corta una
@@ -683,9 +750,11 @@ las áreas, que siguen nombrando la lista del hito 1:
   `DCLK`), así que necesita que el upscan separe los dos resets.
 
 **`hito/core`**: sin contrato con este hito (el core entra por
-`cartridge_v9990.sv`). La Fmax de `CLK_BASE` (110,19 / 109,59 MHz) y la
-carrera CLK_BASE → DCLK de `sync` (+0,277 ns) son las cifras que hay que
-volver a mirar cuando entren sus parches.
+`cartridge_v9990.sv`). La Fmax de `CLK_BASE` (109,15 MHz en `xtal`, 112,84
+en `sync`) y la carrera CLK_BASE → DCLK (+0,106 / +0,183 ns) son las cifras
+que hay que volver a mirar cuando entren sus parches, y con ellas el juego de
+opciones de cada variante (sección 6): cualquier cambio del RTL obliga a
+barrerlo otra vez.
 
 ## 9. Pendiente y riesgos
 
@@ -722,8 +791,15 @@ volver a mirar cuando entren sus parches.
   enganchado corta un /WAIT del V9990 en curso (el Z80 sigue con un dato
   malo). No se ha visto ninguno en placa; con el filtro, la lógica de
   `CLK_BASE` seguía gobernando el slot hasta 152 µs tras una pérdida real.
-- **Márgenes finos**: carrera CLK_BASE → DCLK en `sync` +0,277 ns; Fmax de
-  `sync` 109,59 MHz (0,6 MHz sobre la puerta). Dependen de la colocación.
+- **Márgenes finos y opciones por variante**: en `xtal` Fmax 109,15 MHz (0,15
+  sobre la puerta), setup +0,097 y carrera CLK_BASE → DCLK +0,106 ns; en
+  `sync` carrera +0,183 ns. Dependen de la colocación: con el RTL de los
+  arreglos de la revisión las opciones del hito 1 ya no pasaban, y de 34
+  builds del barrido (21 juegos de opciones; 13 builds en `xtal` y 21 en
+  `sync`) solo pasan tres (sección 6). La fusión cambia el
+  RTL y habrá que barrer otra vez; si ningún juego pasa, la salida es el
+  arreglo de `DCLK` de `hito/bus` (la carrera) o los parches del core (la
+  Fmax), no las opciones.
 - **Medidor de frecuencia**: la ventana de ±1,5 % (535-551 flancos) es una
   elección; una máquina con el CLOCK del slot fuera de esa ventana pero dentro
   del rango del rPLL se quedaría sin enganchar (LED de error y cartucho mudo)
@@ -736,7 +812,7 @@ volver a mirar cuando entren sus parches.
   vuelve a estar listo (µs en `v9990`, el borrado en MegaRAM); en `sync`, si
   el reloj del slot llegó a pararse, desde que vuelve (arranque en frío).
 - **MegaRAM sin margen de *long wires***: el ensayo da LW 8/8 (en `v9990`,
-  7/8); una red de control más con mucho abanico (un reset o un *enable*
+  6/8 en `xtal` y 7/8 en `sync`); una red de control más con mucho abanico (un reset o un *enable*
   nuevo) tendría que ir por enrutado normal.
 - **Polaridad del LED** tomada del LED de tnCart; no vista en la placa.
 - **Comportamiento con el /RESET del MSX** cambiado frente a tnCart (sección
@@ -746,11 +822,24 @@ volver a mirar cuando entren sus parches.
 
 | Hallazgo | Severidad | Resolución | Commits | Prueba |
 |---|---|---|---|---|
-| 1. `BOOT_HOLD` solo de `PLL_OK` a listo: el MSX corría 3,7 ms (4,6 con el `TLOCKMAX`) con el cartucho mudo al encender | media | **Real, arreglado.** `BOOT_HOLD_27` en el arranque en frío desde la configuración (`xtal`) o el primer flanco del reloj del slot (`sync`), con el PLL enganchado o no, con el tope de 50 ms (sección 3). Se aparta de la letra del encargo ("sin enganche, `BOOT_HOLD_27` = 0"): sin enganche el MSX queda retenido como mucho 50 ms al encender | `d09d121` | banco: la guardia de `83940f4` falla las seis ejecuciones probadas, solo por esto y el hallazgo 2 (sección 7) |
-| 2. Los pines solo se sueltan al caer `PLL_OK` (152 µs con LOCK bajo; una ventana del medidor en `sync`) | baja | **Real, arreglado.** `DRIVE_EN_27` con `lock_s` sin filtro (0,11 µs) y, en `sync`, control rápido del periodo del reloj del slot para el caso en que LOCK no cae (9,8 / 16,3 µs) | `d09d121`, `f00c622` | `perdida`, `turbo_marcha` y `deriva`; contra la guardia sin el control rápido, `deriva` falla (69,7 / 185,0 µs) |
+| 1. `BOOT_HOLD` solo de `PLL_OK` a listo: el MSX corría 3,7 ms (4,6 con el `TLOCKMAX`) con el cartucho mudo al encender | media | **Real, arreglado.** `BOOT_HOLD_27` en el arranque en frío desde la configuración (`xtal`) o el primer flanco del reloj del slot (`sync`), con el PLL enganchado o no, con el tope de 50 ms (sección 3). Se aparta de la letra del encargo ("sin enganche, `BOOT_HOLD_27` = 0"): sin enganche el MSX queda retenido como mucho 50 ms al encender | `d09d121` | banco de `d09d121`: con la guardia de `83940f4` fallan 16 de 17 ejecuciones (todas salvo `sync nunca`), con la de `d09d121` pasan las 17 (sección 7) |
+| 2. Los pines solo se sueltan al caer `PLL_OK` (152 µs con LOCK bajo; una ventana del medidor en `sync`) | baja | **Real, arreglado.** `DRIVE_EN_27` con `lock_s` sin filtro (0,11 µs) y, en `sync`, control rápido del periodo del reloj del slot para el caso en que LOCK no cae (9,8 / 16,3 µs) | `d09d121`, `f00c622` | `perdida`, `turbo_marcha` y `deriva`; contra la guardia sin el control rápido, `sync deriva` falla (69,7 / 185,0 µs) y las otras 18 pasan |
 | 3. La DS226-2.7E sí estaba leída: límites de entrada del rPLL sin citar y pendiente abierto sin motivo | baja | **Real, arreglado.** Tabla 3-20 citada en `board_wt200b_clock.sv`, la guardia y la sección 2; el pendiente se cierra y quedan dos criterios de placa del hito 6 (jitter de periodo < 1 ns, ciclo de trabajo ≥ 25 %) | `c3e4bfc` | lectura de la copia de la DS226-2.7E (tabla 3-20) |
 | 4. El renombrado de `board_wt200b_config.sv` y la lista nueva rompen los bancos y `check_*.tcl` de las áreas al fusionar, sin aviso | baja | **Real, documentado** como contrato común (sección 8) y en `UPSTREAM.md`; no se tocan ficheros de otras áreas | `90d6377` y esta nota | `grep` en los worktrees de las áreas |
 
 Además, al leer `hito/bus` para el hallazgo 1: `SYS_READY` de la guardia
 tiene que incluir `BUS_OK` en la fusión (sección 8, comentario en el bloque
-`>>> FUSION hito/bus` del top, `57c19a3`).
+`>>> FUSION hito/bus` del top, `57c19a3`; comprobado de nuevo en `hito/bus`
+`d8f3bda`: `BUS_OK`, `DRIVE_EN` y `BOOT_HOLD` como dice el contrato).
+
+**Consecuencia de los arreglos en las builds** (sesión de arreglos, 26/10). Los
+arreglos solo tocan la guardia, en `CLK_27M`, pero mueven la síntesis y la
+colocación del core: con las opciones del hito 1, el RTL de `f00c622` no pasa
+la puerta en ninguna variante (`xtal`: carrera CLK_BASE → DCLK −0,077 ns;
+`sync`: Fmax 107,43 MHz). No es un fallo de la guardia (los caminos que fallan
+son del core: `u_sel/OUT_2` → `video_b_5`, `u_ram/timing_state_1` →
+`RAM_ADDR_*`), sino margen de colocación. Se arregla con opciones por variante
+(`BUILD_OPTS`, `6ebe4ff`, `893eecd`, `32c70b5`) elegidas en un barrido de 34
+builds con 21 juegos de opciones (sección 6), y las dos builds se rehacen y se archivan (`d95825f` y el
+commit del hito 6). Prueba: la puerta de cada build archivada (`PASA`) y el
+cuerpo de su `.fs` igual al del barrido.
