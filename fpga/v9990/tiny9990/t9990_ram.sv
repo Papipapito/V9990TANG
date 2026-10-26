@@ -579,6 +579,28 @@ module T9990_RAM (
         end
     end
 
+    /***************************************************************
+     * V9990TANG: asercion de simulacion, la unica red contra la ranura de
+     * VRAM perdida. El generador de tiempos pulsa TIMING.EXEC en cada ranura
+     * (MEM_REQ retrasado un ciclo) y avanza pase lo que pase; si llega con el
+     * acceso anterior sin terminar (state != STATE_WAIT_REQ: el ACK de la
+     * memoria llego tarde) esta ranura se ignora y el modulo que la pedia se
+     * queda sin dato, sin ningun aviso. Con el UMA de tnCart a DIV = 30 el dato
+     * y el ACK llegan en el ciclo 13 de los 20 de la ranura (fpga/tb/core).
+     * Solo simulacion: la cuenta (lost_slots) la leen los bancos.
+     ***************************************************************/
+`ifndef SYNTHESIS
+    // synthesis translate_off
+    integer lost_slots = 0;
+    always @(posedge CLK) begin
+        if(RESET_n && TIMING.EXEC && state != STATE_WAIT_REQ) begin
+            lost_slots = lost_slots + 1;
+            $error("T9990_RAM: ranura de VRAM perdida: TIMING.EXEC con state=%0d (timing_state=%0d) en t=%0t", state, timing_state, $time);
+        end
+    end
+    // synthesis translate_on
+`endif
+
 endmodule
 
 `default_nettype wire
