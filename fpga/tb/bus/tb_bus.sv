@@ -22,7 +22,11 @@
 //
 // Plusargs: +HZ=<frecuencia del Z80> +SEED=<n> +N=<accesos por fase>; de
 // depuracion, +HB=<us> (latido), +DBGCHAIN (cada nuevo maximo de la cadena) y
-// +DBGPW (cada pre-WAIT de mas de 8 ciclos, con el estado del ultimo salto).
+// +DBGPW (cada pre-WAIT de mas de 8 ciclos, con el estado del ultimo salto); de
+// sensibilidad (los retardos de arriba son maximos y Zilog no da minimos),
+// +M1RD=<ns> (/RD del M1 a <ns> de la bajada de T1 en vez de 75, y /MREQ 5 ns
+// antes: el hueco desde el fin del IN/OUT anterior pasa de T - 5 a T + M1RD - 80)
+// y +IORQLATE=<ns> (/IORQ sube <ns> despues que /RD o /WR al final de la E/S).
 // Salida: tabla de resultados y BUS_OK / BUS_FAIL (criterio por velocidad en
 // docs/notas/bus.md).
 //
@@ -309,6 +313,7 @@ module tb_bus;
     int pw_lat_max = 0;             // ciclos /RD|/WR del pin -> pw_hold (accesos P#0/P#1)
     int pw_fires = 0;
     int n_pw_spur = 0;              // pre-WAIT en un IN/OUT a un puerto que no es 60h/61h
+    int n_pw_mcyc = 0;              // pre-WAIT en un M1 o en un ciclo de memoria que no lo pide
     int n_sweep = 0;                // puertos del barrido de E/S
     int wait_run_max = 0;           // ciclos seguidos con /WAIT activo (uso normal)
     int glitch_events = 0, glitch_wait = 0, glitch_drive = 0;
@@ -331,6 +336,11 @@ module tb_bus;
     bit  tb_go = 1'b0;              // arranque hecho (bus_ok a 1): antes no se cuentan eventos
     bit  expect_drive = 1'b1;       // DRIVE_EN = 1 y bus vivo: se espera /WAIT en P#0/P#1
     bit  mon_on = 1'b0;             // monitores de las fases (sin disable: Verilator no lo admite)
+    real t_m1rd = T_STB;            // +M1RD: /RD del M1 desde la bajada de T1
+    real t_iorq_late = 0.0;         // +IORQLATE: subida de /IORQ tras la de /RD o /WR
+    int  zc_kind = 0;               // ciclo del Z80 en curso: 0 ninguno, 1 E/S, 2 M1, 3 lectura de nuestra memoria,
+                                    // 4 lectura de memoria ajena, 5 escritura de memoria
+    reg [15:0] zc_a = 16'h0000;     // su direccion
 
     // ------------------------------------------------------------------
     //  Ventanas de eventos: un evento (bajada de CSR_n/CSW_n en el cartucho)
@@ -507,10 +517,34 @@ module tb_bus;
     always @(s_sltsl_n) s_sltsl_dv <= #(T_DRV) s_sltsl_n;
     bit rd_ours = 1'b0, rd_ours_dv = 1'b0;      // el Z80 esta en una lectura de E/S de nuestros puertos
     always @(rd_ours) rd_ours_dv <= #(T_DRV) rd_ours;
+    real t_bd0 = 0.0, bd_max = 0.0;             // duracion de la conduccion sin lectura legitima mas larga
+    bit  bd_on = 1'b0;
     always @(posedge buf_drv) begin
         if (!( !s_rd_dv && (rd_ours_dv || (!s_iorq_dv && s_m1_dv && is_ours(s_a_dv[7:0])) || (!s_sltsl_dv && !s_mreq_dv)) )) begin
             n_bad_drive = n_bad_drive + 1;
+            bd_on = 1'b1; t_bd0 = $realtime;
             if (n_bad_drive <= 6) $display("  [FAIL %0t] la placa conduce D0-D7 sin lectura legitima: A=%04h iorq=%b rd=%b mreq=%b sltsl=%b", $time, s_a_dv, s_iorq_dv, s_rd_dv, s_mreq_dv, s_sltsl_dv);
+        end
+    end
+    always @(negedge buf_drv) if (bd_on) begin
+        bd_on = 1'b0;
+        if ($realtime - t_bd0 > bd_max) bd_max = $realtime - t_bd0;
+    end
+
+    // pre-WAIT que sube en un ciclo que no lo pide: un M1 (siempre de la memoria
+    // del MSX en este banco), una lectura de memoria ajena, una escritura de
+    // memoria, o una lectura de nuestra ranura sin PREWAIT_MEM_EN. La decision
+    // tiene que ver IORQ/MERQ/SLTSL y la direccion de este ciclo, no las del
+    // anterior (un M1 justo detras de un IN/OUT a 60h/61h es el caso critico).
+    reg pw_mq = 1'b0;
+    always @(posedge clk) begin
+        pw_mq <= u_bus.pw_hold;
+        if (tb_go && u_bus.pw_hold && !pw_mq &&
+            (zc_kind == 2 || zc_kind == 4 || zc_kind == 5 || (zc_kind == 3 && MEMPW == 0))) begin
+            n_pw_mcyc = n_pw_mcyc + 1;
+            if (n_pw_mcyc <= 6) $display("  [FAIL %0t] pre-WAIT en un %s A=%04h (ciclo anterior en %04h)", $time,
+                                         zc_kind == 2 ? "M1" : (zc_kind == 5 ? "ciclo de escritura de memoria" : "ciclo de lectura de memoria"),
+                                         zc_a, prev_a);
         end
     end
     // tarde: sigue conduciendo 30 ns despues de que /RD suba y se quede arriba
@@ -588,6 +622,7 @@ module tb_bus;
         reg [7:0] de;
         t1 = zt;
         at(t1);
+        zc_kind = 1; zc_a = a;
         win_next(is_ours(a[7:0]) ? 1 : 0, wr, a[3:0] - V99_BASE[3:0], wd);
         cyc_sv = 1'b0;
         io_pw_cyc = is_ours(a[7:0]) && (a[3:1] == 3'b000);
@@ -617,7 +652,12 @@ module tb_bus;
             at(t3f);          rv = s_d;
             if (de !== rv && is_ours(a[7:0])) n_unst_last = 1; else n_unst_last = 0;
         end
-        fork begin at(t3f + T_OFF); s_rd_n = 1'b1; s_wr_n = 1'b1; s_iorq_n = 1'b1; rd_ours = 1'b0; end join_none
+        if (t_iorq_late == 0.0)
+            fork begin at(t3f + T_OFF); s_rd_n = 1'b1; s_wr_n = 1'b1; s_iorq_n = 1'b1; rd_ours = 1'b0; end join_none
+        else begin
+            fork begin at(t3f + T_OFF); s_rd_n = 1'b1; s_wr_n = 1'b1; rd_ours = 1'b0; end join_none
+            fork begin at(t3f + T_OFF + t_iorq_late); s_iorq_n = 1'b1; end join_none
+        end
         if (wr) fork begin at(t3f + T_OFF + T_DHLD); z_drv = 1'b0; end join_none
         zt = t3f + TZ / 2.0;
     endtask
@@ -654,12 +694,13 @@ module tb_bus;
         int  ntw;
         t1 = zt;
         at(t1);
+        zc_kind = 2; zc_a = pc;
         win_next(0, 1'b0, 4'h0, 8'h00);
         addr_phase(t1, pc, 3);
         fork begin at(t1 + 80.0); s_m1_n = 1'b0; end join_none
-        fork begin at(t1 + TZ / 2.0 + T_MREQ); s_mreq_n = 1'b0; end join_none
-        fork begin at(t1 + TZ / 2.0 + T_STB); s_rd_n = 1'b0; end join_none
-        fork begin at(t1 + TZ / 2.0 + T_STB + 60.0); m_val = op; m_drv = 1'b1; end join_none
+        fork begin at(t1 + TZ / 2.0 + T_MREQ + (t_m1rd - T_STB)); s_mreq_n = 1'b0; end join_none
+        fork begin at(t1 + TZ / 2.0 + t_m1rd); s_rd_n = 1'b0; end join_none
+        fork begin at(t1 + TZ / 2.0 + t_m1rd + 60.0); m_val = op; m_drv = 1'b1; end join_none
         tf = t1 + 1.5 * TZ;                 // bajada de T2
         wait_loop(tf, ntw);
         t3r = tf + TZ / 2.0;                // subida de T3: el Z80 lee el opcode
@@ -681,6 +722,7 @@ module tb_bus;
         real t1, tf, t3f, ts;
         t1 = zt;
         at(t1);
+        zc_kind = ours ? 3 : 4; zc_a = a;
         win_next(0, 1'b0, 4'h0, 8'h00);
         cyc_sv = 1'b0;
         addr_phase(t1, a, ours ? 2 : 3);
@@ -717,6 +759,7 @@ module tb_bus;
         int  ntw;
         t1 = zt;
         at(t1);
+        zc_kind = 5; zc_a = a;
         win_next(0, 1'b0, 4'h0, 8'h00);
         addr_phase(t1, a, ours ? 2 : 3);
         fork begin at(t1 + TZ / 2.0 + T_MREQ); s_mreq_n = 1'b0; end join_none
@@ -1148,7 +1191,7 @@ module tb_bus;
             while (u_bus.wait_req || !Bus.WAIT_n) @(posedge clk);
             win_next(0, 1'b0, 4'h0, 8'h00);
             s_a = {8'($urandom), V99_BASE};
-            cur_kind = 0;
+            cur_kind = 0; zc_kind = 0;
             wpin_seen = 1'b0;
             #(100.0 + ($urandom % 100));
             @(posedge clk);
@@ -1184,7 +1227,7 @@ module tb_bus;
             run = 0;
             at(zt);
             win_next(0, 1'b0, 4'h0, 8'h00);
-            s_a = 16'h0060; cur_kind = 0;
+            s_a = 16'h0060; cur_kind = 0; zc_kind = 0;
             #120.0;
             s_iorq_n = 1'b0; s_rd_n = 1'b0;
             mon_on = 1'b1;
@@ -1354,6 +1397,8 @@ module tb_bus;
         if (!$value$plusargs("HZ=%d", hz)) hz = 3579545;
         if (!$value$plusargs("SEED=%d", seed)) seed = 1;
         if (!$value$plusargs("N=%d", NACC)) NACC = 120;
+        if (!$value$plusargs("M1RD=%f", t_m1rd)) t_m1rd = T_STB;
+        if (!$value$plusargs("IORQLATE=%f", t_iorq_late)) t_iorq_late = 0.0;
         void'($urandom(seed));
         TZ = 1.0e9 / hz;
         mhz = hz / 1.0e6;
@@ -1372,6 +1417,9 @@ module tb_bus;
         $display("   BOARD_REV1_BUS: ADAPTIVE_SCAN=%0d PREWAIT_IO_EN=%0d ADDR_HOLD=%0d DRIVE_TAIL_GUARD=%0d PREWAIT_K=%0d PREWAIT_MEM_K=%0d",
                  SCAN, PWIO, AHOLD, TAILG, PW_K, PW_MEM_K);
         $display("   presupuestos: /WAIT 1,5 T - 145 = %0.0f ns, dato de E/S 2,5 T - 125 = %0.0f ns", budget_w, 2.5 * TZ - 125.0);
+        if (t_m1rd != T_STB || t_iorq_late != 0.0)
+            $display("   sensibilidad: /RD del M1 a %0.1f ns de la bajada de T1 (hueco tras un IN/OUT %0.1f ns), /IORQ %0.1f ns despues de /RD-/WR",
+                     t_m1rd, TZ + t_m1rd - T_OFF, t_iorq_late);
 
         #50.0 rst_n = 1'b1;
         #2000.0 s_reset_n = 1'b1;
@@ -1452,6 +1500,7 @@ module tb_bus;
         $display("   pre-WAIT: %0d disparos en P#0/P#1, peor /RD|/WR -> pw_hold %0d ciclos; /WAIT seguido maximo en uso normal %0d ciclos",
                  pw_fires, pw_lat_max, wait_run_max);
         $display("   pre-WAIT en IN/OUT a puertos que no son 60h/61h: %0d (barrido de %0d puertos)", n_pw_spur, n_sweep);
+        $display("   pre-WAIT en ciclos M1 y de memoria que no lo piden: %0d", n_pw_mcyc);
         $display("   ciclos con rebote: P#0 con dato mal / /WAIT dentro del setup del Z80: rebote de /RD o /WR %0d / %0d, de /IORQ %0d / %0d; peor /WAIT en el slot %0.1f / %0.1f ns",
                  bb_bad[1], bb_sv[1], bb_bad[2], bb_sv[2], bb_wslot[1], bb_wslot[2]);
         $display("   ciclos con rebote de /IORQ: lecturas con dato inestable %0d", bb_unst2);
@@ -1459,6 +1508,7 @@ module tb_bus;
                  n_bounce, glitch_wait, nodev_wait_max);
         $display("   conduccion: sin lectura legitima %0d, tarde %0d, choques %0d; Z80 colgado %0d; /WAIT soltado dentro del setup %0d (informativo)",
                  n_bad_drive, n_late_drive, n_conflict, n_hang, n_setup_amb);
+        if (n_bad_drive) $display("   conduccion sin lectura legitima: la mas larga dura %0.1f ns", bd_max);
         $display("   timeout espurio %0d; timeout forzado %s; BOOT_HOLD sin timeout %s; guardias %s; /INT %s",
                  n_tmo_spur, tmo_ok ? "ok" : "MAL", boot_ok ? "ok" : "MAL", guard_fail == 0 ? "ok" : "MAL", (V99_BASE != 8'h60) ? "-" : (int_ok ? "ok" : "MAL"));
 
@@ -1474,6 +1524,9 @@ module tb_bus;
         // del ciclo anterior (fallo esperado, ~65 ns de /WAIT en un IN/OUT ajeno)
         if (n_pw_spur && slow < 2) fail++;
         if (n_pw_spur && slow == 2) expd++;
+        // pre-WAIT en un M1 o en un ciclo de memoria que no lo pide: a cualquier
+        // velocidad (la decision tiene que ver IORQ/MERQ/SLTSL de este ciclo)
+        if (n_pw_mcyc) fail++;
         if (V99_BASE != 8'h60 && (nodev_wait_max == 0 || nodev_wait_max > 40)) fail++;
         if (V99_BASE == 8'h60 && !int_ok) fail++;
         // a cualquier velocidad: escrituras de registro (P#3/P#4/P#6), escrituras por

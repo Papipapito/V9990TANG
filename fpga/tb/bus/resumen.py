@@ -10,7 +10,8 @@
 # accesos; eventos duplicados/perdidos; direcciones mal (E/S / nuestra memoria
 # / memoria ajena); cadena D+n; rebotes de /IORQ con dato mal y peor /WAIT
 # en el slot con rebote de /RD-/WR y de /IORQ; espera mas larga en uso
-# normal (ciclos); pre-WAIT en IN/OUT a puertos que no son 60h/61h.
+# normal (ciclos); pre-WAIT en IN/OUT a puertos que no son 60h/61h y en
+# ciclos M1 o de memoria que no lo piden.
 #
 # V9990TANG. Copyright (c) 2026, Papipapito. BSD 3-Clause (ver LICENSE).
 # ============================================================================
@@ -54,6 +55,8 @@ def parse(path):
     r["wmax"] = int(m.group(1)) if m else None
     m = re.search(r"pre-WAIT en IN/OUT a puertos que no son 60h/61h: (\d+)", t)
     r["pwspur"] = int(m.group(1)) if m else None
+    m = re.search(r"pre-WAIT en ciclos M1 y de memoria que no lo piden: (\d+)", t)
+    r["pwmcyc"] = int(m.group(1)) if m else None
     m = re.search(r"revisita maxima \(ciclos entre parejas\): g0 (\d+), g1 (\d+), g2 (\d+)", t)
     r["rev"] = "/".join(m.groups()) if m else "?"
     m = re.search(r"conduccion: sin lectura legitima (\d+), tarde (\d+), choques (\d+)", t)
@@ -82,8 +85,8 @@ def main():
         except Exception as ex:      # log a medias
             rows.append((os.path.basename(p), None))
     rows.sort(key=lambda x: (x[0].rsplit("_", 1)[0], x[1]["mhz"] if x[1] else 0))
-    print("| log | MHz | veredicto | /WAIT slot P#0/P#1 (pres.) | P#0 lect. mal | P#1 lect. mal | P#2-6 lect. mal | dup/perd | dir. E/S/mem/ajena mal | cadena | rebote IORQ mal | /WAIT slot con rebote RD-WR/IORQ | espera max | revisita | conduccion mal/choques | pre-WAIT ajeno |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| log | MHz | veredicto | /WAIT slot P#0/P#1 (pres.) | P#0 lect. mal | P#1 lect. mal | P#2-6 lect. mal | dup/perd | dir. E/S/mem/ajena mal | cadena | rebote IORQ mal | /WAIT slot con rebote RD-WR/IORQ | espera max | revisita | conduccion mal/choques | pre-WAIT ajeno | pre-WAIT M1/mem |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name, r in rows:
         if r is None:
             print("| %s | - | log incompleto |" % name)
@@ -93,14 +96,15 @@ def main():
         ws = ("%.0f (%d)" % (max(w), r["budget"])) if w and max(w) >= 0 else "-"
         fm = ("%d/%d" % r["fmem"]) if r["fmem"] else "-"
         bbw = ("%.0f/%.0f" % r["bbw"]) if r["bbw"] else "-"
-        print("| %s | %.2f | %s | %s | %s | %s | %s | %d/%d | %d/%d/%s | %s | %s | %s | %s | %s | %d/%d | %s |" % (
+        print("| %s | %.2f | %s | %s | %s | %s | %s | %d/%d | %d/%d/%s | %s | %s | %s | %s | %s | %d/%d | %s | %s |" % (
             name.replace("tb_", "").replace(".log", ""), r["mhz"], r["verdict"], ws,
             fmt_rd(c.get("P#0 lectura")), fmt_rd(c.get("P#1 lectura")), fmt_rd(c.get("P#2-6 lectura")),
             r["dup"], r["lost"], r["io_bad"], r["mem_bad"], fm,
             ("D+%d" % r["chain"]) if r["chain"] is not None and r["chain"] >= 0 else "-",
             ("%d" % r["bb"][2]) if r["bb"] else "-", bbw,
             r["wmax"] if r["wmax"] is not None else "-", r["rev"], r["drv"][0], r["drv"][2],
-            r["pwspur"] if r["pwspur"] is not None else "-"))
+            r["pwspur"] if r["pwspur"] is not None else "-",
+            r["pwmcyc"] if r["pwmcyc"] is not None else "-"))
 
 
 if __name__ == "__main__":
