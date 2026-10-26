@@ -578,7 +578,11 @@ tomado el dato. Desde entonces el monitor no mira la estabilidad del dato con
 
 Resultados del 26/10/2026 por la tarde: `run.sh` sin argumentos sobre `6f20c51`,
 las trece variantes PASA (las tres trazas de `tncrom` incluidas); las `*_hito4`
-con el `uma.sv` de `hito/sdram` `cbf65ea`, md5 `0738833e`. Las variantes de
+con el `uma.sv` de `hito/sdram` `cbf65ea`, md5 `0738833e`. Vuelto a correr por
+la noche en la cuarta tanda (19:21-19:55, sobre `7ad8e79`, con el `tncrom` r3 y
+el mismo `uma.sv`, que sigue igual en `hito/sdram` `b04ba1a`): las trece PASA,
+con las cuatro trazas, y las cifras de las demás variantes son las mismas (las
+de esta tabla y la del apartado 4). Las variantes de
 medida del /WAIT (`noprewait`, `noprewait_opt`, `wait_rd9`, `wait_rd10`,
 `nowait`, `turbo5`, `turbo5i`) están en la tabla del apartado 4.
 
@@ -621,7 +625,12 @@ en las fechas (el P&R es determinista). Y una tercera vez en la tercera tanda
 (26/10/2026, 14:46-15:22, con el árbol final: el único cambio de RTL desde la
 anterior es el `$error` de simulación de `cartridge_megarom.sv`, fuera de la
 síntesis): otra vez `check_megaram_syn_rsc.xml` idéntico byte a byte y el
-`.rpt.txt` y el `.tr` idénticos salvo las líneas con fecha. La base no se volvió
+`.rpt.txt` y el `.tr` idénticos salvo las líneas con fecha. Y una cuarta en la
+cuarta tanda (26/10/2026, 19:16-19:57, con otras siete `gw_sh` de otras áreas en
+paralelo; el RTL, el `.tcl` y el `.sdc` no cambiaron desde la tercera,
+`git diff 6353696` vacío en `fpga/src`, `fpga/config` y `fpga/constraints`):
+`check_megaram_syn_rsc.xml` idéntico byte a byte, y el `.rpt.txt` y el `.tr`
+idénticos salvo fechas y tiempos de CPU. La base no se volvió
 a compilar (sus cifras de lógica y registros son las del estudio, exactas):
 
 | | Estudio `v9990_mega` | Base (megaROM de tnCart, este árbol) | **`check_megaram`** |
@@ -650,8 +659,9 @@ a compilar (sus cifras de lógica y registros son las del estudio, exactas):
 - Sin `CLK_21M` ni relojes nuevos: CLKDIV 3/8 como en el hito 1, 8/8 PRIMARY.
 - **Puerta** (`tools/check_build.py` con la referencia del estudio, 15 494 /
   9 111 / 29, ±1 %, y los límites de CLS del hito 1, `--max-cls 9331
-  --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109`): **PASA** (vuelta a pasar
-  sobre la build de la tercera tanda, con las mismas cifras). Lógica +0,56 %, CLS −0,34 %, BSRAM igual,
+  --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109`, con el log de síntesis y el
+  de P&R): **PASA** (vuelta a pasar sobre las builds de la tercera y de la
+  cuarta tanda, con las mismas cifras). Lógica +0,56 %, CLS −0,34 %, BSRAM igual,
   `set_clock_groups` `Actived` y las 16 órdenes del `.sdc` en el `.tr`, peor
   slack setup / hold / recovery / removal +0,359 / +0,074 / +4,291 / +1,086 ns,
   carrera `CLK_BASE` → `DCLK` +1,954 ns en setup y +4,353 en hold, offset de
@@ -787,4 +797,7 @@ y openMSX. Dio cuatro hallazgos; los cuatro eran reales y ninguno se rechaza:
 | 4 | baja | La nota de `hito/sdram` dice que el `ACK_n` del canal 0 no afecta a la megaROM ("no mira el ACK"), falso desde este hito | Apartado 4 (`75badec`): el aviso, por qué el cambio de `hito/sdram` es compatible y las tres reglas de `ACK_n`/`DOUT` del canal 0 que la integración tiene que escribir en `ARCHITECTURE.md` como contrato del UMA (apartado 9) |
 
 El RTL no ha cambiado en esta tanda (`git diff 6353696 -- fpga/src fpga/config`
-vacío); la síntesis con P&R se volvió a correr igualmente (apartado 8).
+vacío); la síntesis con P&R se volvió a correr igualmente y salió idéntica, con
+la puerta PASA (apartado 8). Banco de Verilator (13 variantes), banco del host
+(90 comprobaciones), `build.sh` (dos veces, mismo binario) y openMSX (NMS 8250
+con Nextor y con MSX-DOS 1) vueltos a correr con el árbol final.
