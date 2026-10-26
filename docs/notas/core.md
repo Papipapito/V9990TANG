@@ -160,7 +160,8 @@ module T9990 #(
   R#16 ≠ 00h la imagen (DE, R, G, B) se mueve frente a ellos (−7..+8 pasos y
   −7..+8 líneas); con R#16 = 00h no cambia nada frente al hito 1.
 - Los tres parámetros se pueden poner a 0 por separado; con los tres a 0 el
-  core es el del hito 1 más los parches 1-3 y la aserción (que no sintetiza).
+  core es el del hito 1 más los cambios 1-3, 8 y 9 de la tabla y la aserción
+  (que no sintetiza).
 - La lista de ficheros del core no cambia (17 ficheros en
   `fpga/v9990/tiny9990/`), ni el orden de compilación.
 
@@ -284,7 +285,7 @@ compile a medias los ficheros que otra está editando), más la paleta, el
 | `hito1` | (misma) | **pasa**: salida de vídeo idéntica punto a punto al core del hito 1 en B1, P1, P2, B3, B2, B4 y B1 entrelazado (de 716 832 a 1 911 552 bytes por caso) |
 | paleta | `bash tb/core/run_t9990_palette.sh` | **pasa** (`PAL_OK`): 404 lecturas por P#1, cero componentes mal, puntero R#14 bien, cero ranuras perdidas |
 | `replay` GNG | traza de `tb/core/trace/` (`GNG2M.ROM`, `KonamiSCC`, 10 s, C-BIOS_MSX2+ + gfx9000) y `OBJTAG=rep REPLAY=.../gng.rpl VRAMOUT=... OMSX=.../gng_vram.bin bash tb/core/run_t9990_core.sh replay` | **pasa**: 161 794 eventos, 471 comandos; **0 bytes distintos de 524 288** frente a la VRAM de openMSX; `LOST_SLOTS=0` |
-| parámetros a 0 | `VOPT="-GENABLE_PAL=0 -GENABLE_CURSOR_EOR=0 -GENABLE_R16=0" OBJTAG=p0 bash tb/core/run_t9990_core.sh geom pal ports blit r16chg bdbp eor` | P0_RESULTADO |
+| parámetros a 0 | `VOPT="-GENABLE_PAL=0 -GENABLE_CURSOR_EOR=0 -GENABLE_R16=0" OBJTAG=p0 bash tb/core/run_t9990_core.sh geom pal ports blit r16chg bdbp eor` | **pasa** todo salvo `eor`, que falla a propósito: los 15 `geom` (todo 262 líneas: sin PAL el bit 3 de R#7 no hace nada; R#16 no mueve el VS), `pal` (los casos PAL salen NTSC, PAL = 0), `ports`, `blit`, `r16chg` (sincronismo y ventana exactos en los tres casos aunque se escriba R#16: 262 × 342, 262 × 912, 440 × 848, 0 cuadros de la ventana irregulares) y `bdbp` (0 y 0: el arreglo del fondo no depende de los parámetros); `eor` da 839 puntos distintos del modelo en el primer caso (el cursor del hito 1, de color plano y en la línea Y) |
 | build completa | copia del árbol en `C:/Users/alber/AppData/Local/Temp/v99wt/fixcore2`, `gw_sh build_v9990_xtal.tcl` desde `fpga/` y la orden de `tools/check_build.py` de `docs/VERIFICATION.md` | **tiempo: pasa**. Fmax CLK_BASE **114,431 MHz**, 0 endpoints de setup y de hold violados, peor slack de setup +0,520 ns (blitter, `state_4` → `DST_NY`, 6 niveles); el primer camino de `u_tg` está a +0,885 ns (R#7 → fin de cuadro de la ventana) y no hay ninguno de `u_sp` entre los 25 peores. Logic 14 508 (11 822 LUT + 2 656 ALU + 5 SSRAM), CLS 8 769, BSRAM 24, 8/8 relojes primarios, 2 rPLL; avisos los del hito 1 más EX3073 (`PAL` sin conectar en `cartridge_v9990.sv`, contrato 1). **La puerta sale `FALLA` por un solo punto**: la lógica se aparta un 2,60 % de la referencia del hito 1 (14 140, tolerancia 1 %). Es el crecimiento del core (PAL, cursor y R#16, ver Síntesis) más el ruido de síntesis de Gowin en módulos que no cambian (`u_boot` +28 LUT, `u_blit` +45 entre dos builds con el mismo RTL); el árbol revisado (`b53627f`) ya estaba en 14 415 (+1,9 %). Fijar la referencia nueva es de la integración (contrato 7) |
 
 Antes del retraso del START del blitter (`f0fa14d`), la misma build con la línea
