@@ -166,7 +166,11 @@ module TNCART_BOARD_WT200B_TOP (
     // >>> FUSION hito/bus: WAIT_TIMEOUT es el error pegajoso del timeout de
     // /WAIT que saca BOARD_REV1_BUS en CLK_BASE (puerto WAIT_TIMEOUT de
     // hito/bus). Hasta la fusion no hay fuente: 0. En la fusion, esta linea
-    // pasa a "logic wait_timeout;" y u_bus la conecta.
+    // pasa a "logic wait_timeout;" y u_bus la conecta. Ademas u_bus saca
+    // BUS_OK (reloj del slot vivo, 2,43 ms despues de RESET_n, y /RESET del
+    // slot suelto), sin el cual no conduce nada: u_guard pasa a recibir
+    // .SYS_READY(sys_ready && bus_ok), para que BOOT_HOLD cubra tambien esa
+    // ventana (docs/notas/integ.md, seccion 8).
     wire wait_timeout = 1'b0;
     // <<< FUSION hito/bus
 
