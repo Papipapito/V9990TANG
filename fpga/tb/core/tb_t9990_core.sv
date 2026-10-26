@@ -266,8 +266,10 @@ module tb_t9990_core;
         // lineas de imagen (sin bordes) del cuadro de sincronismo de su ventana: con R#16 de +5 a +8 lineas en
         // PAL con overscan (B2/B4, 290 lineas) las ultimas 3-4 lineas de la ventana caen despues del VS
         // siguiente (en el cuadro de sincronismo de despues: v_cnt muy por encima de las lineas desde VS) y
-        // ahi FIELD ya es el del campo nuevo; no se cuentan
-        if (meas && de && dut.MUX_VDE && il && (eo != dut.STATUS.EO) && !(dut.u_tg.v_cnt > line + 100)) eo_win_bad = eo_win_bad + 1;
+        // ahi FIELD ya es el del campo nuevo; no se cuentan. La muestra de la subida de VS es la linea 0 del
+        // cuadro nuevo (line aun no se ha puesto a 0): con R#16 = x8h en B4 el VS sube con DE todavia alto en
+        // la ultima linea de la ventana (borde derecho) y FIELD ya ha cambiado
+        if (meas && de && dut.MUX_VDE && il && (eo != dut.STATUS.EO) && !(dut.u_tg.v_cnt > (vs_rise ? 0 : line) + 100)) eo_win_bad = eo_win_bad + 1;
         // ---- contadores ----
         if (vs_rise) line = 0; else if (hs_rise) line = line + 1;
         if (hs_rise) begin dot = 0; de_in_line = 0; da_in_line = 0; hsw_cur = -1; end else dot = dot + 1;
