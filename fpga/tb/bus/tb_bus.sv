@@ -1049,7 +1049,9 @@ module tb_bus;
                     if (st_bad[6] <= 4) $display("  [dato %0t] puerto ajeno %02h leido %02h", $time, x, rv);
                 end
             end
-            else begin
+            else if (V99_BASE == 8'h60 || x[3:1] != 3'b000) begin
+                // con V99_BASE = 70h el pre-WAIT sigue en 60h/61h a proposito (la
+                // prueba de la liberacion por K): P#0/P#1 en 70h/71h no lo tienen
                 areg = 8'($urandom);
                 z_in(x, rv, 0, 0, 0.0);
                 if ((x[3:0] == 4'h2 || x[3:0] == 4'h5 || x[3:0] == 4'h6) && rv !== ref_dout) begin
