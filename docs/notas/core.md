@@ -87,8 +87,8 @@ nibble): 0 posición estándar, 1..7 = 1..7 pasos a la izquierda/arriba, Fh..8 =
   `getBottomBorder`). Con R#16 = 00h HS, VS y EO son, ciclo a ciclo, los del
   hito 1 (prueba `hito1`).
 - **PAL y R#16.** El bit PAL se toma al empezar el cuadro de sincronismo
-  (`pal_s`, que da la salida `PAL`) y la ventana lo copia en su línea 9
-  (`pal_w`): con R#16 el VS cae como mucho 9 líneas antes o 7 después del
+  (`pal_s`, que da la salida `PAL`) y la ventana lo copia al pasar de su
+  línea 9 a la 10 (`pal_w`): con R#16 el VS cae como mucho 9 líneas antes o 7 después del
   (0,0) de la ventana, y ninguna comparación de la ventana que dependa de PAL
   cae antes de su línea 17.
 
@@ -202,7 +202,10 @@ RESULTADOS_AQUI
 
 `CORE_VARIANT=<v> gw_sh check_core.tcl` desde `fpga/`, en serie, 26/10/2026.
 Recursos de `impl/gwsynthesis/check_core_<v>_syn_rsc.xml`. Ningún aviso ni error
-en ninguna variante. "Tocados" es la suma de los módulos que cambian estas
+en ninguna variante. `full`, `nopal`, `noeor`, `nor16` y `none` se repitieron
+sobre el RTL final (commit `ef22537`, el último que toca el core) y dieron
+exactamente los mismos números (la síntesis de Gowin es determinista); `main`
+y `parches` salen de git y no dependen del árbol de trabajo. "Tocados" es la suma de los módulos que cambian estas
 partes (`u_tg`, `u_sp`, `u_pri`, `u_pal`, `u_sel`, `u_port`).
 
 | Variante | Qué es | LUT | ALU | FF | BSRAM | Tocados LUT / ALU / FF |
@@ -273,8 +276,12 @@ del hito 1 era del blitter) los tiene que medir el P&R de la integración.
   BD16, sale con un color que no es de la paleta. `T9990_COLOR_DECODE` no
   actualiza su salida fuera de BD8/BD16/YJK/YUV (`OUT <= OUT`) y el selector la
   coge donde la paleta es transparente: sería un punto de color equivocado en
-  los índices 0 tras pasar de un modo directo a uno de paleta. No se ha
-  comprobado más ni se ha tocado.
+  los índices 0 tras pasar de un modo directo a uno de paleta. Es anterior a
+  este hito (en el core del hito 1 la rama es la misma, `OUT <= OUT`, y BD8
+  deja el bit 15 a 0 igual que BD16). Arreglo propuesto, sin aplicar porque
+  no es de este encargo: `OUT <= 16'h8000` en esa rama (el valor del reset,
+  así que los modos de paleta arrancados desde el reset, que es lo que
+  comprueba `hito1`, no cambian). No se ha comprobado más ni se ha tocado.
 - **Entrelazado de 262 y 313 líneas por campo** (el manual da 262,5 y 312,5):
   como en el hito 1.
 - **B6** (HSCN + C25M) no genera VS: `v_cnt` es de 9 bits y la tabla de 525
