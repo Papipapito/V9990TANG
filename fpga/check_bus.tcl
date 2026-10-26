@@ -10,6 +10,11 @@
 #  Referencia (el bus de main, hito 1, solo sintesis):
 #        cd fpga && CHECK_BUS_REF=1 gw_sh check_bus.tcl
 #        -> impl/gwsynthesis/check_bus_ref_syn_rsc.xml
+#  Sin parche (el top del repositorio tal cual, con DRIVE_EN y BOOT_HOLD sin
+#  conectar: lo que pasaria si se construyera esta rama sin la integracion;
+#  solo sintesis):
+#        cd fpga && CHECK_BUS_NOPATCH=1 gw_sh check_bus.tcl
+#        -> impl/gwsynthesis/check_bus_nopatch.log / _syn_rsc.xml
 #  Recuento por modulo (desde fpga/):
 #        python3 tb/bus/syn_rsc.py impl/gwsynthesis/check_bus_syn_rsc.xml
 #                impl/gwsynthesis/check_bus_ref_syn_rsc.xml u_bus u_v9990
@@ -30,6 +35,7 @@
 set_device -name GW2AR-18C GW2AR-LV18QN88C8/I7
 
 set ref [expr {[info exists ::env(CHECK_BUS_REF)] && $::env(CHECK_BUS_REF) ne "" && $::env(CHECK_BUS_REF) ne "0"}]
+set nopatch [expr {[info exists ::env(CHECK_BUS_NOPATCH)] && $::env(CHECK_BUS_NOPATCH) ne "" && $::env(CHECK_BUS_NOPATCH) ne "0"}]
 
 if {$ref} {
     # bus y cartucho de main (hito 1) sacados con git a impl/check_bus_ref/
@@ -48,6 +54,12 @@ if {$ref} {
     set f_slot impl/check_bus_ref/expansion_slot.sv
     set f_top  src/tnCart_board_wt200b_top.sv
     set base   check_bus_ref
+} elseif {$nopatch} {
+    set f_bus  src/board/rev1/board_rev1_bus.sv
+    set f_cart src/cartridge_v9990.sv
+    set f_slot src/peripheral/msx/expansion_slot.sv
+    set f_top  src/tnCart_board_wt200b_top.sv
+    set base   check_bus_nopatch
 } else {
     set f_bus  src/board/rev1/board_rev1_bus.sv
     set f_cart src/cartridge_v9990.sv
@@ -139,6 +151,6 @@ set_option -gen_text_timing_rpt 1
 set_option -gen_sdf 1
 
 run syn
-if {!$ref} {
+if {!$ref && !$nopatch} {
     run pnr
 }
