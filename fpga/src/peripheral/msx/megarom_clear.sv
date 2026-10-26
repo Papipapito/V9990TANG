@@ -88,7 +88,8 @@ module MEGAROM_CLEAR #(
     // synthesis translate_on
 `endif
 
-    localparam [21:0] WORDS = CLEAR_SIZE[23:2];
+    localparam [21:0] WORDS  = CLEAR_SIZE[23:2];
+    localparam [21:0] LAST_W = CLEAR_ADDR[23:2] + WORDS - 22'd1;    // ultima palabra
 
     typedef enum logic [1:0] {
         ST_REQ,
@@ -99,14 +100,12 @@ module MEGAROM_CLEAR #(
     state_t state;
 
     logic [21:0] waddr;     // direccion de palabra (byte >> 2)
-    logic [21:0] remain;    // palabras que faltan
 
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             state       <= (WORDS == 0) ? ST_DONE : ST_REQ;
             DONE        <= (WORDS == 0);
             waddr       <= CLEAR_ADDR[23:2];
-            remain      <= WORDS;
             Ram.ADDR    <= 0;
             Ram.DIN     <= 0;
             Ram.DIN_SIZE<= RAM::DIN_SIZE_8;
@@ -141,8 +140,7 @@ module MEGAROM_CLEAR #(
                 ST_WAIT_BUSY: begin
                     if(Ram.ACK_n) begin
                         waddr  <= waddr + 22'd1;
-                        remain <= remain - 22'd1;
-                        if(remain == 22'd1) begin
+                        if(waddr == LAST_W) begin
                             DONE  <= 1;
                             state <= ST_DONE;
                         end
