@@ -68,6 +68,7 @@ module BOARD_REV1_BUS #(
     parameter               WAIT_TMO_BITS   = 12,       // timeout fail-open del /WAIT: 2^12 ciclos (37,9 us a 108 MHz)
     parameter               ALIVE_WIN_BITS  = 18,       // ventana de la guardia de bus vivo: 2^18 ciclos (2,43 ms a 108 MHz)
     parameter               ALIVE_MIN_EDGES = 64,       // flancos de CLOCK pedidos por ventana (potencia de 2)
+    parameter               ALIVE_CHECK     = 1,        // 1 = bus_ok pide el reloj del slot vivo; 0 = solo /RESET del slot suelto (hardware sin CLOCK en el pin 42)
     parameter               JUMP_HOLD       = 12,       // ciclos sin otro salto tras un salto (>= 11; con <= 6 el g1 puede no revisitarse nunca)
     parameter               DRIVE_TAIL_GUARD = 1,       // 1 = no conducir D0-D7 con la cola de Bus.BUSDIR_n de la lectura anterior
     parameter               ADDR_HOLD       = 1         // 1 = Bus.ADDR quieta mientras Bus.RD_n/WR_n (retrasados) estan a 0
@@ -378,6 +379,8 @@ module BOARD_REV1_BUS #(
      * Guardia de bus vivo (como el MoonTANG): flancos del CLOCK filtrado en
      * una ventana de 2^ALIVE_WIN_BITS ciclos; con >= ALIVE_MIN_EDGES el reloj
      * del slot esta presente. bus_ok ademas exige /RESET del slot suelto.
+     * Con ALIVE_CHECK = 0 solo cuenta el /RESET (para un slot o un expansor que
+     * no lleve CLOCK al cartucho; se pierde la proteccion sin MSX encendido).
      ***************************************************************/
     localparam ALIVE_CNT_BITS = $clog2(ALIVE_MIN_EDGES) + 1;
     logic [ALIVE_WIN_BITS-1:0]  ck_win;
@@ -403,7 +406,7 @@ module BOARD_REV1_BUS #(
             else if((CLOCK != clock_q) && !ck_edges[ALIVE_CNT_BITS-1]) begin
                 ck_edges <= ck_edges + 1'd1;
             end
-            bus_ok <= ck_alive && SLOT_RESET_n;
+            bus_ok <= ((ALIVE_CHECK == 0) || ck_alive) && SLOT_RESET_n;
         end
     end
     assign BUS_OK = bus_ok;

@@ -18,7 +18,8 @@
 // MEMPW = 1 activa PREWAIT_MEM_EN con una MegaRAM de mentira en la subranura 0.
 // SCAN/PWIO/AHOLD/TAILG = 0 quitan una parte de BOARD_REV1_BUS (escaneo
 // adaptativo, pre-WAIT, retencion de la direccion, guardia de cola): con las
-// cuatro a 0 el bus es el de tnCart con las guardias de salida.
+// cuatro a 0 el bus es el de tnCart con las guardias de salida. ALIVE = 0 es
+// ALIVE_CHECK = 0 (bus_ok sin el reloj del slot).
 //
 // Plusargs: +HZ=<frecuencia del Z80> +SEED=<n> +N=<accesos por fase>; de
 // depuracion, +HB=<us> (latido), +DBGCHAIN (cada nuevo maximo de la cadena) y
@@ -45,6 +46,7 @@ module tb_bus;
     parameter int       PWIO      = 1;      // PREWAIT_IO_EN
     parameter int       AHOLD     = 1;      // ADDR_HOLD
     parameter int       TAILG     = 1;      // DRIVE_TAIL_GUARD
+    parameter int       ALIVE     = 1;      // ALIVE_CHECK (0: bus_ok solo mira /RESET del slot)
     parameter int       PW_K      = 6;      // PREWAIT_K
     parameter int       PW_MEM_K  = 7;      // PREWAIT_MEM_K
     parameter real      T_FPGA_CO = 4.0;
@@ -116,6 +118,7 @@ module tb_bus;
         .PREWAIT_IO_EN  (PWIO),
         .ADDR_HOLD      (AHOLD),
         .DRIVE_TAIL_GUARD (TAILG),
+        .ALIVE_CHECK    (ALIVE),
         .PREWAIT_K      (PW_K),
         .PREWAIT_MEM_K  (PW_MEM_K),
         .PREWAIT_MEM_EN (MEMPW)
@@ -1338,15 +1341,26 @@ module tb_bus;
         s_reset_n = 1'b1;
         #3000.0;
         if (bus_ok_o !== 1'b1) begin guard_fail++; $display("  [FAIL] bus_ok no vuelve tras soltar /RESET"); end
-        // reloj del slot parado: bus_ok cae en dos ventanas como mucho
+        // reloj del slot parado: bus_ok cae en dos ventanas como mucho (con
+        // ALIVE_CHECK = 0 no cae: solo mira /RESET)
         cart_clk_run = 1'b0;
         tmo = 0;
         while (bus_ok_o && tmo < 6000) begin #1000.0; tmo++; end
-        if (bus_ok_o) begin guard_fail++; $display("  [FAIL] bus_ok no cae con el reloj del slot parado"); end
-        else $display("   bus_ok cae %0d us despues de parar el reloj del slot", tmo);
-        zt_now();
-        z_in(P(3), rv, 0, 0, 0.0);
-        if (rv !== 8'hFF) begin guard_fail++; $display("  [FAIL] lectura conducida con el reloj del slot parado"); end
+        if (ALIVE == 0) begin
+            if (!bus_ok_o) begin guard_fail++; $display("  [FAIL] con ALIVE_CHECK = 0 bus_ok cae con el reloj del slot parado"); end
+            else $display("   ALIVE_CHECK = 0: bus_ok sigue a 1 %0d us con el reloj del slot parado", tmo);
+            zt_now();
+            wreg(6'd16, 8'h5A);                  // (el /RESET del slot de arriba ha reiniciado el core)
+            rreg(6'd16, rv);
+            if (rv !== 8'h5A) begin guard_fail++; $display("  [FAIL] con ALIVE_CHECK = 0 y el reloj parado, R#16 leido %02h (escrito 5A)", rv); end
+        end
+        else begin
+            if (bus_ok_o) begin guard_fail++; $display("  [FAIL] bus_ok no cae con el reloj del slot parado"); end
+            else $display("   bus_ok cae %0d us despues de parar el reloj del slot", tmo);
+            zt_now();
+            z_in(P(3), rv, 0, 0, 0.0);
+            if (rv !== 8'hFF) begin guard_fail++; $display("  [FAIL] lectura conducida con el reloj del slot parado"); end
+        end
         cart_clk_run = 1'b1;
         tmo = 0;
         while (!bus_ok_o && tmo < 6000) begin #1000.0; tmo++; end
@@ -1416,6 +1430,7 @@ module tb_bus;
                  TOPO, TOPO == 0 ? "con EXPANSION_SLOT" : "sin EXPANSION_SLOT", V99_BASE, MEMPW, mhz, TZ, seed, NACC);
         $display("   BOARD_REV1_BUS: ADAPTIVE_SCAN=%0d PREWAIT_IO_EN=%0d ADDR_HOLD=%0d DRIVE_TAIL_GUARD=%0d PREWAIT_K=%0d PREWAIT_MEM_K=%0d",
                  SCAN, PWIO, AHOLD, TAILG, PW_K, PW_MEM_K);
+        if (ALIVE == 0) $display("   BOARD_REV1_BUS: ALIVE_CHECK=0 (bus_ok solo con /RESET del slot)");
         $display("   presupuestos: /WAIT 1,5 T - 145 = %0.0f ns, dato de E/S 2,5 T - 125 = %0.0f ns", budget_w, 2.5 * TZ - 125.0);
         if (t_m1rd != T_STB || t_iorq_late != 0.0)
             $display("   sensibilidad: /RD del M1 a %0.1f ns de la bajada de T1 (hueco tras un IN/OUT %0.1f ns), /IORQ %0.1f ns despues de /RD-/WR",
