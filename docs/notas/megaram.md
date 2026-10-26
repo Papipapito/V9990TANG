@@ -15,13 +15,22 @@ Biddulph, pide /WAIT en sus lecturas de memoria hasta tener el dato, se borra
 (32 KB a FFh) al arrancar sin bootloader, y `tncrom` compila con SDCC, conoce el
 modo plano, rechaza las imágenes que no caben y carga Konami SCC de hasta 2 MB.
 **Nada de esto se ha probado en la placa**: lo comprueban el banco de
-Verilator, openMSX (solo `tncrom` sin cartucho) y una síntesis con P&R.
+Verilator, un banco del host que corre el `tncrom` real contra un modelo en C
+del cartucho y reproduce sus trazas de bus contra el RTL, openMSX (solo
+`tncrom` sin cartucho) y una síntesis con P&R.
 
 La primera tanda de este hito se cortó por un límite de sesión con todo
-commiteado hasta `4560abf`; la segunda (26/10/2026) volvió a correr sus pruebas
-(banco, `tncrom` en openMSX, síntesis con P&R), amplió `tncrom` a Konami de 2 MB
-(apartado 6) y el banco con esa máscara (apartado 7), ensayó Another World en
-openMSX (apartado 10) y corrigió esta nota donde decía de más.
+commiteado hasta `4560abf`; la segunda (26/10/2026, mañana) volvió a correr sus
+pruebas (banco, `tncrom` en openMSX, síntesis con P&R), amplió `tncrom` a Konami
+de 2 MB (apartado 6) y el banco con esa máscara (apartado 7), ensayó Another
+World en openMSX (apartado 10) y corrigió esta nota donde decía de más. La
+tercera (26/10/2026, tarde) partió del trabajo sin commitear de la segunda:
+pasó el modelo del Z80 del banco a los supuestos del área bus (con ellos **el
+pre-WAIT de memoria es imprescindible también a 3,58 MHz**, apartado 4), acabó
+el banco del host de `tncrom` (`tools/tncrom/test/`) y la variante del banco
+que reproduce sus trazas (apartado 7), añadió una comprobación de simulación de
+`RAM_IF_EXPANSION_USES_FF` (apartado 4) y volvió a correr todo: banco, openMSX y
+síntesis con P&R.
 
 ## 1. Configuración `v9990_megaram`
 
@@ -57,7 +66,11 @@ Para las demos V9990 de Edd Biddulph: ROM plana de 16-48 KB con "AB" en 4000h e
 ISR en 0038h (estudio, sección 7). Es lo que openMSX hace con una ROM plana en
 0000h: `RomPlain.cc` mapea la imagen desde `romBase = 0x0000` (tipo
 `NORMAL0000`, o `guessLocation()` si la cabecera lo indica) en páginas de 8 KB
-con `romBase / 0x2000`, es decir, desplazamiento = dirección, solo lectura.
+con `romBase / 0x2000`, es decir, desplazamiento = dirección; las páginas
+fuera de la imagen quedan sin mapear (`setUnmapped`: una de 48 KB deja
+C000h-FFFFh sin respuesta, como PLAIN0). Solo lectura: `RomBlocks` no redefine
+`writeMem` y el de `MSXDevice` no hace nada ("write to unmapped memory, do
+nothing"). Releído en el `master` de openMSX el 26/10/2026.
 
 **Dónde está el flag.** El registro de flags 0Ch no tiene bits libres (b0-b7:
 protección, tamaño de banco, máscaras CS1/CS2, SCC, SCC-I, `ENABLE_CONTINUOUS`,
@@ -151,8 +164,9 @@ camino retrasado):
   `Bus` del controlador; `Bus.WAIT_n` es un flop). Medido: rd_mem_n → WAIT_n del
   puerto 1 ciclo; `Bus.RD_n` retrasado del top → `Bus.WAIT_n` del top **3
   ciclos** (las dos etapas de flops de `EXPANSION_SLOT`, `SLOT_EXPANSION_USES_FF
-  = 1`, más el flop del controlador), en todas las lecturas de todas las
-  variantes.
+  = 1`, más el flop del controlador), en todas las lecturas a 3,58 y 5,37 MHz;
+  a 7,16 MHz 3-4, cuando `MERQ`/`SLTSL` llegan al `Bus` después que el `RD`
+  retrasado (desde ellos sigue siendo 1 ciclo en el puerto).
 - **Lo mantiene hasta que `Bus.DOUT` tiene el dato**: espera a que el
   `ACK_n` del canal 0 baje (el UMA lo baja en el flanco siguiente a `OE_n` = 0)
   y vuelva a subir (el UMA lo sube en el mismo flanco en que carga
@@ -161,6 +175,17 @@ camino retrasado):
   `Bus.DOUT` carga `Ram.DOUT[7:0]`**. Un `ACK_n` ya bajo al empezar (escritura o
   refresco anteriores aún en curso) no adelanta la liberación: el UMA no lo sube
   mientras quede la lectura pendiente (`save_oe` en `req_any`).
+- **Eso pide `RAM_IF_EXPANSION_USES_FF = 0`** (el valor de
+  `config/v9990_megaram.sv` y de tnCart). Sin flops en `EXPANSION_RAM` el UMA ve
+  el `OE_n` del controlador en el ciclo siguiente a que este pase a esperar el
+  `ACK_n` (`det_oe`), y `det_any` tiene prioridad sobre el fin del acceso
+  anterior (`uma.sv`, "ACK_n 更新"): un `ACK_n` bajo que el controlador vea en ese
+  primer ciclo ya no vuelve a subir hasta el fin de la lectura. Con flops habría
+  dos ciclos más en los que el acceso anterior podría acabar y subir `ACK_n`
+  antes de que el UMA viera la lectura: el controlador lo tomaría por el fin de
+  la suya y soltaría el WAIT con el dato viejo. No se ha simulado ese caso;
+  `cartridge_megarom.sv` da un `$error` de simulación si alguien junta
+  `ENABLE_MEM_WAIT = 1` con `RAM_IF_EXPANSION_USES_FF = 1`.
 - Del WAIT suelto al fin de la lectura el dato no cambia (lo vigila el banco).
 - Solo lecturas: las escrituras no piden /WAIT (el UMA las guarda al ver el
   flanco de `WE_n`). Las lecturas del SCC (9800h/B800h) también esperan a la
@@ -170,8 +195,8 @@ camino retrasado):
 
 Cifras del banco (108 MHz): del `Bus.RD_n` retrasado a `Bus.WAIT_n` alto con
 el dato, **15 a 34 ciclos (139-315 ns)** según la fase de la lectura frente a
-la ranura del canal 0 (hasta 49 ciclos con un refresco inyectado en el mismo
-canal; 54 con el UMA de `hito/sdram`). Del /RD del pin al /WAIT del pin, **14
+la ranura del canal 0 (hasta 51 ciclos con un refresco inyectado en el mismo
+canal; 53 con el UMA de `hito/sdram`). Del /RD del pin al /WAIT del pin, **14
 ciclos (130 ns)** solo con la cadena (filtro 2 + línea de 9 + tres flops), 8 con
 el modelo de pre-WAIT del banco.
 
@@ -182,7 +207,8 @@ un registro I entre 40h y BFh), tnCart lanzaba una lectura de la SDRAM, y con
 `ENABLE_MEM_WAIT` sería además un /WAIT espurio. `MERQ_n` y `RFSH_n` se
 muestrean juntos (grupo 2 del mux), así que basta con añadir `!Bus.RFSH_n` a la
 condición de lectura. El banco cuenta los refrescos que sin esa condición
-habrían sido lecturas: 0 a 3,58 y 5,37 MHz, 16 a 7,16 MHz.
+habrían sido lecturas: 0 en todas las variantes con los supuestos del Z80 de la
+tercera tanda; con los de antes, 16 a 7,16 MHz.
 
 ### Contrato con el pre-WAIT del área bus
 
@@ -200,23 +226,41 @@ la muestra del grupo 2 tras el flanco de RD filtrado, hasta que `Bus.WAIT_n`
 - En lo que no es suyo (registros, `FFFFh`, otras subranuras, páginas fuera de
   la ventana) no baja nunca: ahí el pre-WAIT se suelta por K.
 
-Medido con el **modelo** de pre-WAIT del banco (disparo a `PW_DLY` ciclos del RD
-filtrado; supuestos del Z80A: salidas 46 ns tras el flanco, /WAIT visto con 100
-ns de NPN + setup, dato con 56 ns): a **3,58 MHz** el Z80 espera bien con y sin
-pre-WAIT (la cadena sola llega en 14 ciclos; variantes `wait` y `noprewait`
-estrictas). A **5,37 MHz** solo vale un pre-WAIT en el pin a ≤ 4 ciclos del /RD
-del pin: con 4 ciclos, 0 fallos; con 5, 177 lecturas mal leídas y 37 sin esperar;
-con 8 (el disparo por defecto del modelo), 217 y 49 (`turbo5`, `turbo5i` y un
-barrido de `PW_DLY` = 1, 2, 3). A 7,16 MHz, 324 y 150 con 8 ciclos. La conclusión
-para `hito/bus`: en ciclos de **memoria** (sin el TW automático de la E/S) el
-pre-WAIT de 5,37 MHz tiene que salir casi a la vez que el filtro del pin
-(este, 2 ciclos); con estos supuestos un disparo tras una muestra fresca del
-grupo 2 (2 ciclos de asentamiento y 2 muestras después del RD filtrado) no
-llega. Son cifras de un modelo, no de la placa, y dependen sobre todo del
-retardo de /RD del Z80 y del setup de /WAIT supuestos. La nota del área bus
-(`docs/notas/bus.md` del worktree de `hito/bus`, sin commit, leída el
-26/10/2026) llega a lo mismo por su lado: el presupuesto de /WAIT en memoria a
-5,37 MHz son 41 ns (T − 145 ns) y su banco solo da por buena la MegaRAM a 3,58.
+Medido con el **modelo** de pre-WAIT del banco (disparo a `PW_DLY` = 4 ciclos
+del RD filtrado: /WAIT en el pin 8 ciclos, 74 ns, después del /RD del pin; se
+suelta como el de `hito/bus`) y, desde la tercera tanda, **con los supuestos del
+Z80 del banco del área bus** (`docs/notas/bus.md` de `hito/bus`, apartado 7:
+`/RD` a 75 ns de la bajada de T1, `/WAIT` con 50 ns de NPN y 70 de setup antes
+de la bajada de T2; apartado 7 de esta nota). Cifras del 26/10/2026 por la
+tarde, 253 lecturas comprobadas por el Z80 en cada variante:
+
+| Variante | MHz | Qué cambia | Lecturas mal leídas o sin esperar |
+|---|---|---|---|
+| `wait` | 3,58 | /WAIT + pre-WAIT a 8 ciclos | **0** (estricta) |
+| `noprewait` | 3,58 | solo la cadena (/WAIT en el pin a 14 ciclos, 130 ns) | **71** |
+| `wait_rd9` / `wait_rd10` | 3,58 | `/RD` 1 / 2 ciclos más tarde (83 / 93 ns) | 1 / 73 |
+| `noprewait_opt` | 3,58 | solo la cadena con los supuestos de antes (`/RD` a 46 ns, NPN 30) | 0; con `/RD` un ciclo más tarde, 54 |
+| `nowait` | 3,58 | sin `ENABLE_MEM_WAIT` (tnCart) | 71 |
+| `turbo5` / `turbo5i` | 5,37 | pre-WAIT a 8 / 4 ciclos | 240 / 240 (47 lecturas acaban con el WAIT aún bajo) |
+| `turbo7` | 7,16 | pre-WAIT a 8 ciclos | ver el apartado 7 |
+
+Conclusiones, todas de un modelo y no de la placa:
+
+- A **3,58 MHz** el pre-WAIT de memoria de `hito/bus` es **imprescindible**: la
+  cadena sola (filtro de 2, línea de 9 y los tres flops hasta `Bus.WAIT_n`)
+  pone el /WAIT en el pin a 130 ns del /RD y el presupuesto, con NPN, es de unos
+  84 ns. Con el pre-WAIT a 74 ns el margen es de **un ciclo de 108 MHz** (9 ns):
+  con `/RD` 9 ns más tarde ya falla una lectura y con 18 ns, 73. Hasta la
+  tercera tanda esta nota decía que la cadena sola llegaba: era con un `/RD` a 46
+  ns y 30 ns de NPN, y aun así con margen 0.
+- A **5,37 MHz** no llega ningún pre-WAIT con estos supuestos, ni uno ideal a 4
+  ciclos (37 ns) del /RD: el presupuesto de /WAIT en memoria es T − 145 = 41 ns
+  desde el /RD del Z80 hasta su pin /WAIT (nota del área bus, apartado 7), menos
+  que el NPN solo. Con los supuestos de antes un pre-WAIT a ≤ 4 ciclos daba 0
+  fallos. La nota del área bus llega a lo mismo: su banco solo da por buena la
+  MegaRAM a 3,58. Depende sobre todo del retardo de `/RD` y del NPN supuestos
+  (retardos máximos de un Z80A): con un Z80 más rápido o un NPN más rápido
+  cambia, y solo la placa lo dirá.
 
 ### Contrato con el UMA (área sdram)
 
@@ -284,9 +328,19 @@ tocar, en `cartridge_megarom.sv`):
 - Coinciden las direcciones de los registros (5000h, 7000h, 9000h, B000h,
   `(address & 0x1800) == 0x1000`), los bancos tras el reset (0, 1, 2, 3) y
   dónde aparece el SCC (9800h con el banco 2 a 3Fh en modo SCC; B800h con el
-  bit 7 del banco 3 en SCC+). ASCII16 coincide con
+  bit 7 del banco 3 en SCC+), aunque openMSX lo decodifica en 9800h-9FFFh y
+  B800h-BFFFh y tnCart solo en 98xxh y B8xxh (`scc_cs_n` mira `ADDR[15:8]`;
+  sin cambiar, es de tnCart). Releído en `MSXSCCPlusCart.cc` el 26/10/2026, igual
+  que el registro de modo de arriba. ASCII16 coincide con
   `src/memory/RomAscii16kB.cc` (registros en 6000h-67FFh y 7000h-77FFh, los
   dos bancos a 0 tras el reset; tnCart usa la máscara F800h).
+- Al encender, los bancos también valen 0, 1, 2, 3 aunque el /RESET del MSX se
+  suelte antes que `DONE`: la rama `!RESET_n` del controlador los pone a 0, pero
+  `EXPANSION_SLOT` sale de su reset con `Secondary.RESET_n = 0` al menos un
+  ciclo y el controlador pasa entonces por `!Bus.RESET_n`, que carga
+  `BankRegInit`. Leído en el RTL y así lo supone el modelo del banco del host;
+  el banco de Verilator no lo distingue (los cuatro bancos caen en los 32 KB
+  borrados).
 
 ## 6. `tncrom` (`tools/tncrom/`)
 
@@ -310,7 +364,9 @@ de `main.c` vive en 6000h-7FFFh). `sdcc/crt_msxdos.c` parte la cola de 0080h en
 durante la copia) y sale con `_TERM`. Los bloques `#asm` de z88dk pasan a
 funciones `__naked` que toman los registros de variables globales: no dependen
 del convenio de llamada de SDCC y guardan IX/IY. La compilación es
-reproducible (dos builds, mismo binario).
+reproducible (dos builds, mismo binario). Los ganchos del banco del host (abajo)
+no cambian el binario: con ellos `build.sh` da el mismo `TNCROM.COM` byte a byte
+(comprobado con `cmp` el 26/10/2026 por la tarde).
 
 **Extensiones** (las líneas llevan `V9990TANG`):
 
@@ -329,7 +385,8 @@ y la primera escritura a un registro de banco caería en la ROM cargada.
 
 **Probado en openMSX** (`C:/Program Files/openMSX`; salida de cada orden por
 redirección a un fichero y `get_screen` desde un Tcl). El 26/10/2026 con el
-binario de `bfc5748` (r2): Philips NMS 8250 con una Sunrise IDE de Nextor 2.1.4
+binario de `bfc5748` (r2), dos veces (mañana y tarde: los 17 ficheros de salida
+salen idénticos, y el de MSX-DOS 1 igual): Philips NMS 8250 con una Sunrise IDE de Nextor 2.1.4
 (extensión `v99tang_tncrom_ide.xml` en la carpeta `share/extensions` de
 OneDrive) y una imagen FAT16 de 128 MB hecha con
 `SymbOS-MSXimus/tools/build_sd.py` (las imágenes de 2-8 MB no caben en un
@@ -352,10 +409,60 @@ sacaron de la imagen con `extract.py`:
 La revisión r1 (`b7c21e1`) se probó igual con MSX-DOS 2.20 (extensión `msxdos2`)
 y un disco de directorio; el binario solo con el port (sin extensiones,
 `deff8cd`) da la misma ayuda y el mismo "cartridge not found." que el original.
-**La carga real no se ha probado** y la máscara de 0Dh solo se puede ver con el
-cartucho: necesita la placa. La secuencia de registros que hace `tncrom`
-(`lib/rom_tools.c`, `src/main.c`) es la que reproduce el banco, que comprueba
-también las dos máscaras de KONAMI (apartado 7).
+En openMSX **la carga real no se puede probar** (no tiene la megaROM de tnCart):
+la cubren el banco del host y la reproducción de sus trazas contra el RTL
+(abajo y apartado 7). En la placa sigue sin probar.
+
+**Banco del host** (`tools/tncrom/test/`, gcc 13 en WSL):
+
+```
+wsl -e bash -lc "cd /mnt/c/<repo>/tools/tncrom/test && ./run.sh"
+# -> ~/.cache/v99tang_tncrom_test/test_tncrom.log y tncrom_{plain0,ascii16,scci}.trc
+```
+
+Compila `src/` y `lib/` de `tncrom` tal cual para el host, con
+`TNCROM_HOST_TEST` y `-include host_types.h` (los anchos de SDCC: `uint32_t` de
+32 bits), y corre su `main()` contra `host_mock.c`, que sustituye lo que
+`tncrom` pide a la BIOS y al DOS: `RDSLT`/`WRSLT`/`ENASLT` + `LDIR`, `EXPTBL`,
+el BDOS (ficheros en memoria, `_DOSVER`) y `reboot()`. Slots: 0 la BIOS, 1
+expandido con la megaROM en 1-0, 2 vacío, 3 expandido con RAM en 3-0. La megaROM
+del modelo sigue el RTL regla a regla (llave, `cs_reg_rd_n`/`cs_reg_wr_n`,
+lectura de 00h-3Fh, PLAIN0, `cs_mem_n`, `wr_mem_n`, registros de banco con
+`BankRegAddrMask`/`BankEnable`, `addr_16`/`addr_8`/`addr_plain`, el modo SCC-I
+de BFFEh y la rama `!Bus.RESET_n`), con el orden del RTL dentro de una
+escritura (la RAM con los bancos de antes). Ganchos en `tncrom`, todos tras
+`TNCROM_HOST_TEST`: `EXPTBL()` en `main.c` en lugar de leer FCC1h a mano, el
+búfer de 8 KB como array y las llamadas a la BIOS de `lib/rom_tools.c` hacia el
+modelo; además dos casts a `unsigned long` en los `printf` de `%lu` (en SDCC no
+cambian nada). 71 comprobaciones, todas bien el 26/10/2026:
+
+- ayuda y errores de línea de órdenes y de tamaño (PLAIN0 de 48 KB + 1, vacío,
+  tipo desconocido, ASCII16 de 4 MB + 1 KB, KONAMI y ASCII8 de 2 MB + 1 KB, 32K
+  de 49 KB, fichero que no existe, MSX-DOS 1) **sin ninguna operación con el
+  cartucho**, y la ventana de 3 MB (3Eh = C0h, la de tnCart) frente a una imagen
+  de 4 MB: `rom image too large for the cartridge: 4096KB, window 3072KB.`;
+- PLAIN0 de 48 KB: atributo (`flags` C3h, 1Fh = 01h), ventana = imagen, lectura
+  lineal de 0000h-BFFFh, C000h sin respuesta, la llave y las escrituras no hacen
+  nada, un segundo `tncrom` no encuentra el cartucho, el /RESET borra PLAIN0 y
+  ENABLE, `-R` reinicia con PLAIN0 activo y sin el aviso, `-O`;
+- ASCII16 de 40 KB (dos páginas, protección, /RESET con y sin `-O`) y de 4 MB
+  (los 256 bancos, FFh y 80h); KONAMI de 512 / 513 KB / 2 MB con la máscara
+  3Fh / 7Fh / FFh en 0Dh y los bancos FFh y 41h; KONAMI_WO_SCC y ASCII8 de 2 MB
+  (FFh); KONAMI_SCC_I de 32 KB (BFFEh = 00h deja los cuatro bancos protegidos,
+  10h todo RAM como hace SofaRun); 32K (banco 1 = 1 tras /RESET) y `-N`.
+
+Lo que enseñó: `tncrom` escribe un byte fuera de la imagen. Pone el banco 0 en
+el último antes de cargar (`xfer_file`) y cada escritura al registro de banco 1
+(7000h, página 1, sin protección) cae también en ese banco en +3000h; si la
+imagen acaba antes (último banco incompleto: la de 40 KB) ahí queda el número
+del último banco. Está fuera de la imagen y no molesta; es de upstream y no se
+ha cambiado.
+
+Tres casos dejan su traza de bus con la megaROM desde el encendido (`W aaaa dd`,
+`R aaaa dd` con el dato que dio el modelo, `Z` para el /RESET): PLAIN0 (148 543
+operaciones), ASCII16 de 40 KB (82 589) y KONAMI_SCC_I de 32 KB (33 241). La
+variante `tncrom` del banco de Verilator las reproduce contra el RTL (apartado
+7).
 
 ## 7. Banco (`fpga/tb/megaram/`, Verilator 5.020 en WSL)
 
@@ -393,27 +500,51 @@ del /WAIT (cuándo baja en el puerto y en el top, que suba con el dato válido y
 que el dato no cambie hasta el fin de la lectura; ningún /WAIT fuera de una
 lectura de la megaROM).
 
-Resultados del 26/10/2026 (`run.sh` sin argumentos, las nueve PASA; las
-`*_hito4` con el `uma.sv` de `hito/sdram` `cbf65ea`, md5 `0738833e`). Se corrió
-dos veces: con el banco de `4560abf` (salen las mismas cifras que se habían
-apuntado con él: 237 lecturas, 47 de 249 mal leídas sin /WAIT, 7 de 31 en
-`inj_main`, 217 y 324 fallos en `turbo5` y `turbo7`) y con el banco ampliado con
-KONAMI (`dc67fec`), que es la tabla:
+**Supuestos del Z80** (parámetros `D_ADDR`, `D_CTRL`, `D_WAIT`, `D_DATA`, en
+ciclos de 108 MHz): desde el 26/10/2026 por la tarde, los del banco del área bus
+(`docs/notas/bus.md` de `hito/bus`, apartado 7, "retardos máximos fijos,
+estimados"): dirección a 110 ns de la subida de T1 (12 ciclos), `/MREQ` y `/RD`
+a 75 ns de la bajada de T1 (8), `/WAIT` visto con 50 ns de NPN y 70 de setup
+antes de la bajada de T2 (13) y dato con 50 de setup más el transceptor (6).
+Hasta entonces el banco suponía `/RD` a 46 ns (5) y 30 ns de NPN (11), y con
+eso la cadena del /WAIT sola llegaba. `EXTRA_G="-GD_CTRL=9"` cambia los
+supuestos en todas las variantes.
+
+**Variante `tncrom`** (`TRACE = 1`): en lugar del programa, tras el borrado,
+lanza el banco del host de `tools/tncrom/test` (apartado 6) y reproduce sus tres
+trazas desde el encendido: cada `W` es una escritura del Z80 por el bus, cada `R`
+una lectura (una de cada ocho como M1, con su refresco) que tiene que dar en el
+RTL el dato que dio el modelo en C, cada `Z` un /RESET; páginas 0-2 en el
+cartucho. Es el `tncrom` real contra el RTL real, con el monitor del /WAIT
+activo. `TRACE` es un parámetro y no solo el plusarg `+TRACE=` porque con las
+dos ramas vivas Verilator 5.020 inlinea el programa entero y el C++ del módulo
+pasa de 0,5 a 24 MB (una compilación de más de 20 minutos que se cortó). La
+primera pasada encontró una falsa alarma del monitor: `msx_reset` baja /RESET
+nada más acabar una lectura en el pin, cuando en el camino retrasado aún no ha
+acabado, y `EXPANSION_SLOT` pone en reposo el bus del cartucho; el Z80 ya había
+tomado el dato. Desde entonces el monitor no mira la estabilidad del dato con
+/RESET bajo.
+
+Resultados del 26/10/2026 por la tarde: `run.sh` sin argumentos sobre `6f20c51`,
+las trece variantes PASA (las tres trazas de `tncrom` incluidas); las `*_hito4`
+con el `uma.sv` de `hito/sdram` `cbf65ea`, md5 `0738833e`. Las variantes de
+medida del /WAIT (`noprewait`, `noprewait_opt`, `wait_rd9`, `wait_rd10`,
+`nowait`, `turbo5`, `turbo5i`) están en la tabla del apartado 4.
 
 | Variante | Qué | Resultado |
 |---|---|---|
-| `wait` | estricta, 3,58 MHz, /WAIT + modelo de pre-WAIT | 241 lecturas de la megaROM, todas con WAIT; 0 errores; VRAM: 12 937 lecturas, 0 malas, 0 ranuras perdidas; borrado en 163 837 ciclos (1,52 ms), 8192 escrituras |
-| `noprewait` | estricta, 3,58 MHz, solo la cadena | 0 errores (/WAIT en el pin a 14 ciclos del /RD) |
+| `wait` | estricta, 3,58 MHz, /WAIT + modelo de pre-WAIT | 241 lecturas de la megaROM, todas con WAIT; 0 errores; VRAM: 13 012 lecturas, 0 malas, 0 ranuras perdidas; borrado en 163 837 ciclos (1,52 ms), 8192 escrituras |
+| `tncrom` | estricta, las trazas del `tncrom` real | PLAIN0: 147 834 escrituras y 706 lecturas (652 de la megaROM, todas con WAIT), 3 /RESET; ASCII16: 82 172 y 415 (382), 2 /RESET; KONAMI_SCC_I: 32 897 y 344 (328). 0 errores; el canal 1 sin ranuras perdidas en 905 000, 507 000 y 209 000 lecturas |
 | `wait_hito4` | estricta, con el `uma.sv` de `hito/sdram` | 0 errores; borrado en 165 937 ciclos (1,54 ms) |
-| `inj_hito4` | estricta, refresco inyectado en el canal 0 a +0..+30 ciclos | 0 de 31 lecturas rompen el contrato (liberación 15-54 ciclos) |
-| `inj_main` | medida, igual con el UMA de `main` | 7 de 31 rompen el contrato (defecto del UMA, apartado 4) |
-| `nowait` | medida, `ENABLE_MEM_WAIT = 0` (tnCart) | 61 lecturas mal leídas por el Z80 de 253: sin /WAIT el dato llega tarde según la fase con la ranura |
-| `turbo5`, `turbo5i`, `turbo7` | medidas a 5,37 / 7,16 MHz | 220 / 0 / 331 fallos contados del Z80 (pre-WAIT a 8 / 4 / 8 ciclos del /RD del pin); ver el apartado 4 |
+| `inj_hito4` | estricta, refresco inyectado en el canal 0 a +0..+30 ciclos | 0 de 31 lecturas rompen el contrato (liberación 15-53 ciclos) |
+| `inj_main` | medida, igual con el UMA de `main` | 8 de 31 rompen el contrato (defecto del UMA, apartado 4; eran 7 con los supuestos del Z80 de antes) |
+| `turbo7` | medida, 7,16 MHz | no significativa con estos supuestos: el `/RD` de un Z80A (75 ns) cae después de la subida de T2 (semiperiodo de 70 ns) y el modelo del Z80 alarga el ciclo un T; además el `BOARD_REV1_BUS` de `main` entrega 20 de 241 lecturas con la dirección anterior (la nota del área bus da la memoria de nuestra ranura a 7,16 MHz como fallo esperado). 11 lecturas mal contadas |
 
-En todas: `Bus.RD_n` → `Bus.WAIT_n` del top 3 ciclos, `rd_mem_n` → `WAIT_n` del
-puerto 1 ciclo, `Bus.WAIT_n` sube con `Bus.DOUT` válido a los 15-34 ciclos del
-`Bus.RD_n` (139-315 ns; hasta 49 con un refresco inyectado y 54 con el UMA de
-`hito/sdram`).
+En todas: `Bus.RD_n` → `Bus.WAIT_n` del top 3 ciclos (3-4 a 7,16 MHz, donde
+`MERQ`/`SLTSL` llegan a veces después que el `RD` retrasado), `rd_mem_n` →
+`WAIT_n` del puerto 1 ciclo, `Bus.WAIT_n` sube con `Bus.DOUT` válido a los
+15-34 ciclos del `Bus.RD_n` (139-315 ns; hasta 51-53 con un refresco inyectado),
+y ninguna lectura de 3,58 MHz con otra dirección en el camino retrasado.
 
 El banco no modela la SDRAM física (el punto de captura de `sdram.sv`), ni el
 NPN, ni el escaneo adaptativo de `hito/bus` (usa el `board_rev1_bus.sv` de
@@ -435,8 +566,12 @@ en una ruta corta aparte (`Temp/v99wt/mr_base`) el mismo día. La build
 `check_megaram` se volvió a lanzar en la segunda tanda (26/10/2026, 08:58-09:37,
 con otras builds en paralelo; el RTL no cambió) y salió igual: el
 `check_megaram_syn_rsc.xml` es idéntico byte a byte y el `.rpt.txt` solo cambia
-en las fechas (el P&R es determinista). La base no se volvió a compilar (sus
-cifras de lógica y registros son las del estudio, exactas):
+en las fechas (el P&R es determinista). Y una tercera vez en la tercera tanda
+(26/10/2026, 14:46-15:22, con el árbol final: el único cambio de RTL desde la
+anterior es el `$error` de simulación de `cartridge_megarom.sv`, fuera de la
+síntesis): otra vez `check_megaram_syn_rsc.xml` idéntico byte a byte y el
+`.rpt.txt` y el `.tr` idénticos salvo las líneas con fecha. La base no se volvió
+a compilar (sus cifras de lógica y registros son las del estudio, exactas):
 
 | | Estudio `v9990_mega` | Base (megaROM de tnCart, este árbol) | **`check_megaram`** |
 |---|---|---|---|
@@ -463,7 +598,9 @@ cifras de lógica y registros son las del estudio, exactas):
   228 LUT / 108 FF y `u_flash_spi` 63 / 64), que la integración quita.
 - Sin `CLK_21M` ni relojes nuevos: CLKDIV 3/8 como en el hito 1, 8/8 PRIMARY.
 - **Puerta** (`tools/check_build.py` con la referencia del estudio, 15 494 /
-  9 111 / 29, ±1 %): **PASA**. Lógica +0,56 %, CLS −0,34 %, BSRAM igual,
+  9 111 / 29, ±1 %, y los límites de CLS del hito 1, `--max-cls 9331
+  --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109`): **PASA** (vuelta a pasar
+  sobre la build de la tercera tanda, con las mismas cifras). Lógica +0,56 %, CLS −0,34 %, BSRAM igual,
   `set_clock_groups` `Actived` y las 16 órdenes del `.sdc` en el `.tr`, peor
   slack setup / hold / recovery / removal +0,359 / +0,074 / +4,291 / +1,086 ns,
   carrera `CLK_BASE` → `DCLK` +1,954 ns en setup y +4,353 en hold, offset de
@@ -485,10 +622,14 @@ cifras de lógica y registros son las del estudio, exactas):
   `CONFIG::ENABLE_MEM_WAIT` y no hace falta pasarlo.
 - **Configuración**: la build MegaRAM usa `config/v9990_megaram.sv`, que define
   `ENABLE_MEM_WAIT`. Cualquier otra configuración que compile
-  `cartridge_megarom.sv` tiene que definirlo.
+  `cartridge_megarom.sv` tiene que definirlo. Con `ENABLE_MEM_WAIT = 1`,
+  `RAM_IF_EXPANSION_USES_FF` tiene que seguir a 0 (apartado 4; lo vigila un
+  `$error` de simulación).
 - **`hito/bus`**: activar `PREWAIT_MEM_EN = 1` en la configuración MegaRAM
   (con `PREWAIT_MEM_K = 7`; el /WAIT de la megaROM llega al top a los 3 ciclos).
-  Para turbo, ver las cifras del apartado 4.
+  **No es opcional**: con los supuestos del Z80 del propio banco del área bus,
+  sin pre-WAIT la cadena del /WAIT llega tarde también a 3,58 MHz (variante
+  `noprewait`, apartado 7). Para turbo, ver las cifras del apartado 4.
 - **`hito/sdram`**: fusionar su `uma.sv` (DOUT solo tras un R/W) antes o a la
   vez que su refresco interno; con el `uma.sv` de `main` el contrato del /WAIT
   solo se cumple mientras la megaROM sea el único cliente del canal 0.
@@ -507,7 +648,10 @@ cifras de lógica y registros son las del estudio, exactas):
   integración): el mapa de la SDRAM de la MegaRAM, los registros 1Fh y 3Eh, el
   /RESET con `tncrom`, el uso de `tncrom -T PLAIN0 -R`, los máximos por tipo
   (4 MB en 16 KB, 2 MB en 8 KB, `-T KONAMI` para los Konami SCC de 1-2 MB) y
-  que Another World V9990 pide un turbo R.
+  que Another World V9990 pide un turbo R. Para VERIFICATION.md: las pruebas
+  de este hito son `fpga/tb/megaram/run.sh` (Verilator; la variante `tncrom`
+  necesita además gcc y lanza `tools/tncrom/test/run.sh`) y
+  `fpga/check_megaram.tcl`; `tools/tncrom/build.sh` rehace `TNCROM.COM`.
 - **`tools/tncrom/bin/TNCROM.COM`** es el binario de `build.sh` (r2, 13 375
   bytes); la LEEME de la 1.0 lo distribuye en lugar del de tnCart.
 
@@ -540,11 +684,25 @@ cifras de lógica y registros son las del estudio, exactas):
     caben en 8 bits; no se ven espejos ni bancos con A11-A8), **no una prueba**:
     falta jugarlo en un turbo R. Si funciona, sería `tncrom -T ASCII16`; la
     ventana de 4 MB ya lo admite.
-- Turbo: con el /WAIT de memoria el contrato se cumple, pero el modelo dice que
-  a 5,37 MHz el pre-WAIT tiene que estar en el pin a ≤ 4 ciclos del /RD.
+- **Margen del /WAIT a 3,58 MHz**: con los supuestos de Z80A del área bus el
+  pre-WAIT llega con un ciclo de 108 MHz de margen (apartado 4). Si en la placa
+  el `/RD` del Z80 o el NPN son más lentos de lo supuesto, la MegaRAM leerá mal
+  sin que nada lo avise: es lo primero que hay que mirar con el osciloscopio.
+- Turbo: con el /WAIT de memoria el contrato se cumple, pero con estos
+  supuestos a 5,37 MHz no llega ningún pre-WAIT (apartado 4) y a 7,16 MHz el bus
+  de `main` además entrega direcciones a destiempo (apartado 7). Sin probar en
+  placa.
 - `tncrom -R` con PLAIN0 depende de que el registro `FFFFh` tenga las páginas 0
   y 2 en la subranura 0 cuando arranca la demo: WOLF3D y WIREFRM no lo tocan
   (apartado 2).
+- El banco del host de `tncrom` usa un modelo en C del cartucho escrito a mano
+  desde el RTL. Lo que se compara con el RTL de verdad son las lecturas de las
+  tres trazas (1 465, todas iguales); las imágenes grandes (4 MB, 2 MB) y los
+  KONAMI de más de 512 KB solo pasan por el modelo, porque reproducir 4 M
+  escrituras por el Z80 del banco de Verilator llevaría horas. Y es el `tncrom`
+  compilado con gcc, no el binario de SDCC: lo que dependa del compilador o del
+  ensamblador (convenio de llamada, `xfer_memory`, la pila en la página 3) solo
+  lo prueban openMSX (sin cartucho) y la placa.
 - El SCC sigue con sus 5 BSRAM (una DPB por canal): se pueden ahorrar 4 con una
   sola DPB si hiciera falta.
 - *Known issue* #14 de tnCart (github.com/buppu3/tnCart/issues/14, abierto,

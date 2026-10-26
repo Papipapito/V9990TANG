@@ -16,13 +16,19 @@
 #                        (71 de 253 lecturas mal el 26/10/2026): el pre-WAIT de
 #                        memoria es imprescindible tambien a 3,58 MHz
 #   noprewait_opt medida igual con los supuestos antiguos del banco (/RD a
-#                        46 ns, NPN 30 ns): llega justo, con margen 0
+#                        46 ns, NPN 30 ns): llega justo, con margen 0 (con
+#                        EXTRA_G="-GD_CTRL=6", 54 lecturas mal)
 #   wait_rd9   medida    wait con /RD a 9 ciclos (83 ns) de la bajada de T1
 #   wait_rd10  medida    wait con /RD a 10 ciclos (93 ns): margen del pre-WAIT
 #   nowait     medida    MEM_WAIT=0 PREWAIT=0 a 3,58 MHz (como tnCart, sin WAIT)
 #   turbo5     medida    MEM_WAIT=1 PREWAIT=1 a 5,37 MHz
-#   turbo5i    medida    igual con pre-WAIT ideal (PW_DLY=0)
-#   turbo7     medida    MEM_WAIT=1 PREWAIT=1 a 7,16 MHz
+#   turbo5i    medida    igual con pre-WAIT ideal (PW_DLY=0): con los supuestos
+#                        del area bus no llega ninguno de los dos
+#   turbo7     medida    MEM_WAIT=1 PREWAIT=1 a 7,16 MHz; no significativa con
+#                        los supuestos de un Z80A (el /RD cae despues de la
+#                        subida de T2 y el modelo alarga el ciclo un T) y con el
+#                        bus de main, que a esa velocidad entrega lecturas con la
+#                        direccion anterior (se cuentan aparte)
 #   inj_main   medida    INJ=1 (refresco de otro cliente del canal 0 alrededor de
 #                        cada lectura) con el UMA de tnCart (el de este arbol):
 #                        control del defecto de ese UMA (DOUT copiado tras un
