@@ -20,7 +20,9 @@
 // adaptativo, pre-WAIT, retencion de la direccion, guardia de cola): con las
 // cuatro a 0 el bus es el de tnCart con las guardias de salida.
 //
-// Plusargs: +HZ=<frecuencia del Z80> +SEED=<n> +N=<accesos por fase>.
+// Plusargs: +HZ=<frecuencia del Z80> +SEED=<n> +N=<accesos por fase>; de
+// depuracion, +HB=<us> (latido), +DBGCHAIN (cada nuevo maximo de la cadena) y
+// +DBGPW (cada pre-WAIT de mas de 8 ciclos, con el estado del ultimo salto).
 // Salida: tabla de resultados y BUS_OK / BUS_FAIL (criterio por velocidad en
 // docs/notas/bus.md).
 //
