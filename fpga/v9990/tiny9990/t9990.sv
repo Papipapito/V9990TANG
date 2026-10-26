@@ -46,7 +46,11 @@ endpackage
 /***********************************************************************
  * tiny9990
  ***********************************************************************/
-module T9990 (
+module T9990 #(
+    // V9990TANG: partes nuevas del core, cada una apagable para medir su coste o si falta sitio
+    parameter           ENABLE_PAL        = 1,  // cuadro PAL de 313 lineas con R#7 bit 3
+    parameter           ENABLE_R16        = 1   // ajuste de posicion de la imagen de R#16
+) (
     input wire          RESET_n,            // リセット
     input wire          CLK,                // 動作クロック
     input wire          CLK_21M_EN,         // 21MHz タイミング入力
@@ -87,7 +91,8 @@ module T9990 (
     output wire [2:0]   RESO,               // 解像度
     output wire         HSCN,               // HSCN
     output wire         IL,                 // インターレースモード
-    output wire         EO                  // 奇数/偶数
+    output wire         EO,                 // 奇数/偶数 (V9990TANG: paridad del campo alineada con VS)
+    output wire         PAL                 // V9990TANG: 1 = el cuadro en curso es el de 313 lineas (cambia con VS)
 );
 
 //`define DISABLE_SP
@@ -145,7 +150,7 @@ module T9990 (
     T9990_STATUS_IF         STATUS();
     T9990_P2_CPU_TO_VDP_IF  P2_CPU_TO_VDP();
     T9990_P2_VDP_TO_CPU_IF  P2_VDP_TO_CPU();
-    T9990_PALETTE_IF        PAL();
+    T9990_PALETTE_IF        PALETTE();      // V9990TANG: era "PAL" (ahora es el nombre de la salida PAL)
 
     T9990_PORT u_port (
         .RESET_n(rst_flag),
@@ -169,7 +174,7 @@ module T9990 (
         .P2_VDP_TO_CPU,
 
         // P#1 I/F パレット
-        .PAL,
+        .PAL(PALETTE),
 
         // レジスタ
         .STATUS,
@@ -241,9 +246,14 @@ module T9990 (
 
     logic BG_START;
     logic [9:0] BG_X;
-    logic [8:0] BG_Y;
+    logic [9:0] BG_Y;
+    logic field;
+    logic pal_frame;
 
-    T9990_TIMING u_tg (
+    T9990_TIMING #(
+        .ENABLE_PAL(ENABLE_PAL),
+        .ENABLE_R16(ENABLE_R16)
+    ) u_tg (
         .RESET_n(rst_flag),
         .CLK,
         .CLK_MASTER_EN,
@@ -272,8 +282,21 @@ module T9990 (
         .MUX_HDE,
 
         // メモリタイミング
-        .MEM(MEM_TIMING)
+        .MEM(MEM_TIMING),
+
+        // V9990TANG
+        .PAL_FRAME(pal_frame),
+        .FIELD(field)
     );
+
+    // V9990TANG: PAL pasa por un registro de CLK como VS por el selector (OUT_VS <= IN_VS): la salida
+    // PAL cambia en el mismo flanco que la salida VS (la subida del VS del cuadro nuevo).
+    logic pal_q;
+    always_ff @(posedge CLK or negedge rst_flag) begin
+        if(!rst_flag) pal_q <= 0;
+        else          pal_q <= pal_frame;
+    end
+    assign PAL = pal_q;
 
     /***************************************************************
      * RAM 調停(RAM <= VC/SP/CR/BP/PA/PB)
@@ -419,7 +442,7 @@ module T9990 (
         // 座標
         .START(BG_START),
         .HCNT(BG_X),
-        .VCNT(BG_Y),
+        .VCNT(BG_Y[8:0]),
 
         // MEM I/F
         .MEM(PA_MEM),
@@ -458,7 +481,7 @@ module T9990 (
         // 座標
         .START(BG_START),
         .HCNT(BG_X),
-        .VCNT(BG_Y),
+        .VCNT(BG_Y[8:0]),
 
         // MEM I/F
         .MEM(PB_MEM),
@@ -549,7 +572,7 @@ module T9990 (
         .DCLK_EN,
 
         // P#1 I/F
-        .PAL,
+        .PAL(PALETTE),
 
         // 入力
         .START(BG_START),
@@ -610,7 +633,7 @@ module T9990 (
     assign R = OUT[ 9: 5];
     assign G = OUT[14:10];
     assign B = OUT[ 4: 0];
-    assign EO = STATUS.EO;
+    assign EO = field;                      // V9990TANG: STATUS.EO sin R#16; con R#16, el EO del campo que empieza con VS
     assign IL = REG.ILM && REG.EO && !REG.HSCN;
     assign HSCN = REG.HSCN;
 

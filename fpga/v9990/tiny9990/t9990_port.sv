@@ -169,6 +169,7 @@ interface T9990_REGISTER_IF;
     logic [1:0]     XIMM;
     logic [1:0]     CLRM;
     logic           C25M;
+    logic           PAL_TIMING;     // V9990TANG: R#7 bit 3 (cuadro PAL de 313 lineas)
     logic           EO;
     logic           ILM;
     logic           HSCN;
@@ -189,6 +190,7 @@ interface T9990_REGISTER_IF;
     logic [5:0]     PLTA;
     logic [1:0]     PLTP;
     logic [5:0]     BDC;
+    logic [7:0]     DADJ;           // V9990TANG: R#16 (ajuste de la posicion de la pantalla)
     logic [12:0]    SCAY;
     logic           R256;
     logic           R512;
@@ -230,13 +232,13 @@ interface T9990_REGISTER_IF;
     modport CPU ( output    SRS,    MCS,
                             CVWA,   CVWAIH, CVRA,   CVRAIH,
                             DSPM,   DCKM,   XIMM,   CLRM,
-                            C25M,   EO,     ILM,    HSCN,
+                            C25M,   PAL_TIMING, EO, ILM,    HSCN,
                             DISP,   SPD,    YSE,    DMAE,
                             IECE,   IEH,    IEV,
                             IEHM,   IL,     IX,
                             PLT,    YAE,    PLTAIH, PLTM,
                             PLTA,   PLTP,
-                            BDC,
+                            BDC,    DADJ,
                             SCAY,   R256,   R512,   SCAX,
                             SCBY,   SCBX,
                             SGBA,
@@ -254,13 +256,13 @@ interface T9990_REGISTER_IF;
     modport VDP ( input     SRS,    MCS,
                             CVWA,   CVWAIH, CVRA,   CVRAIH,
                             DSPM,   DCKM,   XIMM,   CLRM,
-                            C25M,   EO,     ILM,    HSCN,
+                            C25M,   PAL_TIMING, EO, ILM,    HSCN,
                             DISP,   SPD,    YSE,    DMAE,
                             IECE,   IEH,    IEV,
                             IEHM,   IL,     IX,
                             PLT,    YAE,    PLTAIH, PLTM,
                             PLTA,   PLTP,
-                            BDC,
+                            BDC,    DADJ,
                             SCAY,   R256,   R512,   SCAX,
                             SCBY,   SCBX,
                             SGBA,
@@ -386,6 +388,7 @@ module T9990_PORT (
     assign REG.XIMM =  vdp_reg[ 6][3:2];
     assign REG.CLRM =  vdp_reg[ 6][1:0];
     assign REG.C25M =  vdp_reg[ 7][  6];    // MSXimus Z 20/09/2026: C25M es el bit 6 de R#7 (era [7]; GNF)
+    assign REG.PAL_TIMING = vdp_reg[7][3];  // V9990TANG: PAL (openMSX V9990.cc frameStart: palTiming = R#7 & 08h)
     assign REG.EO   =  vdp_reg[ 7][  2];
     assign REG.ILM  =  vdp_reg[ 7][  1];
     assign REG.HSCN =  vdp_reg[ 7][  0];
@@ -406,6 +409,7 @@ module T9990_PORT (
     assign REG.YAE  =  vdp_reg[13][  5];
     assign REG.PLTM =  vdp_reg[13][7:6];
     assign REG.BDC  =  vdp_reg[15][5:0];
+    assign REG.DADJ =  vdp_reg[16];         // V9990TANG: R#16 (openMSX V9990.hh getLeftBorder/getTopBorder)
     assign REG.SCAY = {vdp_reg[18][4:0], vdp_reg[17][7:0]};
     assign REG.R256 =  vdp_reg[18][  6];
     assign REG.R512 =  vdp_reg[18][  7];

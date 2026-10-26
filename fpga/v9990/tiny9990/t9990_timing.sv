@@ -69,7 +69,10 @@ endinterface
 /***************************************************************
  * タイミングジェネレータモジュール
  ***************************************************************/
-module T9990_TIMING (
+module T9990_TIMING #(
+    parameter               ENABLE_PAL = 1,     // V9990TANG: cuadro PAL de 313 lineas (R#7 bit 3)
+    parameter               ENABLE_R16 = 1      // V9990TANG: ajuste de posicion de R#16
+) (
     input wire              RESET_n,
     input wire              CLK,
     input wire              CLK_MASTER_EN,
@@ -81,22 +84,25 @@ module T9990_TIMING (
 
     output reg              HD,
     output reg              VD,
-    output reg              HS,
-    output reg              VS,
+    output logic            HS,
+    output logic            VS,
 
     output reg              SPR_START,
     output reg [8:0]        SPR_Y,
 
     output reg              BG_START,
     output reg [9:0]        BG_X,
-    output reg [8:0]        BG_Y,
+    output reg [9:0]        BG_Y,       // V9990TANG: 10 bits (PAL entrelazado en B2/B4: 2 x 290 lineas)
 
     output reg              MUX_VDE,    // MUX Vアクティブ期間
     output reg              MUX_HDE,    // MUX Hアクティブ期間
 
     input wire              MEM_REQ,
 
-    T9990_MEM_TIMING.TG     MEM
+    T9990_MEM_TIMING.TG     MEM,
+
+    output logic            PAL_FRAME,  // V9990TANG: 1 = el cuadro en curso (de VS a VS) es el de 313 lineas
+    output logic            FIELD       // V9990TANG: paridad del campo para la salida de video (EO alineado con VS)
 );
     //  HSCN    C25M    MCS     DCKM    width   total   sync    erase   border  border  erase
     //  0       X       0       0       256     342     25      50      14      14      8
@@ -277,6 +283,49 @@ module T9990_TIMING (
     localparam  V480_SPR_INACTIVE  = (V480_INACTIVE - 1);
     localparam  V480_DISP_LI_START = (V480_ACTIVE); 
 
+    // V9990TANG: cuadro PAL (R#7 bit 3, ENABLE_PAL). openMSX V9990DisplayTiming.hh:
+    //   displayPAL_MCLK = {cycle 313, blank 15, border1 41, display 212, border2 37}   (MCS = 0: P1/P2/B1/B3)
+    //   displayPAL_XTAL = {cycle 313, blank 15, border1  0, display 290, border2  0}   (MCS = 1: B2/B4)
+    // y sus NTSC {262, 15, 14, 212, 14} / {262, 15, 0, 240, 0}. Las tablas NTSC del tiny9990 de arriba
+    // ponen 3 lineas mas de borrado arriba que el "blank" de openMSX (18 frente a 15, sincronismo incluido)
+    // y 3 menos abajo (4 frente a 7); las PAL siguen el mismo convenio: 18 arriba y 313 - 15 - 41 - 212 - 37
+    // - 3 = 5 abajo, con el mismo sincronismo de 3 lineas. Los modos HSCN (440/525) no cambian.
+    localparam  V212P_TOP_ERASE     = 18;
+    localparam  V212P_TOP_BORDER    = 41;
+    localparam  V212P_HEIGHT        = 212;
+    localparam  V212P_BOTTOM_BORDER = 37;
+    localparam  V212P_BOTTOM_ERASE  = 5;
+    localparam  V212P_SYNC          = 3;
+    localparam  V212P_TOTAL         = (V212P_TOP_ERASE + V212P_TOP_BORDER + V212P_HEIGHT + V212P_BOTTOM_BORDER + V212P_BOTTOM_ERASE);
+    localparam  V212P_ACTIVE        = (V212P_TOP_ERASE + V212P_TOP_BORDER);
+    localparam  V212P_INACTIVE      = (V212P_TOP_ERASE + V212P_TOP_BORDER + V212P_HEIGHT);
+    localparam  V212P_DISP_ENA      = (V212P_TOP_ERASE);
+    localparam  V212P_DISP_DIS      = (V212P_TOP_ERASE + V212P_TOP_BORDER + V212P_HEIGHT + V212P_BOTTOM_BORDER);
+    localparam  V212P_BG_ACTIVE     = (V212P_ACTIVE);
+    localparam  V212P_SPR_ACTIVE    = (V212P_ACTIVE - 1);
+    localparam  V212P_SPR_INACTIVE  = (V212P_INACTIVE - 1);
+    localparam  V212P_DISP_LI_START = (V212P_ACTIVE);
+
+    localparam  V290P_TOP_ERASE     = 18;
+    localparam  V290P_TOP_BORDER    = 0;
+    localparam  V290P_HEIGHT        = 290;
+    localparam  V290P_BOTTOM_BORDER = 0;
+    localparam  V290P_BOTTOM_ERASE  = 5;
+    localparam  V290P_SYNC          = 3;
+    localparam  V290P_TOTAL         = (V290P_TOP_ERASE + V290P_TOP_BORDER + V290P_HEIGHT + V290P_BOTTOM_BORDER + V290P_BOTTOM_ERASE);
+    localparam  V290P_ACTIVE        = (V290P_TOP_ERASE + V290P_TOP_BORDER);
+    localparam  V290P_INACTIVE      = (V290P_TOP_ERASE + V290P_TOP_BORDER + V290P_HEIGHT);
+    localparam  V290P_DISP_ENA      = (V290P_TOP_ERASE);
+    localparam  V290P_DISP_DIS      = (V290P_TOP_ERASE + V290P_TOP_BORDER + V290P_HEIGHT + V290P_BOTTOM_BORDER);
+    localparam  V290P_BG_ACTIVE     = (V290P_ACTIVE);
+    localparam  V290P_SPR_ACTIVE    = (V290P_ACTIVE - 1);
+    localparam  V290P_SPR_INACTIVE  = (V290P_INACTIVE - 1);
+    localparam  V290P_DISP_LI_START = (V290P_ACTIVE);
+
+    // cuadro PAL de la ventana (pal_w) y del sincronismo (pal_s): ver "V9990TANG: PAL y R#16" abajo
+    logic pal_w;
+    logic pal_s;
+
     wire [9:0]  H_RESET         = REG.HSCN ? (REG.C25M ? (H648_TOTAL         - 2'd2) : (H640_TOTAL         - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_TOTAL         - 2'd2) : (H384_TOTAL         - 2'd2)) : (REG.DCKM[0] ? (H512_TOTAL         - 2'd2) : (H256_TOTAL         - 2'd2));
     wire [9:0]  H_HR_ACTIVE     = REG.HSCN ? (REG.C25M ? (H648_ACTIVE        - 1'd1) : (H640_ACTIVE        - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_ACTIVE        - 1'd1) : (H384_ACTIVE        - 1'd1)) : (REG.DCKM[0] ? (H512_ACTIVE        - 1'd1) : (H256_ACTIVE        - 1'd1));
     wire [9:0]  H_HR_INACTIVE   = REG.HSCN ? (REG.C25M ? (H648_INACTIVE      - 1'd1) : (H640_INACTIVE      - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_INACTIVE      - 1'd1) : (H384_INACTIVE      - 1'd1)) : (REG.DCKM[0] ? (H512_INACTIVE      - 1'd1) : (H256_INACTIVE      - 1'd1));
@@ -286,24 +335,25 @@ module T9990_TIMING (
     wire [9:0]  H_DISP_DIS      = REG.HSCN ? (REG.C25M ? (H648_DISP_DIS      - 1'd1) : (H640_DISP_DIS      - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_DISP_DIS      - 1'd1) : (H384_DISP_DIS      - 1'd1)) : (REG.DCKM[0] ? (H512_DISP_DIS      - 1'd1) : (H256_DISP_DIS      - 1'd1));
     wire [9:0]  H_SYNC_PERIOD   = REG.HSCN ? (REG.C25M ? (H648_SYNC          - 1'd1) : (H640_SYNC          - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_SYNC          - 1'd1) : (H384_SYNC          - 1'd1)) : (REG.DCKM[0] ? (H512_SYNC          - 1'd1) : (H256_SYNC          - 1'd1));    // HSYNC 期間(DCLK タイミング用)
 
-    wire [9:0]  V_TOTAL         = REG.HSCN ? (REG.C25M ? (V480_TOTAL         - 1'd1) : (V400_TOTAL         - 1'd1)) : (REG.MCS ? (V240_TOTAL         - 1'd1) : (V212_TOTAL         - 1'd1));   // 縦総ライン数(v_incタイミング用)
+    wire [9:0]  V_TOTAL         = REG.HSCN ? (REG.C25M ? (V480_TOTAL         - 1'd1) : (V400_TOTAL         - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_TOTAL - 1'd1) : (V212P_TOTAL - 1'd1)) : (REG.MCS ? (V240_TOTAL         - 1'd1) : (V212_TOTAL         - 1'd1)));   // 縦総ライン数(v_incタイミング用)
+    wire [9:0]  V_TOTAL_S       = REG.HSCN ? (REG.C25M ? (V480_TOTAL         - 1'd1) : (V400_TOTAL         - 1'd1)) : (pal_s ? (REG.MCS ? (V290P_TOTAL - 1'd1) : (V212P_TOTAL - 1'd1)) : (REG.MCS ? (V240_TOTAL         - 1'd1) : (V212_TOTAL         - 1'd1)));   // V9990TANG: lineas - 1 del cuadro de sincronismo (R#16)
     wire [9:0]  V_SYNC_PERIOD   = REG.HSCN ? (REG.C25M ? (V480_SYNC          - 1'd1) : (V400_SYNC          - 1'd1)) : (REG.MCS ? (V240_SYNC          - 1'd1) : (V212_SYNC          - 1'd1));   // VSYNC inactive ライン(v_incタイミング用)
-    wire [9:0]  V_VR_ACTIVE     = REG.HSCN ? (REG.C25M ? (V480_ACTIVE        - 1'd1) : (V400_ACTIVE        - 1'd1)) : (REG.MCS ? (V240_ACTIVE        - 1'd1) : (V212_ACTIVE        - 1'd1));
-    wire [9:0]  V_VR_INACTIVE   = REG.HSCN ? (REG.C25M ? (V480_INACTIVE      - 1'd1) : (V400_INACTIVE      - 1'd1)) : (REG.MCS ? (V240_INACTIVE      - 1'd1) : (V212_INACTIVE      - 1'd1));
-    wire [9:0]  V_MUX_ACTIVE    = REG.HSCN ? (REG.C25M ? (V480_ACTIVE        - 1'd1) : (V400_ACTIVE        - 1'd1)) : (REG.MCS ? (V240_ACTIVE        - 1'd1) : (V212_ACTIVE        - 1'd1));
-    wire [9:0]  V_MUX_INACTIVE  = REG.HSCN ? (REG.C25M ? (V480_INACTIVE      - 1'd1) : (V400_INACTIVE      - 1'd1)) : (REG.MCS ? (V240_INACTIVE      - 1'd1) : (V212_INACTIVE      - 1'd1));
-    wire [9:0]  V_DISP_ENA      = REG.HSCN ? (REG.C25M ? (V480_DISP_ENA      - 1'd1) : (V400_DISP_ENA      - 1'd1)) : (REG.MCS ? (V240_DISP_ENA      - 1'd1) : (V212_DISP_ENA      - 1'd1));   // VD active(v_incタイミング用)
-    wire [9:0]  V_DISP_DIS      = REG.HSCN ? (REG.C25M ? (V480_DISP_DIS      - 1'd1) : (V400_DISP_DIS      - 1'd1)) : (REG.MCS ? (V240_DISP_DIS      - 1'd1) : (V212_DISP_DIS      - 1'd1));   // VD inactive ライン(v_incタイミング用)
-    wire [9:0]  V_DISP_LI_START = REG.HSCN ? (REG.C25M ? (V480_DISP_LI_START - 1'd1) : (V400_DISP_LI_START - 1'd1)) : (REG.MCS ? (V240_DISP_LI_START - 1'd1) : (V212_DISP_LI_START - 1'd1));   // ILカウンタ開始ライン(v_inc タイミング用)
+    wire [9:0]  V_VR_ACTIVE     = REG.HSCN ? (REG.C25M ? (V480_ACTIVE        - 1'd1) : (V400_ACTIVE        - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_ACTIVE - 1'd1) : (V212P_ACTIVE - 1'd1)) : (REG.MCS ? (V240_ACTIVE        - 1'd1) : (V212_ACTIVE        - 1'd1)));
+    wire [9:0]  V_VR_INACTIVE   = REG.HSCN ? (REG.C25M ? (V480_INACTIVE      - 1'd1) : (V400_INACTIVE      - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_INACTIVE - 1'd1) : (V212P_INACTIVE - 1'd1)) : (REG.MCS ? (V240_INACTIVE      - 1'd1) : (V212_INACTIVE      - 1'd1)));
+    wire [9:0]  V_MUX_ACTIVE    = REG.HSCN ? (REG.C25M ? (V480_ACTIVE        - 1'd1) : (V400_ACTIVE        - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_ACTIVE - 1'd1) : (V212P_ACTIVE - 1'd1)) : (REG.MCS ? (V240_ACTIVE        - 1'd1) : (V212_ACTIVE        - 1'd1)));
+    wire [9:0]  V_MUX_INACTIVE  = REG.HSCN ? (REG.C25M ? (V480_INACTIVE      - 1'd1) : (V400_INACTIVE      - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_INACTIVE - 1'd1) : (V212P_INACTIVE - 1'd1)) : (REG.MCS ? (V240_INACTIVE      - 1'd1) : (V212_INACTIVE      - 1'd1)));
+    wire [9:0]  V_DISP_ENA      = REG.HSCN ? (REG.C25M ? (V480_DISP_ENA      - 1'd1) : (V400_DISP_ENA      - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_DISP_ENA - 1'd1) : (V212P_DISP_ENA - 1'd1)) : (REG.MCS ? (V240_DISP_ENA      - 1'd1) : (V212_DISP_ENA      - 1'd1)));   // VD active(v_incタイミング用)
+    wire [9:0]  V_DISP_DIS      = REG.HSCN ? (REG.C25M ? (V480_DISP_DIS      - 1'd1) : (V400_DISP_DIS      - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_DISP_DIS - 1'd1) : (V212P_DISP_DIS - 1'd1)) : (REG.MCS ? (V240_DISP_DIS      - 1'd1) : (V212_DISP_DIS      - 1'd1)));   // VD inactive ライン(v_incタイミング用)
+    wire [9:0]  V_DISP_LI_START = REG.HSCN ? (REG.C25M ? (V480_DISP_LI_START - 1'd1) : (V400_DISP_LI_START - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_DISP_LI_START - 1'd1) : (V212P_DISP_LI_START - 1'd1)) : (REG.MCS ? (V240_DISP_LI_START - 1'd1) : (V212_DISP_LI_START - 1'd1)));   // ILカウンタ開始ライン(v_inc タイミング用)
 
     wire [9:0]  H_BG_INIT       = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 2'd3) : (H640_BG_ACTIVE     - 2'd3)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 3'd6) : (H384_BG_ACTIVE     - 3'd4)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 2'd3) : (H256_BG_ACTIVE     - 2'd3));
     wire [9:0]  H_BG_START      = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 2'd2) : (H640_BG_ACTIVE     - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 3'd5) : (H384_BG_ACTIVE     - 2'd3)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 2'd2) : (H256_BG_ACTIVE     - 2'd2));
     wire [9:0]  H_BG_ACTIVE     = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 1'd1) : (H640_BG_ACTIVE     - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 1'd1) : (H384_BG_ACTIVE     - 1'd1)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 1'd1) : (H256_BG_ACTIVE     - 1'd1));
     wire [9:0]  H_SPR_OUT_START = REG.HSCN ? (REG.C25M ? (H648_SPR_ACTIVE    - 2'd2) : (H640_SPR_ACTIVE    - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_SPR_ACTIVE    - 2'd2) : (H384_SPR_ACTIVE    - 2'd2)) : (REG.DCKM[0] ? (H512_SPR_ACTIVE    - 2'd2) : (H256_SPR_ACTIVE    - 2'd2));
 
-    wire [9:0]  V_BG_ACTIVE     = REG.HSCN ? (REG.C25M ? (V480_BG_ACTIVE           ) : (V400_BG_ACTIVE           )) : (REG.MCS ? (V240_BG_ACTIVE           ) : (V212_BG_ACTIVE           ));   // BG 処理開始ライン
-    wire [9:0]  V_SPR_ACTIVE    = REG.HSCN ? (REG.C25M ? (V480_SPR_ACTIVE          ) : (V400_SPR_ACTIVE          )) : (REG.MCS ? (V240_SPR_ACTIVE          ) : (V212_SPR_ACTIVE          ));   // スプライト処理開始ライン
-    wire [9:0]  V_SPR_INACTIVE  = REG.HSCN ? (REG.C25M ? (V480_SPR_INACTIVE        ) : (V400_SPR_INACTIVE        )) : (REG.MCS ? (V240_SPR_INACTIVE        ) : (V212_SPR_INACTIVE        ));   // スプライト処理終了ライン
+    wire [9:0]  V_BG_ACTIVE     = REG.HSCN ? (REG.C25M ? (V480_BG_ACTIVE           ) : (V400_BG_ACTIVE           )) : (pal_w ? (REG.MCS ? (V290P_BG_ACTIVE) : (V212P_BG_ACTIVE)) : (REG.MCS ? (V240_BG_ACTIVE           ) : (V212_BG_ACTIVE           )));   // BG 処理開始ライン
+    wire [9:0]  V_SPR_ACTIVE    = REG.HSCN ? (REG.C25M ? (V480_SPR_ACTIVE          ) : (V400_SPR_ACTIVE          )) : (pal_w ? (REG.MCS ? (V290P_SPR_ACTIVE) : (V212P_SPR_ACTIVE)) : (REG.MCS ? (V240_SPR_ACTIVE          ) : (V212_SPR_ACTIVE          )));   // スプライト処理開始ライン
+    wire [9:0]  V_SPR_INACTIVE  = REG.HSCN ? (REG.C25M ? (V480_SPR_INACTIVE        ) : (V400_SPR_INACTIVE        )) : (pal_w ? (REG.MCS ? (V290P_SPR_INACTIVE) : (V212P_SPR_INACTIVE)) : (REG.MCS ? (V240_SPR_INACTIVE        ) : (V212_SPR_INACTIVE        )));   // スプライト処理終了ライン
 
     /***************************************************************
      * h_cnt(HSYNCからのカウント)
@@ -401,8 +451,8 @@ module T9990_TIMING (
 
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)                                                     BG_Y <= 0;
-        else if(DCLK_EN && h_cnt == H_BG_ACTIVE && v_cnt == V_BG_ACTIVE) BG_Y <= (REG.ILM && REG.EO && !REG.HSCN) ? {8'd0, STATUS.EO}              : 0;
-        else if(DCLK_EN && h_cnt == H_BG_ACTIVE)                         BG_Y <= (REG.ILM && REG.EO && !REG.HSCN) ? {bg_y_cnt_new[7:0], STATUS.EO} : bg_y_cnt_new;
+        else if(DCLK_EN && h_cnt == H_BG_ACTIVE && v_cnt == V_BG_ACTIVE) BG_Y <= (REG.ILM && REG.EO && !REG.HSCN) ? {9'd0, STATUS.EO}              : 0;
+        else if(DCLK_EN && h_cnt == H_BG_ACTIVE)                         BG_Y <= (REG.ILM && REG.EO && !REG.HSCN) ? {bg_y_cnt_new[8:0], STATUS.EO} : {1'b0, bg_y_cnt_new};
     end
 
     /***************************************************************
@@ -417,20 +467,159 @@ module T9990_TIMING (
     /***************************************************************
      * HSYNC
      ***************************************************************/
+    logic hs_w;     // V9990TANG: el HS original, en coordenadas de la ventana (sin R#16)
     always_ff @(posedge CLK or negedge RESET_n) begin
-        if(!RESET_n)                               HS <= 0;
-        else if(DCLK_EN && h_rst)                  HS <= 1;
-        else if(DCLK_EN && h_cnt == H_SYNC_PERIOD) HS <= 0;
+        if(!RESET_n)                               hs_w <= 0;
+        else if(DCLK_EN && h_rst)                  hs_w <= 1;
+        else if(DCLK_EN && h_cnt == H_SYNC_PERIOD) hs_w <= 0;
     end
 
     /***************************************************************
      * VSYNC
      ***************************************************************/
+    logic vs_w;     // V9990TANG: el VS original, en coordenadas de la ventana (sin R#16)
     always_ff @(posedge CLK or negedge RESET_n) begin
-        if(!RESET_n)                                        VS <= 0;
-        else if(DCLK_EN && v_rst)                           VS <= 1;
-        else if(DCLK_EN && v_inc && v_cnt == V_SYNC_PERIOD) VS <= 0;
+        if(!RESET_n)                                        vs_w <= 0;
+        else if(DCLK_EN && v_rst)                           vs_w <= 1;
+        else if(DCLK_EN && v_inc && v_cnt == V_SYNC_PERIOD) vs_w <= 0;
     end
+
+    /***************************************************************
+     * V9990TANG: PAL y R#16
+     *
+     * h_cnt/v_cnt son las coordenadas de la VENTANA: todo lo que se ve (bordes,
+     * fetch de VRAM, HR/VR, interrupciones, BG/SPR) se mide con ellas y no cambia.
+     * R#16 mueve la imagen respecto al SINCRONISMO: en vez de mover la ventana se
+     * genera HS/VS con un segundo par de contadores (s_h/s_v) desplazado. Con
+     * R#16 = 00h el desplazamiento es 0 y HS/VS son, ciclo a ciclo, los del hito 1.
+     *
+     * openMSX (V9990.hh): getLeftBorder = blank + border1 + (((R16 & 0Fh) ^ 7) - 8) * 8
+     * ticks UC y getTopBorder = blank + border1 + ((R16 >> 4) ^ 7) - 8 lineas. Respecto
+     * a R#16 = 00h (-1 en esa formula) el desplazamiento es k = (n ^ 7) - 7, de -7 a
+     * +8 (+ = imagen a la derecha / abajo): 0 = posicion estandar, 1..7 = 1..7 pasos
+     * a la izquierda / arriba, Fh..8 = 1..8 pasos a la derecha / abajo, igual que la
+     * tabla de R#16 del manual (V9990 E-VDP-III application manual, 12.2, pag. 84).
+     * Unidad horizontal: el manual da "P1 y B1 de 1 en 1 punto, P2, B2 y B3 de 2 en 2,
+     * B4, B5 y B6 de 4 en 4" (4 ciclos del reloj maestro en todos los modos). openMSX
+     * usa 8 ticks UC en todos (= 4 ciclos del maestro de 21 MHz, pero 8/3 del de 14
+     * MHz: 4/3 de punto en B2 y 8/3 en B4); aqui se sigue el manual, que da puntos
+     * enteros. En P1/P2/B1/B3 los dos coinciden.
+     *
+     * PAL: R#7 bit 3 se toma al empezar cada cuadro de sincronismo (openMSX
+     * frameStart, en el VSYNC) -> pal_s, que da la longitud de ese cuadro (VS a VS) y
+     * es la salida PAL_FRAME. La ventana usa pal_w, la copia de pal_s en su linea 10:
+     * con R#16 el VS cae como mucho 9 lineas antes o 7 despues del (0,0) de la
+     * ventana, y ninguna comparacion de la ventana que dependa de PAL cae antes de su
+     * linea 17 (fin del borrado superior), asi que pal_w ya es el del cuadro.
+     ***************************************************************/
+    wire pal_req = (ENABLE_PAL != 0) && REG.PAL_TIMING && !REG.HSCN;
+
+    // k = (n ^ 7) - 7 se indexa con t = n ^ 7 (k = t - 7)
+    wire [3:0] adj_th = REG.DADJ[3:0] ^ 4'd7;
+    wire [3:0] adj_tv = REG.DADJ[7:4] ^ 4'd7;
+
+    // desplazamiento horizontal en puntos (manual, R#16): k x 1 con DCKM = 1/4 (P1, B1), k x 2 con
+    // DCKM = 1/2 (P2, B3, B2) y k x 4 con DCKM = 1/1 (B4) y en HSCN (B5, B6)
+    wire signed [6:0] adj_k     = $signed({3'b000, adj_th}) - 7'sd7;
+    wire signed [6:0] adj_h_new = (!REG.HSCN && REG.DCKM == T9990_REG::DCKM_DIV4) ? adj_k :
+                                  (!REG.HSCN && REG.DCKM == T9990_REG::DCKM_DIV2) ? (adj_k <<< 1) : (adj_k <<< 2);
+    wire signed [4:0] adj_v_new = $signed({1'b0, adj_tv}) - 5'sd7;
+
+    // la ventana pasa por (0,0): se toman R#16 y se arrastra el sincronismo a su posicion
+    wire win_frame = DCLK_EN && v_rst;
+
+    // posicion de s_h/s_v cuando la ventana esta en (0,0): (adj_h, adj_v) normalizado
+    wire [9:0]         h_total   = H_RESET + 2'd2;          // puntos por linea
+    wire [9:0]         v_total_s = V_TOTAL_S + 1'd1;        // lineas del cuadro de sincronismo en curso
+    wire               adj_h_neg = adj_h_new[6];
+    wire [9:0]         sh0       = adj_h_neg ? (h_total + {{3{adj_h_new[6]}}, adj_h_new}) : {3'b000, adj_h_new};
+    wire signed [5:0]  sv_pre    = {adj_v_new[4], adj_v_new} - {5'b00000, adj_h_neg};
+    wire [9:0]         sv0       = sv_pre[5] ? (v_total_s + {{4{sv_pre[5]}}, sv_pre}) : {4'b0000, sv_pre};
+
+    logic signed [6:0] adj_h_q;
+    logic signed [4:0] adj_v_q;
+    logic [9:0] s_h;
+    logic [8:0] s_v;
+    logic       s_hrst;
+    logic       s_vrst;
+    logic       hs_s;
+    logic       vs_s;
+    logic       eo_s;
+
+    // el VS llega antes que el (0,0) de la ventana, o con el: el EO del cuadro nuevo aun no ha cambiado
+    wire sync_leads = !(adj_v_q < 0 || (adj_v_q == 0 && adj_h_q < 0));
+    wire s_frame = win_frame ? (sh0 == 0 && sv0 == 0) : (DCLK_EN && s_vrst);    // empieza un cuadro de sincronismo
+    wire eo_next = REG.ILM ? !STATUS.EO : 1'b0;                                 // el EO que la ventana pone en v_rst
+
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            adj_h_q <= 0;
+            adj_v_q <= 0;
+            s_h <= 0;
+            s_v <= 0;
+            s_hrst <= 0;
+            s_vrst <= 0;
+            hs_s <= 0;
+            vs_s <= 0;
+        end
+        else if(!TG_EN) begin
+            s_h <= 0;
+            s_v <= 0;
+            s_hrst <= 0;
+            s_vrst <= 0;
+        end
+        else if(win_frame) begin
+            adj_h_q <= adj_h_new;
+            adj_v_q <= adj_v_new;
+            s_h    <= sh0;
+            s_v    <= sv0[8:0];
+            s_hrst <= (sh0 == h_total - 1'd1);
+            s_vrst <= (sh0 == h_total - 1'd1) && (sv0 == v_total_s - 1'd1);
+            hs_s   <= (sh0 <= H_SYNC_PERIOD);
+            vs_s   <= (sv0 <= V_SYNC_PERIOD);
+        end
+        else if(DCLK_EN) begin
+            // mismas reglas que h_cnt/v_cnt/HS/VS del hito 1, sobre s_h/s_v
+            s_hrst <= (s_h == H_RESET);
+            s_vrst <= (s_h == H_RESET) && (s_v == V_TOTAL_S);
+            s_h    <= s_hrst ? 10'd0 : (s_h + 1'd1);
+            if(s_vrst)      s_v <= 0;
+            else if(s_hrst) s_v <= s_v + 1'd1;
+            if(s_hrst)                      hs_s <= 1;
+            else if(s_h == H_SYNC_PERIOD)   hs_s <= 0;
+            if(s_vrst)                              vs_s <= 1;
+            else if(s_hrst && s_v == V_SYNC_PERIOD) vs_s <= 0;
+        end
+    end
+
+    // PAL del cuadro de sincronismo y EO del campo que empieza con el VS
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            pal_s <= 0;
+            eo_s  <= 0;
+        end
+        else if(ENABLE_R16 != 0) begin
+            if(s_frame) begin
+                pal_s <= pal_req;
+                eo_s  <= (win_frame || sync_leads) ? eo_next : STATUS.EO;
+            end
+        end
+        else if(win_frame) begin
+            pal_s <= pal_req;               // sin R#16 la ventana y el sincronismo coinciden
+        end
+    end
+
+    // PAL de la ventana
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n)                                                pal_w <= 0;
+        else if(ENABLE_R16 == 0)                                    pal_w <= pal_s;
+        else if(DCLK_EN && v_inc && v_cnt == 9'd9)                  pal_w <= pal_s;
+    end
+
+    assign HS        = (ENABLE_R16 != 0) ? hs_s : hs_w;
+    assign VS        = (ENABLE_R16 != 0) ? vs_s : vs_w;
+    assign FIELD     = (ENABLE_R16 != 0) ? eo_s : STATUS.EO;
+    assign PAL_FRAME = pal_s;
 
     /***************************************************************
      * STATUS.HR(ボーダーを含まない表示期間)

@@ -47,7 +47,7 @@ module T9990_BITMAP (
     input wire [12:0]       SCY,
 
     input wire [9:0]        HCNT,
-    input wire [8:0]        VCNT,
+    input wire [9:0]        VCNT,       // V9990TANG: 10 bits (BG_Y)
     input wire              START,
 
     T9990_VDP_MEM_IF.VDP    MEM,
