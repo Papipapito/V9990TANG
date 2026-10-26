@@ -361,7 +361,7 @@ segunda build. La `v9990_sync` se compiló ya con el árbol commiteado.
 ## 7. Banco (Verilator 5.020, WSL)
 
 `bash tb/integ/run.sh` desde `fpga/` (en WSL; 4 min 38 s). Resultado del
-26/10/2026: **18 de 18 pasan** (pins: 64 casos y 273 comprobaciones; guardia:
+26/10/2026: **17 de 17 ejecuciones pasan** (pins: 64 casos y 273 comprobaciones; guardia:
 8 escenarios en `xtal` y 8 en `sync`, de 9 a 20 comprobaciones cada uno).
 
 - `tb_integ_guard`: `BOARD_WT200B_GUARD`, `SYSTEM_RESET`,
