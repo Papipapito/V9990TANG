@@ -8,7 +8,7 @@
 #   OUT=<fichero> escribe el resumen ahi en lugar de resultados.txt (solo si se
 #   lanza desde WSL: las variables de Git Bash no pasan a WSL).
 #
-# Compila seis builds en /tmp (el 9p de /mnt/c es lento):
+# Compila siete builds en /tmp (el 9p de /mnt/c es lento):
 #   new    uma.sv y sdram.sv de este arbol (INT_REFRESH = 1)
 #   int0   lo mismo con -GINT_REFRESH=0 (control: sin temporizador)
 #   hito1  uma.sv y sdram.sv del commit HITO1_REF (control y referencia de la
@@ -17,6 +17,9 @@
 #   mut    uma.sv de este arbol con el refresco interno pasando por done_ch y
 #          DOUT capturado tras cualquier operacion (el diseno que se evita:
 #          control de la comprobacion de DOUT estable)
+#   mutrw  uma.sv de este arbol con DOUT capturado tras cualquier operacion
+#          (tambien tras un RFSH), sin tocar el refresco interno: control de
+#          que el RFSH aplazado no pisa el dato de un R/W del mismo cliente
 #   slack0 sdram.sv de este arbol con un ciclo mas por acceso (STATE_END =
 #          IDLE + 9: 10 ciclos ocupados en ranuras de 10, sin el ciclo de
 #          holgura; control de la comprobacion de cadencia 'slot')
@@ -38,7 +41,7 @@ REPO=$(cd ../../.. && pwd)
 US=${1:-2000}
 HITO1_REF=${HITO1_REF:-20936e6}
 W=/tmp/sdtb_$$
-mkdir -p "$W"/new "$W"/int0 "$W"/hito1 "$W"/mut "$W"/slack0 "$W"/slow "$W"/src "$W"/logs
+mkdir -p "$W"/new "$W"/int0 "$W"/hito1 "$W"/mut "$W"/mutrw "$W"/slack0 "$W"/slow "$W"/src "$W"/logs
 trap 'rm -rf "$W"' EXIT
 
 # git desde WSL: en un worktree, .git es un fichero con una ruta de Windows
@@ -76,6 +79,13 @@ for a, b in rep:
     s = s.replace(a, b)
 open(sys.argv[2], "w").write(s)
 EOF
+python3 - "$RAM/uma.sv" "$W/src/uma_mutrw.sv" <<'EOF' || exit 2
+import sys
+s = open(sys.argv[1]).read()
+a = "else if(done_ch[process_ch] && proc_rw[process_ch]) Secondary[process_ch].DOUT <= Primary.DOUT;"
+assert s.count(a) == 1, "mutante rw: no esta '%s'" % a
+open(sys.argv[2], "w").write(s.replace(a, "else if(done_ch[process_ch]) Secondary[process_ch].DOUT <= Primary.DOUT;"))
+EOF
 python3 - "$RAM/sdram.sv" "$W/src" <<'EOF' || exit 2
 import sys
 s = open(sys.argv[1]).read()
@@ -98,10 +108,11 @@ build new   "$RAM/ram.sv" "$RAM/uma.sv" "$RAM/sdram.sv" $TBSRC &
 build int0  -GINT_REFRESH=0 "$RAM/ram.sv" "$RAM/uma.sv" "$RAM/sdram.sv" $TBSRC &
 build hito1 -DHITO1 "$RAM/ram.sv" "$W/src/uma_hito1.sv" "$W/src/sdram_hito1.sv" $TBSRC &
 build mut   "$RAM/ram.sv" "$W/src/uma_mut.sv" "$RAM/sdram.sv" $TBSRC &
+build mutrw "$RAM/ram.sv" "$W/src/uma_mutrw.sv" "$RAM/sdram.sv" $TBSRC &
 build slack0 "$RAM/ram.sv" "$RAM/uma.sv" "$W/src/sdram_slack0.sv" $TBSRC &
 build slow  "$RAM/ram.sv" "$RAM/uma.sv" "$W/src/sdram_slow.sv" $TBSRC &
 wait
-for d in new int0 hito1 mut slack0 slow; do [ -x "$W/$d/vtb" ] || { echo "ERROR: falta la build $d"; exit 2; }; done
+for d in new int0 hito1 mut mutrw slack0 slow; do [ -x "$W/$d/vtb" ] || { echo "ERROR: falta la build $d"; exit 2; }; done
 
 OUT=${OUT:-$TB/resultados.txt}
 NFAIL=0
@@ -116,8 +127,11 @@ run() {   # run <nombre> <build> <plusargs...>
     local name=$1 b=$2; shift 2
     local log="$W/logs/$name.log"
     "$W/$b/vtb" +US="$US" "$@" > "$log" 2>&1
+    local rc=$?
     local res=$(grep '^RESULT' "$log" | head -1)
-    [ -z "$res" ] && res="RESULT: FALLA (sin informe)"
+    # sin informe: el simulador murio antes del final (rc > 128 = senal rc-128,
+    # p. ej. 137 = SIGKILL del OOM de WSL); se cuenta como fallo, no se repite
+    [ -z "$res" ] && res="RESULT: FALLA (sin informe; vtb salio con $rc)"
     local gap=$(sed -n 's/.*intervalo_max=\([0-9.]*\) us (\([0-9]*\) ciclos).*/\1 us (\2)/p' "$log")
     local dbg=$(sed -n 's/^UMA dbg: \(.*\) MAXGAP.*/\1/p' "$log")
     local lat=$(sed -n 's/^canal 1:.* latencia=\([0-9.]*\) ciclos/\1/p' "$log")
@@ -148,6 +162,7 @@ for M in 108000 107386; do
     done
     run "full100_v99_$M"         new $F +CH0=2 +V99=1
     run "rw_rfsh_$M"             new $F +CH0=3 +V99=0
+    run "rw_rfsh_v99_$M"         new $F +CH0=3 +V99=1
     run "rw_rfsh_int0_$M"        int0 $F +CH0=3 +V99=0
     echo "## controles negativos (se espera que falle la comprobacion indicada) $M kHz" >> "$OUT"
     run "neg_phase0_$M"          new  $F +CH0=0 +V99=1 +PHASE0=1 +NEG=window
@@ -156,6 +171,7 @@ for M in 108000 107386; do
     run "neg_hito1_gap_$M"       hito1 $F +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +NEG=gap
     run "neg_hito1_rwrfsh_$M"    hito1 $F +CH0=3 +V99=0 +NEG=rfsh
     run "neg_mut_dout_$M"        mut  $F +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 +NEG=z80
+    run "neg_mutrw_dout_$M"      mutrw $F +CH0=3 +V99=1 +NEG=ch0
     run "neg_slack0_slot_$M"     slack0 $F +CH0=2 +V99=1 +NEG=slot
     run "neg_slow_slot_$M"       slow $F +CH0=2 +V99=1 +NEG=slot
     # el canal 1 no se retrasa: misma latencia que con el UMA del hito 1
