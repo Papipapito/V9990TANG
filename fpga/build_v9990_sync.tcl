@@ -12,4 +12,9 @@
 # ============================================================================
 set CFG     v9990
 set VARIANT sync
+# Barrido del 26/10/2026 sobre el RTL de f00c622 (docs/notas/integ.md,
+# seccion 6): con las opciones del hito 1 la Fmax de CLK_BASE sale a 107,43
+# MHz; con place 0 y route 1 (la sintesis por defecto) pasa la puerta (Fmax
+# 112,84 MHz, setup y carrera CLK_BASE -> DCLK +0,183 ns).
+set BUILD_OPTS {-place_option 0 -route_option 1}
 source build_common.tcl
