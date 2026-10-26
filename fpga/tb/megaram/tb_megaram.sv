@@ -951,6 +951,26 @@ module tb_megaram #(
         rd_chk(16'hBFFF, img(8'h7F, 16'h3FFF), "ASCII8 banco FFh (= 16K 7Fh +3FFFh)");
         rd_chk(16'hA000, mem_byte(32'h1FE000), "ASCII8 banco FFh +0");
         rd_chk(16'h8001, mem_byte(32'h002001), "ASCII8 banco 01h +1");
+        // KONAMI de la tabla de tncrom (proteccion, SCC, mascara 3Fh): el
+        // banco FFh se queda en 3Fh (512 KB); con la mascara FFh que tncrom r2
+        // escribe en 0Dh para una imagen de 2 MB llega al banco FFh
+        unlock();
+        attr_write(F_WP | F_SCC | F_ENABLE | F_CONT, 8'h3F, 16'hF800, 16'h5000, 16'h7000, 16'h9000, 16'hB000, 0, 1, 2, 3, 8'h00);
+        lock();
+        d = mem_byte(32'hFF * 8192 + 16'h1000);     // B000h con el banco 3 = FFh (del ASCII8)
+        z_write(16'hB000, 8'hFF);
+        idle_T(4);
+        if(mem_byte(32'hFF * 8192 + 16'h1000) !== d) fail("KONAMI protegido: el registro de banco B000h escribio la RAM");
+        rd_chk(16'hA123, mem_byte(32'h3F * 8192 + 16'h0123), "KONAMI mascara 3Fh: banco FFh = 3Fh", 1);
+        z_write(16'h5000, 8'h41);
+        rd_chk(16'h4123, mem_byte(32'h01 * 8192 + 16'h0123), "KONAMI mascara 3Fh: banco 41h = 01h");
+        unlock();
+        z_write(16'h000D, 8'hFF);
+        lock();
+        z_write(16'hB000, 8'hFF);
+        rd_chk(16'hA123, mem_byte(32'hFF * 8192 + 16'h0123), "KONAMI mascara FFh: banco FFh", 1);
+        z_write(16'h5000, 8'h41);
+        rd_chk(16'h4123, mem_byte(32'h41 * 8192 + 16'h0123), "KONAMI mascara FFh: banco 41h");
 
         // ---------------- modo plano en 0000h (PLAIN0) ----------------
         // imagen de 48 KB: "AB" en 4000h, ISR en 0038h
