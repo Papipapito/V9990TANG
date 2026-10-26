@@ -32,14 +32,17 @@
 //
 
 // zcc +msx -subtype=msxdos -O3 -o../bin/TNCROM.COM main.c ..\..\lib\bdos.c ..\..\lib\tools.c ..\..\lib\rom_tools.c ..\..\lib\reboot.c rom_table.c config.c param.c
+//
+// V9990TANG: port a SDCC 4.5 (tools/tncrom/build.sh, crt0 propio de
+// MSX-DOS en tools/tncrom/sdcc/).
 
 #include <stdio.h>
 #include <string.h>
-#include "..\..\lib\types.h"
-#include "..\..\lib\bdos.h"
-#include "..\..\lib\tools.h"
-#include "..\..\lib\rom_tools.h"
-#include "..\..\lib\reboot.h"
+#include "types.h"
+#include "bdos.h"
+#include "tools.h"
+#include "rom_tools.h"
+#include "reboot.h"
 #include "rom_table.h"
 #include "config.h"
 #include "param.h"
@@ -315,9 +318,9 @@ int check_cartridge(uint8_t sltnum)
     int res = -1;
     uint8_t save[4];
 
-#asm
-    DI
-#endasm
+__asm
+    di
+__endasm;
 
     // 元データを取得
     for(uint16_t addr = 0; addr < sizeof(save); addr++) save[addr] = rdslt(sltnum, addr);
@@ -355,9 +358,9 @@ err:
     // 元データに戻す
     for(uint16_t addr = 0; addr < sizeof(save); addr++) wrtslt(sltnum, addr, save[addr]);
 
-#asm
-    EI
-#endasm
+__asm
+    ei
+__endasm;
 
     return res;
 }

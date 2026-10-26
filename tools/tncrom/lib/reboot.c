@@ -32,38 +32,39 @@
 //
 
 #include <string.h>
-#include "..\..\lib\types.h"
-#include "..\..\lib\rom_tools.h"
+#include "types.h"
+#include "rom_tools.h"
 
+// V9990TANG (port a SDCC): mismas instrucciones en sintaxis de sdasz80
 static void reboot_2(void)
 {
-#asm
-    XOR     A
-    OUT     (0F5h), A
+__asm
+    xor     a, a
+    out     (0xF5), a
 
-    LD      IY, (0FCC1h - 1)
-    LD      IX, 0000h
-    CALL    001Ch
-#endasm
+    ld      iy, (0xFCC1 - 1)
+    ld      ix, #0x0000
+    call    0x001C
+__endasm;
 }
 
 static void reboot_2p(void)
 {
-#asm
-    LD      IY, (0FCC1h - 1)
-    LD      IX, 017Ah
-    CALL    001Ch
+__asm
+    ld      iy, (0xFCC1 - 1)
+    ld      ix, #0x017A
+    call    0x001C
 
-    OR      80h
+    or      a, #0x80
 
-    LD      IY, (0FCC1h - 1)
-    LD      IX, 017Dh
-    CALL    001Ch
+    ld      iy, (0xFCC1 - 1)
+    ld      ix, #0x017D
+    call    0x001C
 
-    LD      IY, (0FCC1h - 1)
-    LD      IX, 0000h
-    CALL    001Ch
-#endasm
+    ld      iy, (0xFCC1 - 1)
+    ld      ix, #0x0000
+    call    0x001C
+__endasm;
 }
 
 void reboot(void)

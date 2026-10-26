@@ -59,6 +59,40 @@ static uint16_t bdos_hl;
 static uint16_t bdos_ix;
 
 /***********************************************
+ * V9990TANG (port a SDCC): llamada al BDOS con los registros en las
+ * variables bdos_*: entra A, B, C, DE, HL, IX y sale lo mismo. Sin
+ * argumentos, asi no depende del convenio de llamada de SDCC; guarda IX
+ * (puntero de marco de SDCC) e IY.
+ ***********************************************/
+static void bdos_raw(void) __naked
+{
+__asm
+    push    ix
+    push    iy
+    ld      ix, (_bdos_ix)
+    ld      hl, (_bdos_hl)
+    ld      de, (_bdos_de)
+    ld      a, (_bdos_c)
+    ld      c, a
+    ld      a, (_bdos_b)
+    ld      b, a
+    ld      a, (_bdos_a)
+    call    0x0005
+    ld      (_bdos_a), a
+    ld      a, b
+    ld      (_bdos_b), a
+    ld      a, c
+    ld      (_bdos_c), a
+    ld      (_bdos_de), de
+    ld      (_bdos_hl), hl
+    ld      (_bdos_ix), ix
+    pop     iy
+    pop     ix
+    ret
+__endasm;
+}
+
+/***********************************************
  * BDOS コール
  *  引数
  *    c         : ファンクション番号
@@ -68,48 +102,9 @@ static uint16_t bdos_ix;
  ***********************************************/
 static int bdos_call_de(uint8_t num, uint16_t de)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      E, (IX + 0)
-    LD      D, (IX + 1)
-    LD      C, (IX + 2)
-
-__bdos_call:
-    CALL    0005h
-    PUSH    AF
-
-    LD      A, B
-    LD      (_bdos_b), A
-    LD      A, C
-    LD      (_bdos_c), A
-
-    LD      A, D
-    LD      (_bdos_de + 1), A
-    LD      A, E
-    LD      (_bdos_de + 0), A
-
-    LD      A, H
-    LD      (_bdos_hl + 1), A
-    LD      A, L
-    LD      (_bdos_hl + 0), A
-
-    PUSH    IX
-    POP     HL
-    LD      A, H
-    LD      (_bdos_ix + 1), A
-    LD      A, L
-    LD      (_bdos_ix + 0), A
-
-    POP     AF
-
-    LD      (_bdos_a), A
-
-    LD      H, 0
-    LD      L, A
-
-    RET
-#endasm
+    bdos_c = num; bdos_de = de; bdos_b = 0; bdos_a = 0;
+    bdos_raw();
+    return bdos_a;
 }
 
 /***********************************************
@@ -122,13 +117,9 @@ __bdos_call:
  ***********************************************/
 static int bdos_call_b(uint8_t num, uint8_t b)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      B, (IX + 0)
-    LD      C, (IX + 2)
-    jp      __bdos_call
-#endasm
+    bdos_c = num; bdos_b = b; bdos_a = 0;
+    bdos_raw();
+    return bdos_a;
 }
 
 /***********************************************
@@ -143,17 +134,9 @@ static int bdos_call_b(uint8_t num, uint8_t b)
  ***********************************************/
 static int bdos_call_b_de_hl(uint8_t num, uint8_t b, uint16_t de, uint16_t hl)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      L, (IX + 0)
-    LD      H, (IX + 1)
-    LD      E, (IX + 2)
-    LD      D, (IX + 3)
-    LD      B, (IX + 4)
-    LD      C, (IX + 6)
-    jp      __bdos_call
-#endasm
+    bdos_c = num; bdos_b = b; bdos_de = de; bdos_hl = hl; bdos_a = 0;
+    bdos_raw();
+    return bdos_a;
 }
 
 /***********************************************
@@ -167,15 +150,9 @@ static int bdos_call_b_de_hl(uint8_t num, uint8_t b, uint16_t de, uint16_t hl)
  ***********************************************/
 static int bdos_call_a_de(uint8_t num, uint8_t a, uint16_t de)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      E, (IX + 0)
-    LD      D, (IX + 1)
-    LD      A, (IX + 2)
-    LD      C, (IX + 4)
-    jp      __bdos_call
-#endasm
+    bdos_c = num; bdos_a = a; bdos_de = de;
+    bdos_raw();
+    return bdos_a;
 }
 
 /***********************************************
@@ -190,16 +167,9 @@ static int bdos_call_a_de(uint8_t num, uint8_t a, uint16_t de)
  ***********************************************/
 static int bdos_call_a_b_de(uint8_t num, uint8_t a, uint8_t b, uint16_t de)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      E, (IX + 0)
-    LD      D, (IX + 1)
-    LD      B, (IX + 2)
-    LD      A, (IX + 4)
-    LD      C, (IX + 6)
-    jp      __bdos_call
-#endasm
+    bdos_c = num; bdos_a = a; bdos_b = b; bdos_de = de;
+    bdos_raw();
+    return bdos_a;
 }
 
 /***********************************************
@@ -215,21 +185,18 @@ static int bdos_call_a_b_de(uint8_t num, uint8_t a, uint8_t b, uint16_t de)
  ***********************************************/
 static int bdos_call_b_de_hl_ix(uint8_t num, uint8_t b, uint16_t de, uint16_t hl, uint16_t ix)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      L, (IX + 0)
-    LD      H, (IX + 1)
-    PUSH    HL
-    LD      L, (IX + 2)
-    LD      H, (IX + 3)
-    LD      E, (IX + 4)
-    LD      D, (IX + 5)
-    LD      B, (IX + 6)
-    LD      C, (IX + 8)
-    POP     IX
-    jp      __bdos_call
-#endasm
+    bdos_c = num; bdos_b = b; bdos_de = de; bdos_hl = hl; bdos_ix = ix; bdos_a = 0;
+    bdos_raw();
+    return bdos_a;
+}
+
+/***********************************************
+ * V9990TANG: un caracter a la consola (CONOUT, 02h)
+ ***********************************************/
+void bdos_conout(char ch)
+{
+    bdos_c = 0x02; bdos_de = (uint8_t)ch;
+    bdos_raw();
 }
 
 static void make_fcb(BDOS_FILE_t *file, char *path)

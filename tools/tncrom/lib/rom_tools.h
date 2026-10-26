@@ -34,7 +34,7 @@
 #ifndef _INCLUDE_ROM_TOOLS_H_
 #define _INCLUDE_ROM_TOOLS_H_
 
-#include "..\..\lib\types.h"
+#include "types.h"
 
 typedef struct {
     uint16_t    addr;

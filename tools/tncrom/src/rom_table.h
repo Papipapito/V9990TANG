@@ -34,8 +34,8 @@
 #ifndef _INCLUDE_ROM_TABLE_H_
 #define _INCLUDE_ROM_TABLE_H_
 
-#include "..\..\lib\tools.h"
-#include "..\..\lib\rom_tools.h"
+#include "tools.h"
+#include "rom_tools.h"
 
 extern const ROM_ATTR_t ROM_ATTR_ASCII16;
 extern const KEYWORD_PARAM_t rom_attr_table[];

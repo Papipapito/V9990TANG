@@ -32,8 +32,8 @@
 //
 
 #include <string.h>
-#include "..\..\lib\tools.h"
-#include "..\..\lib\rom_tools.h"
+#include "tools.h"
+#include "rom_tools.h"
 
 /***********************************************
  * NORMAL 32KB

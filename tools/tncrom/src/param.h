@@ -34,7 +34,7 @@
 #ifndef _INCLUDE_PARAM_H_
 #define _INCLUDE_PARAM_H_
 
-#include "..\..\lib\types.h"
+#include "types.h"
 
 typedef struct {
     int         use_conf_file;

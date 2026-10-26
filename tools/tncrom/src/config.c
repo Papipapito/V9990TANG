@@ -34,8 +34,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stddef.h>
-#include "..\..\lib\bdos.h"
-#include "..\..\lib\tools.h"
+#include "bdos.h"
+#include "tools.h"
 #include "config.h"
 #include "message.h"
 

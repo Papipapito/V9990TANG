@@ -34,7 +34,7 @@
 #ifndef _INCLUDE_CONFIG_H_
 #define _INCLUDE_CONFIG_H_
 
-#include "..\..\lib\types.h"
+#include "types.h"
 
 typedef struct {
     char    rom_file[256];

@@ -102,5 +102,6 @@ int bdos_fread_n(BDOS_FILE_t *file, uint16_t addr, uint16_t size, uint16_t *read
 int bdos_fwrite(BDOS_FILE_t *file, uint16_t *written);
 int bdos_set_about_handler(uint16_t addr);
 int bdos_term(uint8_t code);
+void bdos_conout(char ch);          // V9990TANG
 
 #endif

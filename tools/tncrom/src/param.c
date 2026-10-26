@@ -33,7 +33,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "..\..\lib\tools.h"
+#include "tools.h"
 #include "param.h"
 #include "message.h"
 

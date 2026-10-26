@@ -32,7 +32,7 @@
 //
 
 #include <string.h>
-#include "..\..\lib\types.h"
+#include "types.h"
 //#include "rom_table.h"
 #include "rom_tools.h"
 
@@ -40,17 +40,68 @@
 #define RAMAD2      (*(uint8_t*)0xF343)
 
 /***********************************************
+ * V9990TANG (port a SDCC): las llamadas a la BIOS (ENASLT, WRSLT, RDSLT)
+ * toman los argumentos de estas variables, como bdos_raw en bdos.c, y
+ * guardan IX e IY.
+ ***********************************************/
+static uint8_t  slt_a;
+static uint8_t  slt_e;
+static uint16_t slt_hl;
+static uint16_t slt_bc;
+static uint16_t slt_de;
+
+static void bios_enaslt(void) __naked
+{
+__asm
+    push    ix
+    push    iy
+    ld      a, (_slt_a)
+    ld      hl, (_slt_hl)
+    call    0x0024
+    pop     iy
+    pop     ix
+    ret
+__endasm;
+}
+
+static void bios_wrslt(void) __naked
+{
+__asm
+    push    ix
+    push    iy
+    ld      a, (_slt_e)
+    ld      e, a
+    ld      hl, (_slt_hl)
+    ld      a, (_slt_a)
+    call    0x0014
+    pop     iy
+    pop     ix
+    ret
+__endasm;
+}
+
+static void bios_rdslt(void) __naked
+{
+__asm
+    push    ix
+    push    iy
+    ld      hl, (_slt_hl)
+    ld      a, (_slt_a)
+    call    0x000C
+    ld      (_slt_e), a
+    pop     iy
+    pop     ix
+    ret
+__endasm;
+}
+
+/***********************************************
  * Page1スロット切り替え
  ***********************************************/
 void slot_select_p1(uint8_t sltnum)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      A, (IX + 0)
-    LD      HL, 4000h
-    CALL    0024h
-#endasm
+    slt_a = sltnum; slt_hl = 0x4000;
+    bios_enaslt();
 }
 
 /***********************************************
@@ -58,13 +109,8 @@ void slot_select_p1(uint8_t sltnum)
  ***********************************************/
 void slot_select_p2(uint8_t sltnum)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      A, (IX + 0)
-    LD      HL, 8000h
-    CALL    0024h
-#endasm
+    slt_a = sltnum; slt_hl = 0x8000;
+    bios_enaslt();
 }
 
 /***********************************************
@@ -76,15 +122,8 @@ void slot_select_p2(uint8_t sltnum)
  ***********************************************/
 void wrtslt(uint8_t sltnum, uint16_t addr, uint8_t data)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      E, (IX+0)   ;data
-    LD      L, (IX+2)   ;addr_l
-    LD      H, (IX+3)   ;addr_h
-    LD      A, (IX+4)   ;sltnum
-    CALL    0014h
-#endasm
+    slt_a = sltnum; slt_hl = addr; slt_e = data;
+    bios_wrslt();
 }
 
 /***********************************************
@@ -97,16 +136,9 @@ void wrtslt(uint8_t sltnum, uint16_t addr, uint8_t data)
  ***********************************************/
 uint8_t rdslt(uint8_t sltnum, uint16_t addr)
 {
-#asm
-    LD      IX, 2
-    ADD     IX, SP
-    LD      L, (IX+0)   ;addr_l
-    LD      H, (IX+1)   ;addr_h
-    LD      A, (IX+2)   ;sltnum
-    CALL    000Ch
-    LD      H, 0
-    LD      L, A
-#endasm
+    slt_a = sltnum; slt_hl = addr;
+    bios_rdslt();
+    return slt_e;
 }
 
 /***********************************************
@@ -207,32 +239,32 @@ void clear_rom(uint8_t sltnum)
  ***********************************************/
 void xfer_memory(uint8_t sltnum, VOID_PTR_t dst, VOID_PTR_t src, size_t size)
 {
-#asm
-    DI
-
-    LD      IX, 2
-    ADD     IX, SP
-
-    PUSH    IX
-    LD      A, (IX + 6)     ; sltnum
-    LD      HL, 8000h
-    CALL    0024h
-    POP     IX
-
-    LD      C, (IX + 0)     ; size
-    LD      B, (IX + 1)
-    LD      L, (IX + 2)     ; src
-    LD      H, (IX + 3)
-    LD      E, (IX + 4)     ; dst
-    LD      D, (IX + 5)
-    LDIR
-
-    LD      A, (0F343h)
-    LD      HL, 8000h
-    CALL    0024h
-
-    EI
-#endasm
+    // V9990TANG (port a SDCC): misma secuencia que el original (DI, pagina 2
+    // al cartucho, LDIR, pagina 2 a RAMAD2, EI); la pila tiene que estar en
+    // la pagina 3 (crt_msxdos.c lo comprueba al arrancar)
+    slt_a = sltnum; slt_hl = (uint16_t)dst; slt_de = (uint16_t)src; slt_bc = size;
+__asm
+    di
+    push    ix
+    push    iy
+    ld      a, (_slt_a)
+    ld      hl, #0x8000
+    call    0x0024
+    ld      bc, (_slt_bc)
+    ld      hl, (_slt_de)
+    ld      de, (_slt_hl)
+    ld      a, b
+    or      a, c
+    jr      z, 00001$
+    ldir
+00001$:
+    ld      a, (0xF343)
+    ld      hl, #0x8000
+    call    0x0024
+    pop     iy
+    pop     ix
+    ei
+__endasm;
 }
 
 
