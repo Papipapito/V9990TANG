@@ -1,0 +1,142 @@
+GowinSynthesis start
+Running parser ...
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\board_id.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_config_sync.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\config\v9990.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_bus.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_tmds.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_clock.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_guard.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_bus_guard.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\dvi_tx\dvi_tx.v'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\system\system_reset.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\video\video.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_port.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\cartridge_v9990.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\main.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\led.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\msx\bus.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\msx\expansion_slot.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\ram\ram.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\ram\sdram.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\ram\uma.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\signal\attenuator.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\signal\limiter.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\dac_16bit.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\i2s_audio_tx.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\sound.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_bitmap.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_addr.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_bitmask.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_fifo.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_clock.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_color_decode.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_palette.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_pattern.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_priority.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_timing.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_ram.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_selector.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_shift_buffer.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_sprite.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\video\video_upscan.sv'
+Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv'
+Compiling module 'TNCART_BOARD_WT200B_TOP'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv":57)
+Compiling module 'BOARD_WT200B_CLOCK'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_clock.sv":49)
+Compiling module 'BOARD_WT200B_GUARD(SYNC=1)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_guard.sv":71)
+Compiling module 'SYSTEM_RESET'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\system\system_reset.sv":51)
+Compiling module 'BOARD_REV1_BUS(Bus=BUS_IF_MSX)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_bus.sv":39)
+Compiling module 'PIN_FILTER'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_bus.sv":287)
+Compiling module 'BOARD_WT200B_BUS_GUARD(Pin=BUS_IF_CARTRIDGE,Cart=BUS_IF_MSX)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_bus_guard.sv":62)
+Compiling module 'SDRAM(Ram=RAM_IF_DEVICE)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\ram\sdram.sv":39)
+Compiling module 'UMA(SYNC_CLK_EN=0,Primary=RAM_IF_HOST,Secondary=RAM_IF_DEVICE,Uma=UMA_IF_DEVICE)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\ram\uma.sv":59)
+Compiling module 'STATUS_LED(SYNC=1)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\led.sv":152)
+Compiling module 'DAC_16BIT(IN=SOUND_IF(BIT_WIDTH=10)_IN)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\dac_16bit.sv":42)
+Compiling module 'I2S_AUDIO_TX'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\i2s_audio_tx.sv":45)
+Compiling module 'VIDEO_UPSCAN(IN=VIDEO_IF_IN,OUT=VIDEO_IF_OUT)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\video\video_upscan.sv":42)
+Compiling module 'VIDEO_UPSCAN_STRETCH_BUFFER(ROW_COUNT=3)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\video\video_upscan.sv":321)
+Compiling module 'VIDEO_UPSCAN_BUFFER(COUNT=16'b0000100100000000)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\video\video_upscan.sv":880)
+Compiling module 'BOARD_REV1_TMDS_OUT(IN=VIDEO_IF_IN)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_tmds.sv":39)
+Compiling module 'BOARD_REV1_TMDS_OUT_DELAY'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_tmds.sv":184)
+Compiling module 'DVI_TX_Top'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\dvi_tx\dvi_tx.v":1044)
+Compiling module '**'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\dvi_tx\dvi_tx.v":1043)
+Compiling module 'MAIN(Bus=BUS_IF_CARTRIDGE,Ram=RAM_IF_HOST,VideoRam=RAM_IF,UmaClock=UMA_IF_CLK,Video=VIDEO_IF,SoundExternal=SOUND_IF(BIT_WIDTH=10)_OUT,SoundInternal=SOUND_IF(BIT_WIDTH=10)_OUT)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\main.sv":83)
+Compiling module 'EXPANSION_RAM(COUNT=2,Primary=RAM_IF_HOST,Secondary=RAM_IF_DEVICE)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\ram\ram.sv":87)
+Compiling module 'SYSTEM_RESET_HOLD'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\system\system_reset.sv":78)
+Compiling module 'CARTRIDGE_V9990(Bus=BUS_IF_CARTRIDGE,Ram=RAM_IF_HOST,UmaClock=UMA_IF_CLK,Video=VIDEO_IF_OUT)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\cartridge_v9990.sv":39)
+Compiling module 'T9990'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990.sv":49)
+Compiling module 'T9990_CLOCK(REG=T9990_REGISTER_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_clock.sv":39)
+Compiling module 'T9990_PORT(CPU_MEM=T9990_CPU_MEM_IF_CPU,P2_CPU_TO_VDP=T9990_P2_CPU_TO_VDP_IF_CPU,P2_VDP_TO_CPU=T9990_P2_VDP_TO_CPU_IF_CPU,STATUS=T9990_STATUS_IF_CPU,REG=T9990_REGISTER_IF_CPU,PAL=T9990_PALETTE_IF_CPU)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_port.sv":345)
+Compiling module 'T9990_TIMING(REG=T9990_REGISTER_IF_VDP,STATUS=T9990_STATUS_IF_TIM,MEM=T9990_MEM_TIMING_TG)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_timing.sv":72)
+Compiling module 'T9990_TIMING_TABLE(REG=T9990_REGISTER_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_timing.sv":674)
+Compiling module 'T9990_RAM(TIMING=T9990_MEM_TIMING_RAM,VC_MEM=T9990_VC_MEM_IF_RAM,SP_MEM=T9990_VDP_MEM_IF_RAM,BP_MEM=T9990_VDP_MEM_IF_RAM,PA_MEM=T9990_VDP_MEM_IF_RAM,PB_MEM=T9990_VDP_MEM_IF_RAM)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_ram.sv":256)
+Compiling module 'T9990_URB_RAM_VC(VC_MEM=T9990_VC_MEM_IF_VDP,CPU_MEM=T9990_CPU_MEM_IF_RAM,CMD_MEM=T9990_CMD_MEM_IF_RAM)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_ram.sv":127)
+Compiling module 'T9990_BLIT(CMD_MEM=T9990_CMD_MEM_IF_VDP,P2_CPU_TO_VDP=T9990_P2_CPU_TO_VDP_IF_VDP,P2_VDP_TO_CPU=T9990_P2_VDP_TO_CPU_IF_VDP,REG=T9990_REGISTER_IF_VDP,STATUS=T9990_STATUS_IF_CMD)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit.sv":46)
+Compiling module 'T9990_BLIT_FIFO'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_fifo.sv":36)
+Extracting RAM for identifier 'buffer'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_fifo.sv":269)
+Compiling module 'T9990_BLIT_ADDR'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_addr.sv":39)
+Compiling module 'T9990_BLIT_CALC_COUNT'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit.sv":1372)
+Compiling module 'T9990_BLIT_BITMASK'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_bitmask.sv":39)
+Compiling module 'T9990_BLIT_BITMASK_2BPP'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_bitmask.sv":108)
+Compiling module 'T9990_BLIT_BITMASK_4BPP'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_bitmask.sv":667)
+Compiling module 'T9990_BLIT_BITMASK_8BPP'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_bitmask.sv":826)
+Compiling module 'T9990_BLIT_BITMASK_16BPP'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_blit_bitmask.sv":881)
+Compiling module 'T9990_SPRITE(REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_sprite.sv":42)
+Compiling module 'T9990_SPRITE_PATTERN'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_sprite.sv":865)
+Compiling module 'T9990_PATTERN(REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_pattern.sv":40)
+Compiling module 'TINY9990_PATTERN_GEN(PAT_ADDR=19'b0000000000000000000,NAME_ADDR=19'b1111100000000000000,REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_pattern.sv":124)
+Compiling module 'T9990_SHIFT_BUFFER(BIT_WIDTH=8)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_shift_buffer.sv":36)
+Extracting RAM for identifier 'buffer'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_shift_buffer.sv":48)
+Compiling module 'T9990_PATTERN(IS_B=1,PAT_ADDR=19'h40000,NAME_ADDR=19'h7E000,REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_pattern.sv":40)
+Compiling module 'TINY9990_PATTERN_GEN(IS_B=1,PAT_ADDR=19'b1000000000000000000,NAME_ADDR=19'b1111110000000000000,REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_pattern.sv":124)
+Compiling module 'T9990_BITMAP(REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_bitmap.sv":39)
+Compiling module 'TINY9990_BITMAP_GEN(REG=T9990_REGISTER_IF_VDP,MEM=T9990_VDP_MEM_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_bitmap.sv":117)
+Compiling module 'T9990_BITMAP_BUFFER'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_bitmap.sv":423)
+Compiling module 'T9990_BITMAP_MEM'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_bitmap.sv":402)
+Extracting RAM for identifier 'buffer'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_bitmap.sv":412)
+Compiling module 'T9990_SHIFT_BUFFER(BIT_WIDTH=23)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_shift_buffer.sv":36)
+Extracting RAM for identifier 'buffer'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_shift_buffer.sv":48)
+Compiling module 'T9990_PRIORITY'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_priority.sv":39)
+Compiling module 'T9990_PALETTE(PAL=T9990_PALETTE_IF_PAL)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_palette.sv":39)
+Extracting RAM for identifier 'buffer'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_palette.sv":76)
+Compiling module 'T9990_PALETTE_REG'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_palette.sv":107)
+Compiling module 'T9990_COLOR_DECODE(REG=T9990_REGISTER_IF_VDP)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_color_decode.sv":41)
+Compiling module 'T9990_COLOR_DECODE_DELAY'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_color_decode.sv":255)
+Compiling module 'T9990_COLOR_DECODE_Y_BUFF'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_color_decode.sv":299)
+Compiling module 'T9990_SELECTOR'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\v9990\tiny9990\t9990_selector.sv":39)
+Compiling module 'SOUND_MIXER(COUNT=3,IN=SOUND_IF(BIT_WIDTH=10)_IN,OUT=SOUND_IF(BIT_WIDTH=10)_OUT)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\sound.sv":78)
+Compiling module 'LIMITER_FF(IN_WIDTH=12)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\signal\limiter.sv":54)
+Compiling module 'SOUND_MIXER(COUNT=2,IN=SOUND_IF(BIT_WIDTH=10)_IN,OUT=SOUND_IF(BIT_WIDTH=10)_OUT)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\sound.sv":78)
+NOTE  (EX0101) : Current top module is "TNCART_BOARD_WT200B_TOP"
+[5%] Running netlist conversion ...
+WARN  (CV0016) : Input mspi_miso is unused("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv":104)
+WARN  (CV0016) : Input TF_DAT0 is unused("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv":111)
+WARN  (CV0016) : Input UART_RX is unused("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv":117)
+Running device independent optimization ...
+[10%] Optimizing Phase 0 completed
+[15%] Optimizing Phase 1 completed
+[25%] Optimizing Phase 2 completed
+Running inference ...
+[30%] Inferring Phase 0 completed
+[40%] Inferring Phase 1 completed
+[50%] Inferring Phase 2 completed
+[55%] Inferring Phase 3 completed
+Running technical mapping ...
+[60%] Tech-Mapping Phase 0 completed
+[65%] Tech-Mapping Phase 1 completed
+[75%] Tech-Mapping Phase 2 completed
+[80%] Tech-Mapping Phase 3 completed
+[90%] Tech-Mapping Phase 4 completed
+WARN  (NL0002) : The module "EXPANSION_RAM" instantiated to "u_expram" is swept in optimizing("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\main.sv":133)
+WARN  (NL0002) : The module "SOUND_MIXER" instantiated to "u_mixer_ext" is swept in optimizing("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\main.sv":367)
+WARN  (NL0002) : The module "LIMITER_FF" instantiated to "u_limiter" is swept in optimizing("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\sound.sv":128)
+WARN  (NL0002) : The module "SOUND_MIXER" instantiated to "u_mixer_int" is swept in optimizing("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\main.sv":433)
+WARN  (NL0002) : The module "LIMITER_FF" instantiated to "u_limiter" is swept in optimizing("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\peripheral\sound\sound.sv":128)
+[95%] Generate netlist file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\impl\gwsynthesis\v9990_sync.vg" completed
+WARN  (CK3000) : Can't calculate clocks' relationship between: "u_clk/u_pll_base/CLKOUT.default_gen_clk" and "u_clk/u_div_dac/CLKOUT.default_gen_clk"
+WARN  (CK3000) : Can't calculate clocks' relationship between: "CART_CLOCK" and "CLK_27M"
+WARN  (CK3000) : Can't calculate clocks' relationship between: "u_main/u_v9990/\Video.DCLK " and "u_clk/u_div_tmds/CLKOUT.default_gen_clk"
+[100%] Generate report file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\impl\gwsynthesis\v9990_sync_syn.rpt.html" completed
+GowinSynthesis finish

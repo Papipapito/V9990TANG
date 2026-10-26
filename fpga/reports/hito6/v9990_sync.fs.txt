@@ -1,0 +1,4 @@
+v9990_sync.fs, build del Mon Oct 26 04:42:35 2026
+CheckSum: 0xC950
+md5 del fichero: 38bb1b8f91af568c492ed7bb79929ff7
+md5 sin las lineas de cabecera (//): 79c9836a292f86709ff68730b8f15e7b
