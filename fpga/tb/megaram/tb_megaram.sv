@@ -45,10 +45,20 @@
 //                  las que se cuentan aparte (inj_main: control del defecto
 //                  del UMA de tnCart).
 //
-// Supuestos de pines del Z80 (Z80A, en ciclos de 108 MHz): salidas D_CTRL
-// = 5 ciclos (46 ns) despues del flanco de reloj; /WAIT visto con D_WAIT =
-// 11 ciclos (NPN ~30 ns + setup 70 ns); dato visto con D_DATA = 6 ciclos
-// (setup ~50 ns + transceptor). Solo cuentan en lo que ve el Z80.
+//   D_ADDR, D_CTRL, D_WAIT, D_DATA: supuestos de pines del Z80 (abajo)
+//
+// Supuestos de pines del Z80 (Z80A, en ciclos de 108 MHz = 9,26 ns), los
+// mismos que el banco del area bus (docs/notas/bus.md de hito/bus, apartado
+// 7: retardos maximos fijos, estimados): direccion D_ADDR = 12 ciclos (110 ns)
+// despues de la subida de T1; /MREQ, /RD, /WR y el resto de salidas D_CTRL =
+// 8 ciclos (70/75 ns) despues de su flanco; /WAIT visto con D_WAIT = 13 ciclos
+// (NPN 50 ns + setup 70 ns antes de la bajada de T2); dato visto con D_DATA
+// = 6 ciclos (setup 50 ns + transceptor). Un cambio puesto a los n ciclos lo
+// ven los filtros del bus en el flanco n+1, asi que D_CTRL = 8 cubre un /RD a
+// 75 ns. Solo cuentan en lo que ve el Z80. Hasta el 26/10/2026 el banco usaba
+// D_CTRL = 5 (46 ns), D_ADDR = D_CTRL y D_WAIT = 11 (NPN 30 ns): con ellos la
+// cadena del /WAIT sola llegaba justo a la bajada de T2 (variante
+// noprewait_opt de run.sh, margen 0) y con estos no llega (noprewait).
 //
 
 `timescale 1ns/1ps
@@ -61,11 +71,12 @@ module tb_megaram #(
     parameter PW_K      = 7,
     parameter TURBO     = 0,
     parameter INJ       = 0,
-    parameter STRICT    = 1
+    parameter STRICT    = 1,
+    parameter D_ADDR    = 12,
+    parameter D_CTRL    = 8,
+    parameter D_WAIT    = 13,
+    parameter D_DATA    = 6
 ) ();
-    localparam D_CTRL    = 5;
-    localparam D_WAIT    = 11;
-    localparam D_DATA    = 6;
 
     /***************************************************************
      * reloj de 108 MHz y resets
@@ -619,10 +630,29 @@ module tb_megaram #(
         end
     endtask
 
+    // T1: direccion (y /M1) D_ADDR ciclos despues de la subida; si eso cae
+    // despues de la bajada (turbos: semiperiodo de 10 o 7 ciclos) se pone
+    // detras de la bajada, siempre antes que /MREQ. Vuelve D_CTRL ciclos
+    // despues de la bajada de T1, cuando el que llama baja /MREQ (y /RD)
+    task automatic t1_addr(input logic [15:0] a, input bit m1);
+        int h, na;
+        to_rise();                                                          // T1
+        h = tlen / 2;
+        if(D_ADDR < h) begin
+            after(D_ADDR);  z_addr = a; if(m1) z_m1_n = 0;
+            to_fall();      after(D_CTRL);
+        end
+        else begin
+            to_fall();
+            na = (D_ADDR - h < D_CTRL) ? D_ADDR - h : D_CTRL - 1;
+            after(na);      z_addr = a; if(m1) z_m1_n = 0;
+            after(D_CTRL - na);
+        end
+    endtask
+
     // M1 (opcode fetch) con refresco; devuelve el dato muestreado
     task automatic z_fetch(input logic [15:0] a, output logic [7:0] d);
-        to_rise();  after(D_CTRL);  z_addr = a; z_m1_n = 0;                 // T1
-        to_fall();  after(D_CTRL);  z_mreq_n = 0; z_rd_n = 0;
+        t1_addr(a, 1);              z_mreq_n = 0; z_rd_n = 0;
         to_rise();                                                          // T2
         wait_states();
         to_rise();                                                          // T3
@@ -638,8 +668,7 @@ module tb_megaram #(
 
     // lectura de memoria normal
     task automatic z_read(input logic [15:0] a, output logic [7:0] d);
-        to_rise();  after(D_CTRL);  z_addr = a;                             // T1
-        to_fall();  after(D_CTRL);  z_mreq_n = 0; z_rd_n = 0;
+        t1_addr(a, 0);              z_mreq_n = 0; z_rd_n = 0;
         to_rise();                                                          // T2
         wait_states();
         to_rise();                                                          // T3
@@ -651,8 +680,7 @@ module tb_megaram #(
 
     // escritura de memoria
     task automatic z_write(input logic [15:0] a, input logic [7:0] d);
-        to_rise();  after(D_CTRL);  z_addr = a;                             // T1
-        to_fall();  after(D_CTRL);  z_mreq_n = 0; z_dout = d; z_dout_en = 1;
+        t1_addr(a, 0);              z_mreq_n = 0; z_dout = d; z_dout_en = 1;
         to_rise();  after(D_CTRL);  z_wr_n = 0;                             // T2
         wait_states();
         to_rise();                                                          // T3
@@ -787,6 +815,8 @@ module tb_megaram #(
 
         $display("tb_megaram: MEM_WAIT=%0d PREWAIT=%0d PW_DLY=%0d PW_K=%0d TURBO=%0d STRICT=%0d",
                  MEM_WAIT, PREWAIT, PW_DLY, PW_K, TURBO, STRICT);
+        $display("Z80: D_ADDR=%0d D_CTRL=%0d D_WAIT=%0d D_DATA=%0d ciclos de 108 MHz",
+                 D_ADDR, D_CTRL, D_WAIT, D_DATA);
 
         // SDRAM con patron (contenido de encendido)
         for(int unsigned w = 0; w < (1 << 21); w++) u_ram.mem[w] = pat_word(w);

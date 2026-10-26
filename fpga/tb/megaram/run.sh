@@ -11,7 +11,14 @@
 # dato valido al subir, dato estable; en inj_main solo se cuenta) o la VRAM,
 # y cuentan lo que el Z80 lee mal o sin esperar:
 #   wait       ESTRICTA  MEM_WAIT=1 PREWAIT=1 a 3,58 MHz (contrato completo)
-#   noprewait  ESTRICTA  MEM_WAIT=1 PREWAIT=0 a 3,58 MHz (el WAIT solo basta)
+#   noprewait  medida    MEM_WAIT=1 PREWAIT=0 a 3,58 MHz: la cadena del WAIT
+#                        sola NO llega con los supuestos del Z80 del area bus
+#                        (71 de 253 lecturas mal el 26/10/2026): el pre-WAIT de
+#                        memoria es imprescindible tambien a 3,58 MHz
+#   noprewait_opt medida igual con los supuestos antiguos del banco (/RD a
+#                        46 ns, NPN 30 ns): llega justo, con margen 0
+#   wait_rd9   medida    wait con /RD a 9 ciclos (83 ns) de la bajada de T1
+#   wait_rd10  medida    wait con /RD a 10 ciclos (93 ns): margen del pre-WAIT
 #   nowait     medida    MEM_WAIT=0 PREWAIT=0 a 3,58 MHz (como tnCart, sin WAIT)
 #   turbo5     medida    MEM_WAIT=1 PREWAIT=1 a 5,37 MHz
 #   turbo5i    medida    igual con pre-WAIT ideal (PW_DLY=0)
@@ -31,6 +38,10 @@
 #   git show hito/sdram:fpga/src/peripheral/ram/uma.sv > /c/tmp/uma_hito4.sv
 #   wsl -e bash -lc "cd ... && UMA_SV=/mnt/c/tmp/uma_hito4.sv ./run.sh inj_hito4"
 # Si no hay ninguno de los dos se saltan con un aviso (y no cuentan).
+# Los supuestos de pines del Z80 (D_ADDR, D_CTRL, D_WAIT, D_DATA, ver la
+# cabecera de tb_megaram.sv) son por defecto los del banco del area bus;
+# EXTRA_G="-GD_CTRL=9 ..." se anade a los parametros de todas las variantes
+# (barridos a mano; la salida va al mismo out_<variante>.log).
 # Los objetos y las salidas van a $TB_OUT (por defecto ~/.cache/v99tang_tb_megaram,
 # fuera del repositorio); cada variante deja out_<variante>.log alli. El
 # guion sale con codigo 1 si alguna variante no imprime "RESULTADO: PASA".
@@ -71,7 +82,10 @@ FILES=(
 
 declare -A PARAMS=(
     [wait]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1"
-    [noprewait]="-GMEM_WAIT=1 -GPREWAIT=0 -GTURBO=0 -GSTRICT=1"
+    [noprewait]="-GMEM_WAIT=1 -GPREWAIT=0 -GTURBO=0 -GSTRICT=0"
+    [noprewait_opt]="-GMEM_WAIT=1 -GPREWAIT=0 -GTURBO=0 -GSTRICT=0 -GD_ADDR=5 -GD_CTRL=5 -GD_WAIT=11"
+    [wait_rd9]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=0 -GD_CTRL=9"
+    [wait_rd10]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=0 -GD_CTRL=10"
     [nowait]="-GMEM_WAIT=0 -GPREWAIT=0 -GTURBO=0 -GSTRICT=0"
     [turbo5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=1 -GSTRICT=0"
     [turbo5i]="-GMEM_WAIT=1 -GPREWAIT=1 -GPW_DLY=0 -GTURBO=1 -GSTRICT=0"
@@ -83,12 +97,13 @@ declare -A PARAMS=(
 UMA_REF=${UMA_REF:-hito/sdram}
 
 VARIANTS=("$@")
-[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait noprewait nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4)
+[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4)
 
 rc=0
 for v in "${VARIANTS[@]}"; do
     p=${PARAMS[$v]:-}
     if [ -z "$p" ]; then echo "variante desconocida: $v"; exit 2; fi
+    p="$p ${EXTRA_G:-}"
     uma=$SRC/peripheral/ram/uma.sv
     if [[ "$v" == *_hito4 ]]; then
         if [ -n "${UMA_SV:-}" ] && [ -f "$UMA_SV" ]; then
@@ -114,7 +129,7 @@ for v in "${VARIANTS[@]}"; do
         echo "  error de compilacion ($OUT/build_$v.log)"; grep -E "%Error" "$OUT/build_$v.log" | head -20; rc=1; continue
     fi
     "$OUT/obj_$v/tb" > "$OUT/out_$v.log" 2>&1
-    grep -E "^(borrado|lecturas|refrescos|pre-WAIT|/RD|Bus\.|rd_mem_n|histograma|SDRAM|VRAM|fallos|RESULTADO)" "$OUT/out_$v.log"
+    grep -E "^(Z80:|borrado|lecturas|refrescos|pre-WAIT|/RD|Bus\.|rd_mem_n|histograma|SDRAM|VRAM|fallos|RESULTADO)" "$OUT/out_$v.log"
     nerr=$(grep -c "ERROR" "$OUT/out_$v.log")
     [ "$nerr" -gt 0 ] && { echo "  primeros errores:"; grep "ERROR" "$OUT/out_$v.log" | head -8; }
     grep -q "RESULTADO: PASA" "$OUT/out_$v.log" || rc=1
