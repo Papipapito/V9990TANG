@@ -409,8 +409,9 @@ Corridas: matriz completa con `SEED=1 N=120` y con `SEED=2 N=60` (esta con
 `+DBGPW`), 5,37 MHz con `SEED=3 N=200` en `0:60:0`, `1:60:0` y `0:60:1`, y
 3,58 y 5,37 MHz con `SEED=4 N=120` en `0:60:0` y `1:60:0`. La implementadora
 anterior las corrió con el RTL y el banco de `1c412bc`; en esta sesión se han
-repetido todas con el RTL de `ef19224` (el mismo, más un comentario) y el banco
-de `0e504bd` (solo añade la traza `+DBGPW`), y los logs de las dos matrices y de
+repetido todas con el RTL de `ef19224` (el mismo, más un comentario; después
+solo cambian comentarios del RTL, y `1:60:0` a 5,37 MHz repetido al final sale
+igual) y el banco de `0e504bd` (solo añade la traza `+DBGPW`), y los logs de las dos matrices y de
 las variantes salen **idénticos línea a línea** a los de entonces (el banco es
 determinista con la misma semilla; las únicas líneas nuevas son las de
 `+DBGPW`). **Todas dan `BUS_OK`**; a 3,58 MHz sin ningún fallo, ni esperado; a

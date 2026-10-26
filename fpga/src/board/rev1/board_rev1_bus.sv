@@ -520,6 +520,11 @@ module BOARD_REV1_BUS #(
      *  - RD_n y WR_n filtrados en reposo 3 muestras seguidas (fin del ciclo o
      *    falso disparo; un rebote de 2 muestras no lo suelta).
      * Un disparo por ciclo: se rearma con esas mismas 3 muestras en reposo.
+     * La A7-A0 que ve la decision es la del ff_addr latcheado en la 2a
+     * muestra fresca, antes de revisitar el g1: con un salto desde g1 f0/f1
+     * sale de la pareja del g1 de E0-8 (5-6 ciclos antes del /RD del pin),
+     * que con Z80A vale hasta 7,16 MHz; a 10,74 puede ser la del ciclo
+     * anterior (docs/notas/bus.md, seccion 1).
      ***************************************************************/
     logic [1:0] rw_idle_cnt;
     wire        rw_idle_now = RD_n && WR_n;
