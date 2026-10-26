@@ -44,11 +44,12 @@ const ROM_ATTR_t ROM_ATTR_NORMAL32 = {
     (uint16_t)0x0000,                               // BANK REGISTER ADDRESS MASK
     {
         { (uint16_t)0xFFFF, 0, 0 },                 // BANK #0 REGISTER ADDRESS, INITIAL VALUE, RESERVED
-        { (uint16_t)0xFFFF, 0, 0 },                 // BANK #1 REGISTER ADDRESS, INITIAL VALUE, RESERVED
+        { (uint16_t)0xFFFF, 1, 0 },                 // BANK #1 (V9990TANG: 1, si no tras /RESET 8000h-BFFFh repite 4000h-7FFFh)
         { (uint16_t)0xFFFF, 0, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xFFFF, 0, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "NO BANK 32KB"
+    "NO BANK 32KB",
+    32
 };
 
 /***********************************************
@@ -64,7 +65,8 @@ const ROM_ATTR_t ROM_ATTR_NORMAL16_P1 = {
         { (uint16_t)0xFFFF, 0, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xFFFF, 0, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "NO BANK 16KB(4000h~)"
+    "NO BANK 16KB(4000h~)",
+    16
 };
 
 /***********************************************
@@ -80,7 +82,8 @@ const ROM_ATTR_t ROM_ATTR_NORMAL16_P2 = {
         { (uint16_t)0xFFFF, 0, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xFFFF, 0, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "NO BANK 16KB(8000h~)"
+    "NO BANK 16KB(8000h~)",
+    16
 };
 
 /***********************************************
@@ -96,7 +99,8 @@ const ROM_ATTR_t ROM_ATTR_ASCII16 = {
         { (uint16_t)0xFFFF, 0, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xFFFF, 0, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "ASCII 16KB"
+    "ASCII 16KB",
+    4096
 };
 
 /***********************************************
@@ -112,7 +116,8 @@ const ROM_ATTR_t ROM_ATTR_ASCII8 = {
         { (uint16_t)0x7000, 0, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0x7800, 0, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "ASCII 8KB"
+    "ASCII 8KB",
+    2048
 };
 
 /***********************************************
@@ -128,7 +133,8 @@ const ROM_ATTR_t ROM_ATTR_KONAMI = {
         { (uint16_t)0x9000, 2, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xB000, 3, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "KONAMI 8KB with SCC sound"                     // NAME
+    "KONAMI 8KB with SCC sound",                    // NAME
+    512                                             // V9990TANG: MAX KB (mascara 3Fh)
 };
 
 /***********************************************
@@ -144,7 +150,8 @@ const ROM_ATTR_t ROM_ATTR_KONAMI_SCC_I = {
         { (uint16_t)0x9000, 2, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xB000, 3, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "KONAMI SCC-I"                                  // NAME
+    "KONAMI SCC-I",                                 // NAME
+    2048                                            // V9990TANG: MAX KB
 };
 
 /***********************************************
@@ -160,7 +167,8 @@ const ROM_ATTR_t ROM_ATTR_KONAMI_wo_SCC = {
         { (uint16_t)0x8000, 2, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xA000, 3, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "KONAMI 8KB without SCC sound"                  // NAME
+    "KONAMI 8KB without SCC sound",                 // NAME
+    512                                             // V9990TANG: MAX KB (mascara 3Fh)
 };
 
 /***********************************************
@@ -176,7 +184,28 @@ const ROM_ATTR_t ROM_ATTR_RTYPE = {
         { (uint16_t)0xFFFF,  0, 0 },                // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
         { (uint16_t)0xFFFF,  0, 0 }                 // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
-    "ASCII 16KB(R-TYPE)"
+    "ASCII 16KB(R-TYPE)",
+    4096
+};
+
+/***********************************************
+ * V9990TANG: PLAIN 0000h~BFFFh (demos V9990 planas de 16-48 KB)
+ *  1Fh.b0 = 1 (bank[3].reserved): con la llave cerrada y ENABLE la megaROM
+ *  lee lineal en 0000h-BFFFh (offset = direccion) y no admite escrituras;
+ *  el /RESET del MSX lo borra (arrancar con -R). Ver megarom_configure.sv.
+ ***********************************************/
+const ROM_ATTR_t ROM_ATTR_PLAIN0 = {
+    (uint8_t)(FLAG_WRITE_PROTECT | FLAG_BANK_SIZE), // FLAGS
+    (uint8_t)0xFF,                                  // BANK VALUE MASK
+    (uint16_t)0x0000,                               // BANK REGISTER ADDRESS MASK
+    {
+        { (uint16_t)0xFFFF, 0, 0 },                 // BANK #0 REGISTER ADDRESS, INITIAL VALUE, RESERVED
+        { (uint16_t)0xFFFF, 1, 0 },                 // BANK #1 REGISTER ADDRESS, INITIAL VALUE, RESERVED
+        { (uint16_t)0xFFFF, 2, 0 },                 // BANK #2 REGISTER ADDRESS, INITIAL VALUE, RESERVED
+        { (uint16_t)0xFFFF, 0, MODE_PLAIN0 }        // BANK #3 REGISTER ADDRESS, INITIAL VALUE, MODE (1Fh)
+    },
+    "PLAIN 0000h~BFFFh",
+    48
 };
 
 /***********************************************
@@ -192,5 +221,6 @@ const KEYWORD_PARAM_t    rom_attr_table[] = {
     {   "KONAMI_SCC_I",  (void*)&ROM_ATTR_KONAMI_SCC_I },
     {   "KONAMI_WO_SCC", (void*)&ROM_ATTR_KONAMI_wo_SCC},
     {   "R-TYPE",        (void*)&ROM_ATTR_RTYPE        },
+    {   "PLAIN0",        (void*)&ROM_ATTR_PLAIN0       },   // V9990TANG
     {   NULL,            NULL                          }
 };

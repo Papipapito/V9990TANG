@@ -267,6 +267,20 @@ __asm
 __endasm;
 }
 
+/***********************************************
+ * V9990TANG: tamano de la ventana de la megaROM en la SDRAM (3Eh, bancos de
+ * 16 KB; 00h = 256 bancos = 4 MB, ver megarom_configure.sv)
+ *  戻り値
+ *    tamano en KB
+ ***********************************************/
+uint16_t get_window_kb(uint8_t sltnum)
+{
+    unlock_megarom_configure(sltnum);
+    uint8_t banks = rdslt(sltnum, 0x003E);
+    lock_megarom_configure(sltnum);
+    return (banks == 0) ? (uint16_t)4096 : (uint16_t)banks * 16;
+}
+
 
 uint32_t get_sdram_address(uint8_t sltnum)
 {

@@ -191,6 +191,17 @@ static int bdos_call_b_de_hl_ix(uint8_t num, uint8_t b, uint16_t de, uint16_t hl
 }
 
 /***********************************************
+ * V9990TANG: version del sistema (DOSVER, 6Fh)
+ *  戻り値
+ *    version principal del nucleo (B): 1 = MSX-DOS 1, >= 2 = MSX-DOS 2 / Nextor
+ ***********************************************/
+uint8_t bdos_get_version(void)
+{
+    int res = bdos_call_de(BDOS_DOSVER, 0);
+    return (res != 0) ? 1 : (bdos_b < 2 ? 1 : bdos_b);
+}
+
+/***********************************************
  * V9990TANG: un caracter a la consola (CONOUT, 02h)
  ***********************************************/
 void bdos_conout(char ch)

@@ -46,8 +46,9 @@ typedef const struct {
     uint8_t         flags;
     uint8_t         val_mask;
     uint16_t        addr_mask;
-    ROM_ATTR_BANK_t bank[4];
+    ROM_ATTR_BANK_t bank[4];        // los 20 bytes hasta aqui van a 0Ch-1Fh (rom_attr_xfer)
     char            *name;
+    uint16_t        max_kb;         // V9990TANG: tamano maximo de la imagen (KB)
 } ROM_ATTR_t;
 
 typedef ROM_ATTR_t *ROM_ATTR_PTR_t;
@@ -61,11 +62,15 @@ typedef ROM_ATTR_t *ROM_ATTR_PTR_t;
 #define FLAG_ENABLE_CONTINUOUS  (1<<6)
 #define FLAG_ENABLE             (1<<7)
 
+// V9990TANG: registro de modo (1Fh = bank[3].reserved, megarom_configure.sv)
+#define MODE_PLAIN0             (1<<0)      // ROM plana en 0000h-BFFFh
+
 
 void slot_select_p1(uint8_t sltnum);
 void slot_select_p2(uint8_t sltnum);
 void wrtslt(uint8_t sltnum, uint16_t addr, uint8_t data);
 uint8_t rdslt(uint8_t sltnum, uint16_t addr);
+uint16_t get_window_kb(uint8_t sltnum);     // V9990TANG
 void set_bank0_reg(uint8_t sltnum, uint8_t num);
 void set_bank1_reg(uint8_t sltnum, uint8_t num);
 void unlock_megarom_configure(uint8_t sltnum);

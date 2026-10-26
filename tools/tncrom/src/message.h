@@ -34,7 +34,7 @@
 #ifndef _INCLUDE_MESSAGE_H_
 #define _INCLUDE_MESSAGE_H_
 
-#define MSG_VERSION             "ROM loader for tnCart v%d.%02d\n"\
+#define MSG_VERSION             "ROM loader for tnCart v%d.%02d (V9990TANG r%d)\n"\
                                 "\n"
 #define MSG_USAGE               "USAGE: TNCROM -S [SLOT] -T [TYPE] {-R} {-C} [FILE]\n"
 #define MSG_HELP                "OPTION:\n"\
@@ -47,7 +47,7 @@
                                 "  -S [slot]    set slot number\n"\
                                 "  -T [type]    set ROM type\n"
 #define MSG_UNKNOWN_ROM_TYPE    "unknown rom type(%s).\n"
-#define MSG_CARTRIDGE_NOT_FOUND "cartridge not found.\n"
+#define MSG_CARTRIDGE_NOT_FOUND "cartridge not found (if PLAIN0 is active, reset the MSX first).\n" // V9990TANG: + PLAIN0
 #define MSG_PROP_SLOT           "SLOT     : %s\n"
 #define MSG_PROP_ROM_FILE       "ROM FILE : %s\n"
 #define MSG_PROP_ROM_TYPE       "ROM TYPE : %s\n"
@@ -59,6 +59,14 @@
 #define MSG_PROGRESS            "\rbank %d"
 #define MSG_PROGRESS_TERM       "\r"
 #define MSG_ERR_FILEOPEN        "can not open rom image file(%s).\n"
+
+// V9990TANG
+#define MSG_HELP_TYPE           "               %10s: %s (max %uKB)\n"
+#define MSG_ERR_DOS2            "MSX-DOS 2 or Nextor required.\n"
+#define MSG_ERR_EMPTY           "empty rom image file(%s).\n"
+#define MSG_ERR_TOO_LARGE       "rom image too large for %s: %luKB, max %uKB.\n"
+#define MSG_ERR_WINDOW          "rom image too large for the cartridge: %luKB, window %uKB.\n"
+#define MSG_NOTE_PLAIN0         "note: a hardware reset clears PLAIN0, use -R to boot it.\n"
 
 #define MSG_PARAM_MULTI_FILE    "multiple files specified.\n"
 #define MSG_PARAM_PATH_TOO_LONG "invalid file name(%s).\n"

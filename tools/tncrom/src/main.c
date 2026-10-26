@@ -34,7 +34,9 @@
 // zcc +msx -subtype=msxdos -O3 -o../bin/TNCROM.COM main.c ..\..\lib\bdos.c ..\..\lib\tools.c ..\..\lib\rom_tools.c ..\..\lib\reboot.c rom_table.c config.c param.c
 //
 // V9990TANG: port a SDCC 4.5 (tools/tncrom/build.sh, crt0 propio de
-// MSX-DOS en tools/tncrom/sdcc/).
+// MSX-DOS en tools/tncrom/sdcc/) y extensiones: tipo PLAIN0, tamano maximo
+// de la imagen por tipo y por ventana (3Eh), aviso de MSX-DOS 2 y el banco 1
+// inicial de 32K. Las lineas tocadas llevan "V9990TANG".
 
 #include <stdio.h>
 #include <string.h>
@@ -49,6 +51,7 @@
 #include "message.h"
 
 #define VERSION (7)
+#define V9990TANG_REVISION (1)      // V9990TANG
 
 
 static MAIN_PARAM_t main_param;     // パラメータ
@@ -74,7 +77,8 @@ static const ROM_ATTR_t ROM_ATTR_ASCII16_WO_WP = {
         { (uint16_t)0xFFFF, 0, 0 },
         { (uint16_t)0xFFFF, 0, 0 }
     },
-    "---"
+    "---",
+    4096
 };
 
 /***********************************************
@@ -406,7 +410,7 @@ int search_cartridge(uint8_t *sltnum)
  ***********************************************/
 static void output_version(void)
 {
-    printf(MSG_VERSION, VERSION / 100, VERSION % 100);
+    printf(MSG_VERSION, VERSION / 100, VERSION % 100, V9990TANG_REVISION);
 }
 
 /***********************************************
@@ -426,9 +430,52 @@ static void output_help(void)
     KEYWORD_PARAM_PTR_t p = rom_attr_table;
     while(p->keyword != NULL)
     {
-        printf("               %10s: %s\n", p->keyword, ((ROM_ATTR_PTR_t)p->param)->name);
+        printf(MSG_HELP_TYPE, p->keyword, ((ROM_ATTR_PTR_t)p->param)->name, ((ROM_ATTR_PTR_t)p->param)->max_kb);
         p++;
     }
+}
+
+/***********************************************
+ * V9990TANG: tamano de la imagen frente al maximo del tipo
+ *  (antes de buscar el cartucho: se prueba sin hardware)
+ *  引数
+ *    path      : ROM イメージファイルのパス
+ *    rom_attr  : ROM 属性
+ *    kb        : tamano en KB (redondeado hacia arriba)
+ *  戻り値
+ *    0  : 成功
+ *    !0 : 失敗
+ ***********************************************/
+static int check_image_size(char *path, ROM_ATTR_PTR_t rom_attr, uint32_t *kb)
+{
+    int res;
+    uint32_t size;
+
+    if(0 != (res = bdos_fopen(&rom_file, path)))
+    {
+        printf(MSG_ERR_FILEOPEN, path);
+        return res;
+    }
+    res = bdos_file_size(&rom_file, &size);
+    bdos_fclose(&rom_file);
+    if(res != 0)
+    {
+        printf(MSG_ERR_GETFILESIZE);
+        return res;
+    }
+    if(size == 0)
+    {
+        printf(MSG_ERR_EMPTY, path);
+        return 1;
+    }
+
+    *kb = (size + (uint32_t)1023) >> 10;
+    if(*kb > (uint32_t)rom_attr->max_kb)
+    {
+        printf(MSG_ERR_TOO_LARGE, rom_attr->name, *kb, rom_attr->max_kb);
+        return 1;
+    }
+    return 0;
 }
 
 /***********************************************
@@ -455,6 +502,13 @@ int main(int argc, char *argv[])
 
     // バージョン出力
     output_version();
+
+    // V9990TANG: DEFAB/TERM y los handles son de MSX-DOS 2
+    if(bdos_get_version() < 2)
+    {
+        printf(MSG_ERR_DOS2);
+        return 1;
+    }
 
     // コマンドラインをパース
     if(parse_param(&main_param, argc, argv)) return 1;
@@ -503,12 +557,28 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // V9990TANG: tamano de la imagen frente al tipo, antes de tocar el cartucho
+    uint32_t image_kb = 0;
+    int xfer_file_flag = !main_param.nofile_flag;
+    if(xfer_file_flag && check_image_size(rom_file, rom_attr, &image_kb)) return 1;
+
     // コマンドラインでカートリッジスロットが指定されていない場合はカートリッジを探す
     if(main_param.sltnum == (uint8_t)0xFF)
     {
         if(search_cartridge(&main_param.sltnum))
         {
             printf(MSG_CARTRIDGE_NOT_FOUND);
+            return 1;
+        }
+    }
+
+    // V9990TANG: y frente a la ventana de la SDRAM del cartucho (3Eh)
+    if(xfer_file_flag)
+    {
+        uint16_t window_kb = get_window_kb(main_param.sltnum);
+        if(image_kb > (uint32_t)window_kb)
+        {
+            printf(MSG_ERR_WINDOW, image_kb, window_kb);
             return 1;
         }
     }
@@ -532,6 +602,12 @@ int main(int argc, char *argv[])
     }
 
     printf(MSG_COMPLETE);
+
+    // V9990TANG: PLAIN0 no sobrevive a un /RESET
+    if(res == 0 && (rom_attr->bank[3].reserved & MODE_PLAIN0) && !main_param.reset_flag)
+    {
+        printf(MSG_NOTE_PLAIN0);
+    }
 
     if(res == 0 && main_param.reset_flag)
     {
