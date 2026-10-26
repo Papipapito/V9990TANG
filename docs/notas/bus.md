@@ -27,9 +27,10 @@ con el slot expandido y sin él, a 3,58 y 5,37 MHz, un evento por ciclo de E/S
 (cero duplicados y cero perdidos en todas las corridas), `/WAIT` en el slot a
 **120 ns** como mucho del `/RD`/`/WR` del Z80 (70 en el pin; presupuesto 274 y
 134 ns), datos de P#0/P#1 y P#2-6 bien, direcciones bien, timeout nunca en uso
-normal, y con `bus_ok` o `DRIVE_EN` a 0 nada en el slot. Sin el pre-WAIT, el
+normal, ningún pre-WAIT en un `IN`/`OUT` a otro puerto (barrido de los 256,
+también a 10,74 MHz), y con `bus_ok` o `DRIVE_EN` a 0 nada en el slot. Sin el pre-WAIT, el
 `/WAIT` llega a 176-194 ns y a 5,37 MHz falla (variante `tncart`); sin el
-rearme, los rebotes dan 65-78 eventos duplicados por corrida (mutante). A 7,16
+rearme, los rebotes dan 66-80 eventos duplicados por corrida (mutante). A 7,16
 MHz fallan, como se esperaba, las lecturas de P#0 (dato rancio) y los
 presupuestos de `/WAIT`; P#2-6 siguen bien. Síntesis: +95 LUT, +17 ALU y +66 FF
 en el bus frente al de `main` en la misma configuración; P&R con 0 endpoints
@@ -47,8 +48,9 @@ muestras (los `PIN_FILTER` piden dos muestras iguales). Vuelta: 9 ciclos,
 
 El nuevo escáner es la misma máquina escrita como (grupo, fase); **sin saltos
 es ciclo a ciclo el de 9 estados de tnCart** (estado 8 = g0 f0, 0 = g0 f1, ...
-7 = g2 f2; el reset deja g0 f1 = estado 0, como antes; `scan_model.py` lo
-comprueba). El salto lo da el flanco de bajada de `RD_n` o `WR_n` **filtrados**
+7 = g2 f2; el reset deja g0 f1 = estado 0, como antes; lo comprueban
+`scan_model.py` sobre el modelo y `tb_scan_eq.sv` sobre el RTL, contra el
+`BOARD_REV1_BUS` de `main`, sección 9). El salto lo da el flanco de bajada de `RD_n` o `WR_n` **filtrados**
 (la salida del `PIN_FILTER`, antes de la línea de 9): el disparo se ve en el
 ciclo [E0-1, E0) y se aplica en el flanco E0.
 
@@ -129,9 +131,14 @@ ve: como mucho 8 ciclos del `/RD` del Z80 a `pw_hold` hasta 7,16 MHz y 12 a
 10,74; con `+DBGPW`, los 40 casos de 12 ciclos de `SEED=2` a 10,74, en las dos
 topologías, son todos de disparos en g1 f0 o g1 f1, como dice el modelo), o, si
 ese PC+1 acabara en 60h/61h, salta un pre-WAIT en un `IN`/`OUT` a otro puerto,
-que se suelta por K en D+7 (unos 65 ns más de `/WAIT` en ese ciclo). Esto
-último sale del modelo, no lo ha visto el banco; en cualquier caso a 10,74 MHz
-el `/WAIT` no cabe en el presupuesto (-5 ns) con ni sin pre-WAIT.
+que se suelta por K en D+7 (unos 65 ns más de `/WAIT` en ese ciclo). El banco
+lo busca a propósito (fase de barrido, sección 8: cada `IN`/`OUT` a un puerto
+ajeno con el operando en xx60h o xx61h) y no lo ha visto en ninguna corrida,
+tampoco a 10,74 MHz; pero su Z80 pone basura en el bus desde T1 + 20 ns hasta
+la dirección nueva, así que la muestra vieja casi nunca es la del ciclo
+anterior. Con un Z80 cuyas líneas tarden más en dejar la dirección vieja el
+caso sigue siendo posible a 10,74 MHz: no está descartado. En cualquier caso a
+10,74 MHz el `/WAIT` no cabe en el presupuesto (-5 ns) con ni sin pre-WAIT.
 
 **`ADDR_HOLD` (nuevo, a propósito).** `ff_addr` no se actualiza mientras el
 `RD_n`/`WR_n` retrasado está a 0. El `IORQ_n` filtrado sube hasta ~10 ciclos
@@ -335,6 +342,7 @@ Son retardos máximos fijos: el banco no barre los mínimos. NPN: 50 ns en entra
 | `megaram_mock.sv` | MegaRAM de mentira para `PREWAIT_MEM_EN` = 1, en el límite del contrato |
 | `dpb_sim.sv` | modelo de la DPB de Gowin para compilar el core |
 | `scan_model.py` | modelo del escáner (revisitas, tabla de latch y de la decisión del pre-WAIT) |
+| `tb_scan_eq.sv`, `run_eq.sh` | equivalencia ciclo a ciclo con el `BOARD_REV1_BUS` de `main` donde el hito no cambia nada a propósito (sección 9) |
 | `run.sh` | compila y corre la matriz en WSL |
 | `resumen.py` | tabla Markdown con lo esencial de los logs (la de la sección 9) |
 | `syn_rsc.py` | recursos por módulo del `_syn_rsc.xml` de Gowin (sección 10) |
@@ -350,7 +358,11 @@ Fases: registros (R#16 por P#3/P#4) y lecturas de P#2/P#5/P#6; VRAM por P#0 con
 `OUT` seguidos (11 T por byte) y con `OTIR` (21 T), escritura y relectura contra
 una sombra; paleta por P#1 (64 colores x 3, con `OUT` y con `OTIR`, leída
 después; con G = B, porque el tiny9990 sin parches de este repositorio devuelve
-B al leer G, el parche del área del core); puertos y memoria ajenos (98h, 40h, FFh, 5Fh, ...); registro de
+B al leer G, el parche del área del core); puertos y memoria ajenos (98h, 40h, FFh, 5Fh, ...);
+barrido de los 256 puertos de E/S desde uno al azar (`OUT` e `IN` a cada
+puerto ajeno, con el operando de la instrucción en xx60h y xx61h, e `IN` a los
+nuestros: P#2/P#5/P#6 contra el core, el resto solo cuenta eventos; no se
+escribe en nuestros puertos para no tocar P#7); registro de
 subranuras FFFFh (memoria de nuestra ranura, solo topología 0); rebotes de 1 y 2
 muestras en `/RD`, `/WR` e `/IORQ` en P#0, P#3 y P#5 en un momento aleatorio
 del ciclo; `/RD` y `/WR` de 1 y 2 muestras sin ciclo de E/S con 60h en el bus;
@@ -364,7 +376,8 @@ Comprueba: un evento (flanco de `CSR_n`/`CSW_n` en el cartucho) por ciclo de E/S
 a nuestros puertos y ninguno en los demás, con su MODE y su dato; la dirección,
 `IORQ`/`MERQ` en `Bus` al llegar el `RD_n`/`WR_n` retrasado, en E/S, en nuestra
 memoria y en la ajena (M1 y memoria del MSX); `/WAIT` en el slot dentro del
-presupuesto en P#0/P#1 y que no se active dentro del setup del Z80; el dato
+presupuesto en P#0/P#1 y que no se active dentro del setup del Z80; que el
+pre-WAIT no salte en un `IN`/`OUT` a un puerto que no sea 60h/61h; el dato
 leído en la bajada de T3 (2,5 T - 125) y su estabilidad en la ventana de setup;
 la latencia de la cadena (para K); que la placa no conduzca D0-D7 sin una
 lectura legítima, ni 30 ns después de subir `/RD`, ni contra la memoria del MSX;
@@ -374,7 +387,8 @@ y con `bus_ok` = 0 o `DRIVE_EN` = 0, datos, `/INT` y `/WAIT` en reposo.
 Criterio por velocidad (`BUS_OK` / `BUS_FAIL` al final del log):
 
 - siempre: eventos, dirección de E/S, conducción, timeout, guardias, `/INT`,
-  cadena ≤ K, escrituras de registros, escrituras por `OTIR` a P#0/P#1 (21 T
+  cadena ≤ K, pre-WAIT en otro puerto (hasta 7,16 MHz; a 10,74 es un fallo
+  esperado), escrituras de registros, escrituras por `OTIR` a P#0/P#1 (21 T
   entre bytes: 5,9 µs a 3,58 MHz, 1,96 a 10,74, más que los 1,62 µs que el
   estudio da a la espera más larga) y puertos ajenos;
 - a 3,58 y 5,37: todo lo de E/S y de memoria, con las direcciones de memoria
@@ -398,6 +412,7 @@ git show main:fpga/src/cartridge_v9990.sv > fpga/tb/bus/out/cart_main.sv
 CART_SV="$PWD/fpga/tb/bus/out/cart_main.sv" TAGX=sinrearme fpga/tb/bus/run.sh 0:60:0 1:60:0   # mutante sin rearme
 EXTRA=+DBGPW fpga/tb/bus/run.sh 0:60:0     # traza de los pre-WAIT lentos
 python3 fpga/tb/bus/scan_model.py [--barrido]
+fpga/tb/bus/run_eq.sh                      # equivalencia con el bus de main (desde Git Bash)
 ```
 
 Logs en `fpga/tb/bus/out/` (ignorado por git); objetos en `~/.tb_bus_obj` (disco
@@ -405,33 +420,69 @@ de WSL).
 
 ## 9. Resultados del banco
 
-Corridas: matriz completa con `SEED=1 N=120` y con `SEED=2 N=60` (esta con
-`+DBGPW`), 5,37 MHz con `SEED=3 N=200` en `0:60:0`, `1:60:0` y `0:60:1`, y
-3,58 y 5,37 MHz con `SEED=4 N=120` en `0:60:0` y `1:60:0`. La implementadora
-anterior las corrió con el RTL y el banco de `1c412bc`; en esta sesión se han
-repetido todas con el RTL de `ef19224` (el mismo, más un comentario; después
-solo cambian comentarios del RTL, y `1:60:0` a 5,37 MHz repetido al final sale
-igual) y el banco de `0e504bd` (solo añade la traza `+DBGPW`), y los logs de las dos matrices y de
-las variantes salen **idénticos línea a línea** a los de entonces (el banco es
-determinista con la misma semilla; las únicas líneas nuevas son las de
-`+DBGPW`). **Todas dan `BUS_OK`**; a 3,58 MHz sin ningún fallo, ni esperado; a
-5,37 los únicos fallos (esperados) son los ciclos con rebote de `/IORQ`
-(sección 12) y la MegaRAM de mentira (41 ns de presupuesto). La tabla es la de
-`SEED=1` (`resumen.py`); `OK*` = con los fallos esperados de esa velocidad.
+Corridas, por sesiones (el banco es determinista con la misma semilla):
+
+1. Primera implementadora, RTL y banco de `1c412bc`: matriz completa con
+   `SEED=1 N=120` y con `SEED=2 N=60`, 5,37 MHz con `SEED=3 N=200` en `0:60:0`,
+   `1:60:0` y `0:60:1`, 3,58 y 5,37 MHz con `SEED=4 N=120` en `0:60:0` y
+   `1:60:0`, y las variantes.
+2. Segunda sesión, RTL de `ef19224` (el mismo, más un comentario) y banco de
+   `0e504bd` (añade la traza `+DBGPW`): todo lo anterior otra vez, con los logs
+   **idénticos línea a línea** a los de la primera (salvo las líneas de
+   `+DBGPW`).
+3. Tercera sesión (esta), RTL sin cambios desde `ef19224` (después solo cambian
+   comentarios): (a) con el banco de `18f9eca`, la matriz `SEED=1 N=120`
+   reproduce los 20 logs de la segunda línea a línea (solo cambia el número de
+   línea del `$finish`); (b) con el banco nuevo de `a39d9a3` (barrido de los 256
+   puertos y cuenta de pre-WAIT en puertos ajenos, sección 8), la matriz completa
+   con `SEED=1 N=120` y con `SEED=2 N=60`, las variantes con `SEED=1 N=40` y el
+   mutante sin rearme con `SEED=1 N=120` (tabla de variantes, abajo); (c) con el
+   banco final de `0885f96` (el dato inestable de una lectura con rebote de
+   `/IORQ` cuenta con los fallos de ese rebote, no con los de la categoría), otra
+   vez la matriz `SEED=1 N=120` y la variante `sincola`: 17 de los 20 logs salen
+   iguales a los de (b) y los otros 3 (10,74 MHz) solo pasan lecturas de P#2-6
+   inestables con rebote de `/IORQ` a su contador, con el mismo veredicto.
+
+**Todas dan `BUS_OK`**; a 3,58 MHz sin ningún fallo, ni esperado; a 5,37 los
+únicos fallos (esperados) son los ciclos con rebote de `/IORQ` (sección 12) y
+la MegaRAM de mentira (41 ns de presupuesto). La tabla es la de `SEED=1` con el
+banco final (`resumen.py`); `OK*` = con los fallos esperados de esa velocidad.
 
 | Caso | MHz | Veredicto | `/WAIT` en el slot, P#0/P#1, peor (presupuesto), ns | Lect. P#0 mal | Lect. P#2-6 mal | Duplicados / perdidos | Direcciones mal: E/S / nuestra memoria / memoria ajena | Cadena | Rebote de `/IORQ` con dato mal |
 |---|---|---|---|---|---|---|---|---|---|
-| `0:60:0` | 3,58 | OK | 120 (274) | 0/269 | 0/334 | 0/0 | 0 / 0 / 0 de 5 380 | D+4 | 0 |
-| `0:60:0` | 5,37 | OK* | 120 (134) | 0/274 | 0/329 | 0/0 | 0 / 0 / 0 de 5 428 | D+4 | 1 |
-| `0:60:0` | 7,16 | OK* | 120 (65) | 240/274 | 0/329 | 0/0 | 0 / 0 / 514 de 5 476 | D+4 | 13 |
-| `0:60:0` | 10,74 | OK* | 158 (-5) | 238/271 | 328/332 | 0/0 | 0 / 23 / 3 295 de 5 410 | D+4 | 21 |
-| `1:60:0` | 3,58 | OK | 120 (274) | 0/273 | 0/330 | 0/0 | 0 / — / 0 de 5 366 | D+2 | 0 |
-| `1:60:0` | 5,37 | OK* | 120 (134) | 0/271 | 0/332 | 0/0 | 0 / — / 0 de 5 312 | D+2 | 2 |
-| `1:60:0` | 7,16 | OK* | 120 (65) | 239/266 | 0/337 | 0/0 | 0 / — / 511 de 5 228 | D+2 | 11 |
-| `1:60:0` | 10,74 | OK* | 158 (-5) | 240/264 | 337/339 | 0/0 | 0 / — / 3 173 de 5 234 | D+2 | 20 |
-| `0:60:1` | 3,58 | OK | 120 (274) | 0/267 | 0/336 | 0/0 | 0 / 0 / 0 de 5 350 | D+4, MegaRAM D+5 | 0 |
-| `0:60:1` | 5,37 | OK* | 120 (134) | 0/279 | 0/324 | 0/0 | 0 / 0 / 0 de 5 536 | D+4, MegaRAM D+5 | 1 |
-| `0:70:0`, `1:70:0` | 3,58-10,74 | OK / OK* | sin dispositivo en 60h/61h: ráfaga de `/WAIT` de 13-15 ciclos, nunca el timeout | — | — | 0/0 | a 7,16 y 10,74, solo memoria ajena | — | — |
+| `0:60:0` | 3,58 | OK | 120 (274) | 0/271 | 0/347 | 0/0 | 0 / 0 / 0 de 6 414 | D+4 | 0 |
+| `0:60:0` | 5,37 | OK* | 120 (134) | 0/269 | 0/349 | 0/0 | 0 / 0 / 0 de 6 348 | D+4 | 1 |
+| `0:60:0` | 7,16 | OK* | 120 (65) | 240/271 | 0/347 | 0/0 | 0 / 0 / 527 de 6 402 | D+4 | 15 |
+| `0:60:0` | 10,74 | OK* | 158 (-5) | 238/275 | 305/343 | 0/0 | 0 / 22 / 3 928 de 6 432 | D+4 | 19 |
+| `1:60:0` | 3,58 | OK | 120 (274) | 0/281 | 0/337 | 0/0 | 0 / — / 0 de 6 478 | D+2 | 0 |
+| `1:60:0` | 5,37 | OK* | 120 (134) | 0/279 | 0/339 | 0/0 | 0 / — / 0 de 6 358 | D+2 | 1 |
+| `1:60:0` | 7,16 | OK* | 120 (65) | 239/266 | 0/352 | 0/0 | 0 / — / 523 de 6 232 | D+2 | 13 |
+| `1:60:0` | 10,74 | OK* | 158 (-5) | 240/279 | 303/339 | 0/0 | 0 / — / 3 893 de 6 388 | D+2 | 24 |
+| `0:60:1` | 3,58 | OK | 120 (274) | 0/277 | 0/341 | 0/0 | 0 / 0 / 0 de 6 456 | D+4, MegaRAM D+5 | 0 |
+| `0:60:1` | 5,37 | OK* | 120 (134) | 0/269 | 0/349 | 0/0 | 0 / 0 / 0 de 6 312 | D+4, MegaRAM D+5 | 1 |
+| `0:70:0`, `1:70:0` | 3,58-10,74 | OK / OK* | sin dispositivo en 60h/61h: ráfaga de `/WAIT` de 13-15 ciclos, nunca el timeout | — | 0/14 (4/14 a 10,74) | 0/0 | a 7,16 y 10,74, solo memoria ajena | — | — |
+
+**Equivalencia con el bus de `main`** (`run_eq.sh`, tercera sesión, semillas 1
+a 3, 6 ms = 648 000 ciclos cada una; dos `BOARD_REV1_BUS` con el mismo
+estímulo al azar en los pines y en el lado del cartucho; cada ciclo se comparan
+`CART_MUX_CS_n` y todas las salidas de `Bus`, y con `BUS_OK` a 1 `CART_WAIT_n`,
+`CART_INT_n`, `CART_DATA_DIR`, `CART_BUSDIR_n` y el dato que sale): con
+`ADAPTIVE_SCAN` = `PREWAIT_IO_EN` = `ADDR_HOLD` = `DRIVE_TAIL_GUARD` = 0 y `/RD`,
+`/WR` al azar, **0 diferencias** (unos 386 000 ciclos con `BUS_OK` a 1, 64 000
+conduciendo y 212 000 con `/WAIT`); con los valores del hito y sin `/RD` ni
+`/WR`, **0 diferencias**; el control (valores del hito con `/RD` y `/WR` al
+azar) sale distinto, como tiene que salir. Es decir: sin saltos el escáner, los
+filtros, la línea de 9, `Bus` y los pines son los del hito 1 ciclo a ciclo, y la
+vuelta atrás por parámetros de la sección 11 da el bus de `main` más las
+guardias de salida. `Bus.DIN` se compara bit a bit desde que los dos pines de
+datos han dado la misma pareja de muestras (cuando uno conduce y el otro no, por
+las guardias, cada `PIN_FILTER` guarda otra historia).
+
+Pre-WAIT en un `IN`/`OUT` a un puerto que no es 60h/61h: **0 en todas las
+corridas** de la tercera sesión (las dos semillas, todos los casos y las cuatro
+velocidades). La matriz con `SEED=2 N=60` da los mismos veredictos y cifras del
+mismo orden (`/WAIT` en el slot 120 ns hasta 7,16 MHz, cadena D+4 / D+2,
+MegaRAM D+5, cero duplicados y perdidos).
 
 Además, en todas las corridas del hito: P#1 (paleta) bien hasta 7,16 MHz; las
 escrituras de registros y las de `OTIR` a P#0/P#1 bien a todas las velocidades;
@@ -445,15 +496,16 @@ reloj del slot; con `BOOT_HOLD` 60 µs de espera sin cortes y sin
 `WAIT_TIMEOUT`; sin él, el timeout suelta a los 38,0 µs.
 
 **Lo que arregla cada parte** (variantes del banco, `SEED=1 N=40`, `0:60:0` y
-`1:60:0`):
+`1:60:0`, banco de `a39d9a3`; `sincola` repetida con el de `0885f96`; cifras
+"con slot / sin slot"):
 
 | Variante | Qué quita | 3,58 | 5,37 | 7,16 / 10,74 |
 |---|---|---|---|---|
-| `tncart` (`-GSCAN=0 -GPWIO=0 -GAHOLD=0 -GTAILG=0`) | todo menos guardias y timeout: el bus de tnCart | OK, `/WAIT` a 194 ns (176 sin slot) | **falla**: `/WAIT` a 194 ns (176) frente a 134, 80 de 92 lecturas de P#0 mal, un evento duplicado | **falla**: 342-344 conducciones de D0-D7 sin lectura legítima, 342 choques con la memoria del MSX a 10,74, 2 duplicados a 7,16 sin slot |
-| `sinsalto` (`-GSCAN=0`) | el salto (el pre-WAIT espera a la visita normal al g2) | OK, 167 ns | **falla**: 167 ns, 46 de 96 lecturas de P#0 mal | — |
-| `sinahold` (`-GAHOLD=0`) | la retención de `ff_addr` | OK | **falla**: 2 eventos de más (MODE equivocado) en las dos topologías | **falla**: 1 evento de más a 7,16 sin slot; 3 eventos de más y 2 conducciones sin lectura legítima a 10,74 con slot |
-| `sincola` (`-GTAILG=0`) | la guardia de cola | OK | OK* | **falla**: 343 conducciones sin lectura legítima (el M1 tras un `IN`), 340 choques a 10,74 |
-| sin rearme (mutante: `cartridge_v9990.sv` de `main` con el bus del hito; `SEED=1 N=120`, 3,58 / 5,37 / 7,16) | el rearme de 3 muestras | **falla**: 65 y 76 eventos duplicados (con y sin slot) | **falla**: 72 y 78 duplicados | **falla**: 75 y 67 duplicados a 7,16 |
+| `tncart` (`-GSCAN=0 -GPWIO=0 -GAHOLD=0 -GTAILG=0`) | todo menos guardias y timeout: el bus de tnCart | OK, `/WAIT` a 194 / 176 ns | **falla**: `/WAIT` a 194 / 176 ns frente a 134, 81 de 92 / 79 de 93 lecturas de P#0 mal, 4 / 4 eventos duplicados | **falla**: 361 / 158 conducciones de D0-D7 sin lectura legítima y 14 / 22 duplicados a 7,16; 369 / 361 conducciones, 368 / 88 choques con la memoria del MSX y 23 / 16 duplicados a 10,74 |
+| `sinsalto` (`-GSCAN=0`) | el salto (el pre-WAIT espera a la visita normal al g2) | OK, 167 ns | **falla**: 167 ns, 46 de 93 / 41 de 88 lecturas de P#0 mal | a 7,16, con slot, una lectura de P#2-6 mal (de 125) |
+| `sinahold` (`-GAHOLD=0`) | la retención de `ff_addr` | OK | **falla**: 18 / 9 eventos de más (ciclos de E/S que no existen, con MODE equivocado) | **falla**: 0 / 1 eventos de más a 7,16; 30 / 30 y 3 / 4 conducciones sin lectura legítima a 10,74 |
+| `sincola` (`-GTAILG=0`) | la guardia de cola | OK | OK* | **falla**: 356 / 160 conducciones sin lectura legítima a 7,16 (el M1 tras un `IN`), 362 / 357 y 360 / 80 choques a 10,74 |
+| sin rearme (mutante: `cartridge_v9990.sv` de `main` con el bus del hito; `SEED=1 N=120`, 3,58 / 5,37 / 7,16) | el rearme de 3 muestras | **falla**: 80 / 68 eventos duplicados | **falla**: 74 / 69 duplicados | **falla**: 66 / 68 duplicados a 7,16 |
 
 A 3,58 MHz el bus de tnCart, con las guardias, pasa el banco: el hito 5 no
 cambia lo que ya funcionaba en placa a esa velocidad. El mutante sin rearme no
@@ -461,7 +513,14 @@ es un parámetro del RTL: `run.sh` compila el banco con el `cartridge_v9990.sv`
 de `main` en lugar del del hito (`CART_SV`, sección 8). Los duplicados empiezan
 en la fase de rebotes y no hay ninguno antes: con el `CSR_n <= Bus.RD_n ||
 cs_n` de tnCart, un rebote de 2 muestras de `/RD`, `/WR` o `/IORQ` presenta un
-segundo flanco al core.
+segundo flanco al core. Con el barrido de puertos, `sinahold` falla más que con
+el banco anterior (2 eventos de más entonces): en el barrido el operando de cada
+`IN`/`OUT` ajeno está en xx60h/xx61h, y sin la retención esa dirección se
+latchea con el `IORQ_n` del ciclo anterior aún a 0 y el cartucho ve un ciclo de
+E/S a 60h/61h que no existe. En la primera pasada de `sincola` con el banco de
+`a39d9a3`, la corrida con slot a 5,37 MHz salía `FALLA` por una lectura de P#0
+inestable en un ciclo con rebote de `/IORQ` (el fallo esperado de la sección
+12, no la guardia de cola); el banco de `0885f96` la cuenta con ese rebote.
 
 ## 10. Síntesis (`fpga/check_bus.tcl`)
 
@@ -486,9 +545,20 @@ El `u_bus` de referencia del estudio (53 LUT / 125 FF) es el de la build `full`
 de tnCartWonder; en la configuración `v9990` el mismo bus de `main` sintetiza a
 51 / 113, y esa es la comparación limpia. Las 17 ALU son los contadores nuevos
 (ventana de 2^18 de bus vivo, timeout de 2^12). El estudio estimaba ~120 LUT
-para todo el bus; salen 95 LUT + 17 ALU. La síntesis de referencia se ha
-repetido en esta sesión y su `_syn_rsc.xml` sale idéntico byte a byte al de la
-sesión anterior.
+para todo el bus; salen 95 LUT + 17 ALU. La síntesis de referencia se repitió
+en la segunda sesión con un `_syn_rsc.xml` idéntico byte a byte al de la
+primera; en la tercera se ha repetido la build completa (`syn` + `pnr`, 42 min)
+y salen las mismas cifras de síntesis, de P&R y de timing que en la tabla de
+abajo (el P&R de Gowin es determinista).
+
+**Sin la integración** (`CHECK_BUS_NOPATCH=1`: el top de `main` tal cual, con
+`DRIVE_EN` y `BOOT_HOLD` sin conectar; solo síntesis, tercera sesión): Gowin
+avisa `EX3073` y `EX2565` ("Input 'DRIVE_EN' on this instance is undriven.
+Assigning to 0") y ata las dos entradas a 0; con eso barre la lógica de
+salida y `u_bus` queda en 73 LUT / 0 ALU / 121 FF. Es decir, **esta rama sola,
+sin el top de la integración, da un cartucho que no saca nada al slot** (ni
+`/WAIT`, ni datos, ni `/INT`): el MSX lo ve como un slot vacío. No es un
+bitstream utilizable; la integración tiene que conectar las entradas.
 
 **P&R** (`tools/check_build.py fpga/impl/pnr/check_bus --parcial --ref-logic 14140
 --ref-cls 8696 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2
@@ -525,10 +595,10 @@ integración):
 
 | Puerto | Dir. | Qué conectar |
 |---|---|---|
-| `DRIVE_EN` | entrada | la guardia de lock: PLL enganchado y sistema listo, en el dominio de 27 MHz (en `hito/integ`, `BOARD_WT200B_GUARD.DRIVE_EN_27`). **A 0 el cartucho no saca nada al slot** (ni datos, ni `/INT`, ni `/WAIT` salvo `BOOT_HOLD`); sin conectar, el valor lo decide la herramienta (no comprobado): hay que conectarla. |
+| `DRIVE_EN` | entrada | la guardia de lock: PLL enganchado y sistema listo, en el dominio de 27 MHz (en `hito/integ`, `BOARD_WT200B_GUARD.DRIVE_EN_27`). **A 0 el cartucho no saca nada al slot** (ni datos, ni `/INT`, ni `/WAIT` salvo `BOOT_HOLD`); sin conectar, Gowin 1.9.12 la ata a 0 (comprobado, aviso `EX2565`, sección 10): hay que conectarla. |
 | `BOOT_HOLD` | entrada | retención de arranque, de 27 MHz y con tope propio de tiempo (en `hito/integ`, `BOOT_HOLD_27`, 50 ms): saca `/WAIT` sin mirar `bus_ok` ni `DRIVE_EN` y sin timeout, así que **tiene que estar acotada en la integración** (si no, un PLL sin enganchar dejaría el MSX congelado) |
 | `WAIT_TIMEOUT` | salida | pegajosa, al LED |
-| `BUS_OK` | salida | informativa (LED o depuración); se puede dejar sin conectar |
+| `BUS_OK` | salida | reloj del slot vivo y `/RESET` del slot suelto (registro de `CLK_BASE`); sube 2,43 ms después de `RESET_n` y hasta entonces no sale nada al slot salvo `BOOT_HOLD`. `hito/integ` la quiere en `SYS_READY` de su guardia (`sys_ready && bus_ok`, comentario `FUSION hito/bus` de su top) para que `BOOT_HOLD` cubra esa ventana: es lo recomendable. Si no, se puede dejar sin conectar |
 
 - **La retención del arranque tiene que ir por `BOOT_HOLD`.** En `main` el MSX
   queda retenido mientras corre el bootloader porque `EXPANSION_SLOT`, en reset
@@ -556,7 +626,8 @@ integración):
   `ALIVE_MIN_EDGES` (64), `JUMP_HOLD` (12), `DRIVE_TAIL_GUARD` (1),
   `ADDR_HOLD` (1). Con `ADAPTIVE_SCAN` = `PREWAIT_IO_EN` = `ADDR_HOLD` =
   `DRIVE_TAIL_GUARD` = 0 el bus es el de tnCart con las guardias de salida y el
-  timeout: es la vuelta atrás si algo del escáner falla en placa. Si el V9990 se
+  timeout (comprobado ciclo a ciclo contra el de `main`, sección 9): es la
+  vuelta atrás si algo del escáner falla en placa. Si el V9990 se
   mueve de 60h (`IO_BASE_ADDR` de `CARTRIDGE_V9990`), `PREWAIT_IO_BASE` tiene que
   ir con él.
 - **MegaRAM** (bitstream `v9990_megaram`): `PREWAIT_MEM_EN` = 1 **solo** con una
