@@ -60,9 +60,10 @@
  *    BOOT_n: asi la megaROM esta en reset y no usa el canal mientras tanto,
  *    y EXPANSION_SLOT saca WAIT_n = 0 al MSX (su valor de reset); su
  *    entrada WAIT_n (BOOT_WAIT_n) se conecta a DONE.
- *  - No emite refrescos: 8192 accesos de 20-30 ciclos (unos 2 ms a 108
- *    MHz, medido en el banco), menos que los 64 ms de retencion, y al
- *    encender la SDRAM no tiene nada que conservar.
+ *  - No emite refrescos: 8192 accesos, uno por ranura del canal 0 (20
+ *    ciclos): 1,52 ms a 108 MHz medidos en el banco (tb/megaram), menos que
+ *    los 64 ms de retencion, y al encender la SDRAM no tiene nada que
+ *    conservar.
  *  - Necesita que el UMA saque TIMING en el canal 0: con SYNC_CPU_UMA = 0
  *    (wt200b, xtal) corre libre; con SYNC_CPU_UMA = 1 el contador del UMA
  *    se para sin CLK_EN, asi que en la variante sync no acaba sin el reloj
@@ -101,45 +102,39 @@ module MEGAROM_CLEAR #(
 
     logic [21:0] waddr;     // direccion de palabra (byte >> 2)
 
+    // El puerto se decodifica del estado (sin flops propios): WE_n, ADDR, DIN
+    // y DIN_SIZE valen la escritura solo en ST_WAIT_ACK y 0 / reposo en el
+    // resto (EXPANSION_RAM hace OR de los clientes). El UMA toma ADDR, DIN y
+    // DIN_SIZE en el flanco de bajada de WE_n (det_we), el primer ciclo de
+    // ST_WAIT_ACK.
+    wire writing = (state == ST_WAIT_ACK);
+    assign Ram.ADDR     = writing ? {waddr, 2'b00} : 24'h00_0000;
+    assign Ram.DIN      = writing ? {4{CLEAR_DATA}} : 32'h0000_0000;
+    assign Ram.DIN_SIZE = writing ? RAM::DIN_SIZE_32 : RAM::DIN_SIZE_8;
+    assign Ram.WE_n     = !writing;
+    assign Ram.OE_n     = 1'b1;
+    assign Ram.RFSH_n   = 1'b1;
+
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             state       <= (WORDS == 0) ? ST_DONE : ST_REQ;
             DONE        <= (WORDS == 0);
             waddr       <= CLEAR_ADDR[23:2];
-            Ram.ADDR    <= 0;
-            Ram.DIN     <= 0;
-            Ram.DIN_SIZE<= RAM::DIN_SIZE_8;
-            Ram.OE_n    <= 1;
-            Ram.WE_n    <= 1;
-            Ram.RFSH_n  <= 1;
         end
         else begin
             case (state)
-                // 4 bytes: WE_n = 0 con la direccion y el dato
-                ST_REQ: begin
-                    Ram.ADDR     <= {waddr, 2'b00};
-                    Ram.DIN      <= {4{CLEAR_DATA}};
-                    Ram.DIN_SIZE <= RAM::DIN_SIZE_32;
-                    Ram.WE_n     <= 0;
-                    state        <= ST_WAIT_ACK;
-                end
+                // siguiente palabra: WE_n baja en el flanco siguiente
+                ST_REQ:
+                    state <= ST_WAIT_ACK;
 
-                // el UMA ha visto el flanco: soltar el strobe y el bus
-                // (DIN_SIZE vuelve a 0 = DIN_SIZE_8 por el OR de EXPANSION_RAM)
-                ST_WAIT_ACK: begin
-                    if(!Ram.ACK_n) begin
-                        Ram.WE_n     <= 1;
-                        Ram.ADDR     <= 0;
-                        Ram.DIN      <= 0;
-                        Ram.DIN_SIZE <= RAM::DIN_SIZE_8;
-                        state        <= ST_WAIT_BUSY;
-                    end
-                end
+                // el UMA ha visto el flanco (ACK_n = 0): soltar el strobe y el bus
+                ST_WAIT_ACK:
+                    if(!Ram.ACK_n) state <= ST_WAIT_BUSY;
 
-                // escritura hecha: siguiente palabra o fin
-                ST_WAIT_BUSY: begin
+                // escritura hecha (ACK_n = 1): siguiente palabra o fin
+                ST_WAIT_BUSY:
                     if(Ram.ACK_n) begin
-                        waddr  <= waddr + 22'd1;
+                        waddr <= waddr + 22'd1;
                         if(waddr == LAST_W) begin
                             DONE  <= 1;
                             state <= ST_DONE;
@@ -148,14 +143,8 @@ module MEGAROM_CLEAR #(
                             state <= ST_REQ;
                         end
                     end
-                end
 
-                default: begin
-                    Ram.ADDR     <= 0;
-                    Ram.DIN      <= 0;
-                    Ram.DIN_SIZE <= RAM::DIN_SIZE_8;
-                    Ram.WE_n     <= 1;
-                end
+                default: ;
             endcase
         end
     end
