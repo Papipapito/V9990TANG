@@ -134,7 +134,7 @@ const ROM_ATTR_t ROM_ATTR_KONAMI = {
         { (uint16_t)0xB000, 3, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
     "KONAMI 8KB with SCC sound",                    // NAME
-    512                                             // V9990TANG: MAX KB (mascara 3Fh)
+    2048                                            // V9990TANG: MAX KB (> 512 KB main.c amplia la mascara 3Fh)
 };
 
 /***********************************************
@@ -168,7 +168,7 @@ const ROM_ATTR_t ROM_ATTR_KONAMI_wo_SCC = {
         { (uint16_t)0xA000, 3, 0 }                  // BANK #3 REGISTER ADDRESS, INITIAL VALUE, RESERVED
     },
     "KONAMI 8KB without SCC sound",                 // NAME
-    512                                             // V9990TANG: MAX KB (mascara 3Fh)
+    2048                                            // V9990TANG: MAX KB (> 512 KB main.c amplia la mascara 3Fh)
 };
 
 /***********************************************

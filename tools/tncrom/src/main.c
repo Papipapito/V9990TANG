@@ -35,8 +35,9 @@
 //
 // V9990TANG: port a SDCC 4.5 (tools/tncrom/build.sh, crt0 propio de
 // MSX-DOS en tools/tncrom/sdcc/) y extensiones: tipo PLAIN0, tamano maximo
-// de la imagen por tipo y por ventana (3Eh), aviso de MSX-DOS 2 y el banco 1
-// inicial de 32K. Las lineas tocadas llevan "V9990TANG".
+// de la imagen por tipo y por ventana (3Eh), mascara de banco ampliada a la
+// imagen (KONAMI de mas de 512 KB), aviso de MSX-DOS 2 y el banco 1 inicial
+// de 32K. Las lineas tocadas llevan "V9990TANG".
 
 #include <stdio.h>
 #include <string.h>
@@ -51,11 +52,12 @@
 #include "message.h"
 
 #define VERSION (7)
-#define V9990TANG_REVISION (1)      // V9990TANG
+#define V9990TANG_REVISION (2)      // V9990TANG (r2: mascara KONAMI > 512 KB)
 
 
 static MAIN_PARAM_t main_param;     // パラメータ
 static BDOS_FILE_t rom_file;        // ROM ファイルアクセス用
+static uint8_t image_val_mask;      // V9990TANG: mascara de banco que se escribe en 0Dh
 
 #define BUFFER_SIZE (8192)
 #if 1
@@ -296,6 +298,15 @@ static int load_rom_image(uint8_t sltnum, ROM_ATTR_PTR_t rom_attr, char *path, i
         // ROM 属性設定
         rom_attr_xfer(sltnum, rom_attr);
 
+        // V9990TANG: mascara del valor de banco (0Dh) ampliada a la imagen
+        // (KONAMI y KONAMI_WO_SCC de mas de 512 KB, ver image_val_mask)
+        if(image_val_mask != rom_attr->val_mask)
+        {
+            unlock_megarom_configure(sltnum);
+            wrtslt(sltnum, 0x000D, image_val_mask);
+            lock_megarom_configure(sltnum);
+        }
+
         // SCC-I モードレジスタ初期化
         if(rom_attr->flags & FLAG_SCC_I)
         {
@@ -479,6 +490,27 @@ static int check_image_size(char *path, ROM_ATTR_PTR_t rom_attr, uint32_t *kb)
 }
 
 /***********************************************
+ * V9990TANG: mascara del valor de banco para una imagen de kb KB
+ *  La de la tabla (3Fh en KONAMI y KONAMI_WO_SCC, como en upstream) solo
+ *  alcanza 64 bancos de 8 KB = 512 KB; con una imagen mayor (GNG2M 2 MB,
+ *  LIFEARTH 1 MB) se le anaden los bits que pide la imagen, redondeada a
+ *  potencia de 2: openMSX (RomKonamiSCC / RomBlocks::setRom) usa el valor
+ *  de 8 bits entero y da la vuelta al final de la imagen. Con 512 KB o
+ *  menos, y en los tipos con mascara FFh, no cambia nada.
+ *  戻り値
+ *    mascara para 0Dh
+ ***********************************************/
+static uint8_t get_image_val_mask(ROM_ATTR_PTR_t rom_attr, uint32_t kb)
+{
+    // kb <= 4096 (check_image_size): cabe en 16 bits
+    uint8_t shift = (rom_attr->flags & FLAG_BANK_SIZE) ? 4 : 3;
+    uint16_t banks = ((uint16_t)kb + ((uint16_t)1 << shift) - 1) >> shift;
+    uint16_t m = 1;
+    while(m < banks) m <<= 1;
+    return rom_attr->val_mask | (uint8_t)(m - 1);
+}
+
+/***********************************************
  * abort handler
  ***********************************************/
 static void abort_handler(void)
@@ -561,6 +593,7 @@ int main(int argc, char *argv[])
     uint32_t image_kb = 0;
     int xfer_file_flag = !main_param.nofile_flag;
     if(xfer_file_flag && check_image_size(rom_file, rom_attr, &image_kb)) return 1;
+    image_val_mask = xfer_file_flag ? get_image_val_mask(rom_attr, image_kb) : rom_attr->val_mask;
 
     // コマンドラインでカートリッジスロットが指定されていない場合はカートリッジを探す
     if(main_param.sltnum == (uint8_t)0xFF)
