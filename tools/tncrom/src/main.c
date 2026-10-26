@@ -37,7 +37,8 @@
 // MSX-DOS en tools/tncrom/sdcc/) y extensiones: tipo PLAIN0, tamano maximo
 // de la imagen por tipo y por ventana (3Eh), mascara de banco ampliada a la
 // imagen (KONAMI de mas de 512 KB), aviso de MSX-DOS 2 y el banco 1 inicial
-// de 32K. Las lineas tocadas llevan "V9990TANG".
+// de 32K; r3: PLAIN0 relleno con FFh hasta 48 KB y -S comprueba el
+// cartucho. Las lineas tocadas llevan "V9990TANG".
 
 #include <stdio.h>
 #include <string.h>
@@ -52,7 +53,7 @@
 #include "message.h"
 
 #define VERSION (7)
-#define V9990TANG_REVISION (2)      // V9990TANG (r2: mascara KONAMI > 512 KB)
+#define V9990TANG_REVISION (3)      // V9990TANG (r2: mascara KONAMI > 512 KB; r3: relleno de PLAIN0 y -S comprobado)
 
 
 static MAIN_PARAM_t main_param;     // パラメータ
@@ -182,32 +183,61 @@ static int xfer_bank(uint8_t sltnum, uint8_t bank, BDOS_FILE_t *file, uint32_t p
 }
 
 /***********************************************
+ * V9990TANG: relleno con FFh en la pagina 2 (banco 1 ya seleccionado)
+ *  引数
+ *    sltnum    : スロット番号
+ *    addr      : direccion de la pagina 2 donde empieza
+ *    size      : bytes
+ ***********************************************/
+static void xfer_fill_ff(uint8_t sltnum, uint16_t addr, uint16_t size)
+{
+    memset(buffer, 0xFF, size > BUFFER_SIZE ? BUFFER_SIZE : size);
+    while(size > 0)
+    {
+        uint16_t n = size > BUFFER_SIZE ? BUFFER_SIZE : size;
+        xfer_memory(sltnum, (VOID_PTR_t)addr, buffer, n);
+        addr += n;
+        size -= n;
+    }
+}
+
+/***********************************************
  * ファイル転送
  *  引数
  *    sltnum    : スロット番号
  *    file      : 転送元ファイルのファイル
+ *    fill_size : V9990TANG: si la imagen es menor, se rellena con FFh
+ *                hasta este tamano (PLAIN0: 48 KB; 0 = sin relleno)
  *  戻り値
  *    0  : 成功
  *    !0 : 失敗
  ***********************************************/
-static int xfer_file(uint8_t sltnum, BDOS_FILE_t *file)
+static int xfer_file(uint8_t sltnum, BDOS_FILE_t *file, uint32_t fill_size)
 {
     int res;
     uint8_t bank = 0;
     uint32_t size;
 
-    // ファイルサイズを得る    
+    // ファイルサイズを得る
     if(0 != (res = bdos_file_size(file, &size)))
     {
         printf(MSG_ERR_GETFILESIZE);
         return res;
     }
-    
+
+    // V9990TANG: lo que se escribe, la imagen y el relleno. Con PLAIN0 la
+    // megaROM contesta en todo 0000h-BFFFh: sin relleno, lo que la imagen no
+    // cubre leeria la SDRAM (basura de encendido pasados los 32 KB del
+    // borrado, o la ROM anterior y su cabecera "AB"). openMSX deja esas
+    // paginas sin mapear (RomPlain: setUnmapped) y ahi se lee FFh.
+    uint32_t total = (size < fill_size) ? fill_size : size;
+
     // バンク1のバンクレジスタを設定時にバンク0のデータが化けるので、Bank0を予め最終バンクに切り替え
-    uint8_t last_bank = ((size - (uint32_t)1) >> 14) & 255;
+    // V9990TANG: el ultimo banco del total, que se escribe el ultimo
+    uint8_t last_bank = ((total - (uint32_t)1) >> 14) & 255;
     set_bank0_reg(sltnum, last_bank);
 
-    while(size > (uint32_t)0)
+    while(total > (uint32_t)0)
     {
         printf(MSG_PROGRESS, bank);
 
@@ -219,6 +249,10 @@ static int xfer_file(uint8_t sltnum, BDOS_FILE_t *file)
 
         // support less than 16K ROMs
         uint16_t remaining = (size >= 16384)? 16384 : size;
+        // V9990TANG: relleno del resto del banco (o del banco entero)
+        uint16_t span = (total >= 16384)? 16384 : total;
+        if(span > remaining) xfer_fill_ff(sltnum, (uint16_t)0x8000 + remaining, span - remaining);
+        total -= span;
         size -= remaining;
     }    
 
@@ -287,7 +321,9 @@ static int load_rom_image(uint8_t sltnum, ROM_ATTR_PTR_t rom_attr, char *path, i
         rom_attr_xfer(sltnum, &ROM_ATTR_ASCII16_WO_WP);
 
         // ファイルを転送
-        res = xfer_file(sltnum, &rom_file);
+        // V9990TANG: PLAIN0 se rellena con FFh hasta su maximo (48 KB)
+        res = xfer_file(sltnum, &rom_file,
+                        (rom_attr->bank[3].reserved & MODE_PLAIN0) ? (uint32_t)rom_attr->max_kb << 10 : (uint32_t)0);
 
         // ファイルを閉じる
         bdos_fclose(&rom_file);
@@ -620,6 +656,15 @@ int main(int argc, char *argv[])
             printf(MSG_CARTRIDGE_NOT_FOUND);
             return 1;
         }
+    }
+    // V9990TANG: con -S tambien se comprueba el cartucho. Con PLAIN0 activo
+    // la llave no abre: get_window_kb leeria en 3Eh un byte de la demo y la
+    // carga se ignoraria entera (escrituras protegidas) con "complete."; y en
+    // un slot sin el cartucho se escribiria la imagen en lo que haya
+    else if(check_cartridge(main_param.sltnum))
+    {
+        printf(MSG_CARTRIDGE_NOT_FOUND);
+        return 1;
     }
 
     // V9990TANG: y frente a la ventana de la SDRAM del cartucho (3Eh)

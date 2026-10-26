@@ -95,6 +95,7 @@ static uint8_t *img_make(uint32_t size, uint32_t seed)
 }
 
 static uint8_t *demo48;     // demo plana: "AB" en 4000h, INIT 4010h, ISR en 0038h
+static uint8_t *demo32, *demo16;
 static void make_files(void)
 {
     host_files_clear();
@@ -104,6 +105,16 @@ static void make_files(void)
     demo48[0x4000] = 'A';  demo48[0x4001] = 'B';
     demo48[0x4002] = 0x10; demo48[0x4003] = 0x40;            // INIT = 4010h
     host_file_add("DEMO48.ROM", demo48, 49152);
+    // demos planas de 32 KB (como WIREFRM y FLYLOGO) y 16 KB: tncrom rellena
+    // con FFh hasta 48 KB (openMSX, RomPlain: lo que la imagen no cubre queda
+    // sin mapear y lee FFh)
+    demo32 = img_make(32768, 13);
+    demo32[0x0038] = 0xF5; demo32[0x0039] = 0xDB; demo32[0x003A] = 0x66;
+    demo32[0x4000] = 'A';  demo32[0x4001] = 'B';
+    demo32[0x4002] = 0x10; demo32[0x4003] = 0x40;
+    host_file_add("DEMO32.ROM", demo32, 32768);
+    demo16 = img_make(16384, 14);
+    host_file_add("D16K.ROM", demo16, 16384);
     host_file_add("P49K.ROM", img_make(49153, 2), 49153);
     host_file_add("Z0.ROM", img_make(0, 3), 0);
     uint8_t *a40 = img_make(40960, 4); a40[0] = 'A'; a40[1] = 'B';
@@ -177,7 +188,7 @@ static void t_basic(void)
     cart_power_on();
     uint32_t ops;
     check(run("") == 1 && out_has("USAGE:"), "sin argumentos: USAGE");
-    check(out_has("V9990TANG r2"), "version r2");
+    check(out_has("V9990TANG r3"), "version r3");
     check(run("-H") == 0 && out_has("PLAIN0: PLAIN 0000h~BFFFh (max 48KB)"), "-H lista PLAIN0 con su maximo");
     check(out_has("ASCII16: ASCII 16KB (max 4096KB)") && out_has("KONAMI: KONAMI 8KB with SCC sound (max 2048KB)"), "-H: maximos de ASCII16 y KONAMI");
     ops = host_cart_ops;
@@ -228,6 +239,11 @@ static void t_plain0(void)
     // otro tncrom con PLAIN0 activo no encuentra el cartucho
     check(run("-T PLAIN0 DEMO48.ROM") == 1 && out_has("cartridge not found (if PLAIN0 is active, reset the MSX first)."), "PLAIN0 oculta el cartucho a tncrom");
     check(cart_plain_active() && cart_read(0x4001) == 'B', "y sigue activo");
+    // ni con -S (slot explicito, sin search_cartridge): sin comprobar el
+    // cartucho, 3Eh seria un byte de la demo y la carga se ignoraria entera
+    check(run("-S 10 -T PLAIN0 DEMO32.ROM") == 1 && out_has("cartridge not found (if PLAIN0 is active, reset the MSX first).")
+          && !out_has("complete.") && !out_has("too large"), "-S 10 con PLAIN0 activo: cartridge not found");
+    check(cart_plain_active() && win_equals(demo48, 49152), "y la ventana no cambia");
     // /RESET: fuera PLAIN0 y ENABLE (aunque hubiera ENABLE_CONTINUOUS)
     cart_msx_reset();
     check(!cart_plain_active() && !(cart_ctrl(0x0C) & FL_EN) && cart_ctrl(0x1F) == 0, "el /RESET borra PLAIN0 y ENABLE");
@@ -242,6 +258,52 @@ static void t_plain0(void)
     check(run("-T PLAIN0 -O DEMO48.ROM") == 0 && cart_plain_active() && cart_ctrl(0x0C) == (FL_WP | FL_B16 | FL_EN), "PLAIN0 con -O");
     cart_msx_reset();
     check(!cart_plain_active() && cart_read(0x4000) == 0xFF, "PLAIN0 -O tras /RESET");
+    trace_end(tr);
+}
+
+// PLAIN0 de menos de 48 KB: lo que la imagen no cubre de 0000h-BFFFh lee FFh
+// (en openMSX, RomPlain::RomPlain deja esas paginas sin mapear), no la
+// basura de la SDRAM al encender (el borrado solo cubre 32 KB) ni los restos
+// de la ROM anterior (la cabecera "AB" de otra demo en 4000h)
+static int win_all_ff(uint32_t from, uint32_t to)
+{
+    for(uint32_t i = from; i < to; i++) if(host_cart_ram[i] != 0xFF) {
+        printf("  (ventana %06Xh = %02X, esperado FF)\n", i, host_cart_ram[i]);
+        return 0;
+    }
+    return 1;
+}
+static int z80_reads(uint16_t from, uint32_t to, const uint8_t *img)    // img = NULL: FFh
+{
+    int bad = 0;
+    for(uint32_t a = from; a < to; a += 61) bad += cart_read((uint16_t)a) != (img ? img[a] : 0xFF);
+    bad += cart_read(from) != (img ? img[from] : 0xFF);
+    bad += cart_read((uint16_t)(to - 1)) != (img ? img[to - 1] : 0xFF);
+    return bad;
+}
+static void t_plain0_small(void)
+{
+    const char *tr = "tncrom_plain0s.trc";
+    printf("--- PLAIN0 de 32 y 16 KB, relleno con FFh (traza %s)\n", tr);
+    trace_begin(tr);
+    // 32 KB recien encendido: 8000h-BFFFh tiene el patron de la SDRAM
+    check(run("-T PLAIN0 -R DEMO32.ROM") == 0 && out_has("complete.") && cart_plain_active(), "carga PLAIN0 de 32 KB");
+    check(win_equals(demo32, 32768), "ventana = imagen (32 KB)");
+    check(win_all_ff(32768, 49152), "8000h-BFFFh de la ventana a FFh");
+    check(win_rest_intact(49152), "nada escrito pasados los 48 KB");
+    int bad = z80_reads(0x0000, 0x8000, demo32);
+    check(bad == 0, "lectura de 0000h-7FFFh (%d mal)", bad);
+    bad = z80_reads(0x8000, 0xC000, NULL);
+    check(bad == 0 && cart_read(0x8000) == 0xFF && cart_read(0x8001) == 0xFF, "8000h-BFFFh lee FFh, como sin mapear (%d mal)", bad);
+    // 16 KB tras la de 32: 4000h-BFFFh FFh, sin el "AB" de la anterior
+    cart_msx_reset();
+    check(run("-T PLAIN0 -R D16K.ROM") == 0 && cart_plain_active(), "carga PLAIN0 de 16 KB");
+    check(win_equals(demo16, 16384) && win_all_ff(16384, 49152), "ventana = imagen (16 KB) y FFh hasta 48 KB");
+    bad = z80_reads(0x0000, 0x4000, demo16);
+    check(bad == 0, "lectura de 0000h-3FFFh (%d mal)", bad);
+    bad = z80_reads(0x4000, 0xC000, NULL);
+    check(bad == 0 && cart_read(0x4000) == 0xFF && cart_read(0x4001) == 0xFF, "4000h-BFFFh lee FFh: sin la cabecera de la demo anterior (%d mal)", bad);
+    cart_msx_reset();
     trace_end(tr);
 }
 
@@ -321,6 +383,15 @@ static void t_big(void)
     check(cart_read(0x4001) == b32k[1] && cart_read(0x8001) == b32k[0x4001], "32K tras /RESET");
     check(run("-N -T KONAMI_SCC_I") == 0 && cart_ctrl(0x0C) == (FL_SCC | FL_SCCI | FL_CONT | FL_EN), "-N -T KONAMI_SCC_I (como el README)");
     check(win_equals(b32k, 32768), "-N no toca la ventana");
+    // -S: con el cartucho en ese slot carga como sin -S; en un slot sin el
+    // cartucho (vacio, la RAM, la BIOS) da "cartridge not found" y no escribe
+    check(run("-S 10 -T 32K S32K.ROM") == 0 && out_has("complete.") && win_equals(s32k, 32768), "-S 10: carga");
+    static const char *other[3] = { "-S 2 -T 32K B32K.ROM", "-S 30 -T 32K B32K.ROM", "-S 0 -T 32K B32K.ROM" };
+    for(int i = 0; i < 3; i++) {
+        uint32_t ops = host_cart_ops;
+        check(run(other[i]) == 1 && out_has("cartridge not found") && !out_has("complete."), "%s: cartridge not found", other[i]);
+        check(host_cart_ops == ops && win_equals(s32k, 32768), "%s: la megaROM no se toca", other[i]);
+    }
 }
 
 static const uint8_t *file_data(const char *name) { return host_file_data(name); }
@@ -335,6 +406,7 @@ int main(int argc, char *argv[])
 
     t_basic();
     t_plain0();
+    t_plain0_small();
     t_ascii16();
     t_scci();
     t_big();
