@@ -1,4 +1,5 @@
-v9990_sync.fs, build del Mon Oct 26 04:42:35 2026
-CheckSum: 0xC950
-md5 del fichero: 38bb1b8f91af568c492ed7bb79929ff7
-md5 sin las lineas de cabecera (//): 79c9836a292f86709ff68730b8f15e7b
+v9990_sync.fs, build del Mon Oct 26 20:56:15 2026
+CheckSum: 0xEFEC
+md5 del fichero: e193efb73302ac619a83ab9a1f4433fc
+md5 sin las lineas de cabecera (//): bae02ffe697e06c531fd0f5156ae9463
+comparado con v9990_sync.fs (build del Mon Oct 26 20:25:54 2026, CheckSum 0xEFEC): cuerpo IDENTICO
