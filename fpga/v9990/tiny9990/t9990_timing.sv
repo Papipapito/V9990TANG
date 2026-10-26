@@ -327,6 +327,13 @@ module T9990_TIMING #(
     // cuadro PAL de la ventana (pal_w) y del sincronismo (pal_s): ver "V9990TANG: PAL y R#16" abajo
     logic pal_w;
     logic pal_s;
+    // reajuste de la ventana por R#16 (ver "V9990TANG: PAL y R#16" abajo)
+    logic       h_adj;          // en este DCLK_EN h_cnt salta a h_jump (linea ADJ_LINE de la ventana)
+    logic [9:0] h_jump;
+    logic       ext_run;        // la ventana alarga su cuadro: lineas de mas despues de V_TOTAL
+    logic [3:0] ext_left;       // lineas de mas que quedan (contando la actual)
+    logic [3:0] v_ext;          // lineas que alargara el cuadro que acaba (0 = ninguna)
+    logic [3:0] v_first;        // linea con la que empieza el cuadro siguiente (> 0: se salta lineas)
 
     wire [9:0]  H_RESET         = REG.HSCN ? (REG.C25M ? (H648_TOTAL         - 2'd2) : (H640_TOTAL         - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_TOTAL         - 2'd2) : (H384_TOTAL         - 2'd2)) : (REG.DCKM[0] ? (H512_TOTAL         - 2'd2) : (H256_TOTAL         - 2'd2));
     wire [9:0]  H_HR_ACTIVE     = REG.HSCN ? (REG.C25M ? (H648_ACTIVE        - 1'd1) : (H640_ACTIVE        - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_ACTIVE        - 1'd1) : (H384_ACTIVE        - 1'd1)) : (REG.DCKM[0] ? (H512_ACTIVE        - 1'd1) : (H256_ACTIVE        - 1'd1));
@@ -372,6 +379,7 @@ module T9990_TIMING #(
         if(!RESET_n)              h_cnt <= 0;
         else if(!TG_EN)           h_cnt <= 0;
         else if(DCLK_EN && h_rst) h_cnt <= 0;
+        else if(h_adj           ) h_cnt <= h_jump;          // V9990TANG: R#16 (h_adj ya lleva DCLK_EN)
         else if(DCLK_EN         ) h_cnt <= h_cnt + 1'd1;
     end
 
@@ -384,14 +392,15 @@ module T9990_TIMING #(
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)     v_rst <= 0;
         else if(!TG_EN)  v_rst <= 0;
-        else if(DCLK_EN) v_rst <= (h_cnt == H_RESET) && (v_cnt == V_TOTAL);
+        // V9990TANG: con R#16 el cuadro de la ventana puede alargarse v_ext lineas (ext_run)
+        else if(DCLK_EN) v_rst <= (h_cnt == H_RESET) && (ext_run ? (ext_left == 4'd1) : ((v_cnt == V_TOTAL) && (v_ext == 4'd0)));
     end
 
     logic [8:0] v_cnt;
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)              v_cnt <= 0;
         else if(!TG_EN)           v_cnt <= 0;
-        else if(DCLK_EN && v_rst) v_cnt <= 0;
+        else if(DCLK_EN && v_rst) v_cnt <= {5'd0, v_first};     // V9990TANG: > 0 si R#16 sube la imagen
         else if(DCLK_EN && v_inc) v_cnt <= v_cnt + 1'd1;
     end
 
@@ -497,11 +506,17 @@ module T9990_TIMING #(
     /***************************************************************
      * V9990TANG: PAL y R#16
      *
-     * h_cnt/v_cnt son las coordenadas de la VENTANA: todo lo que se ve (bordes,
-     * fetch de VRAM, HR/VR, interrupciones, BG/SPR) se mide con ellas y no cambia.
-     * R#16 mueve la imagen respecto al SINCRONISMO: en vez de mover la ventana se
-     * genera HS/VS con un segundo par de contadores (s_h/s_v) desplazado. Con
-     * R#16 = 00h el desplazamiento es 0 y HS/VS son, ciclo a ciclo, los del hito 1.
+     * Dos pares de contadores: s_h/s_v son los del SINCRONISMO (HS/VS, FIELD, PAL)
+     * y corren libres, con las reglas del hito 1 y sin reajustarse nunca: el cuadro
+     * de VS a VS y la linea de HS a HS son siempre los mismos, como en openMSX
+     * (V9990.cc frameStart: syncVSync = frameStartTime + getUCTicksPerFrame, que no
+     * depende de R#16). h_cnt/v_cnt son la VENTANA: todo lo que se ve (bordes, fetch
+     * de VRAM, HR/VR, interrupciones, BG/SPR) se mide con ellas. R#16 mueve la ventana
+     * frente al sincronismo, como en openMSX (frameStart: syncDisplayStart =
+     * frameStartTime + getTopBorder lineas, y la imagen de cada linea empieza en
+     * getLeftBorder). En regimen la ventana va desplazada (adj_v lineas, adj_h
+     * puntos) frente al sincronismo: s = ventana + adj. Con R#16 = 00h adj = 0 y las
+     * dos parejas coinciden ciclo a ciclo (HS/VS son los del hito 1).
      *
      * openMSX (V9990.hh): getLeftBorder = blank + border1 + (((R16 & 0Fh) ^ 7) - 8) * 8
      * ticks UC y getTopBorder = blank + border1 + ((R16 >> 4) ^ 7) - 8 lineas. Respecto
@@ -515,13 +530,35 @@ module T9990_TIMING #(
      * MHz: 4/3 de punto en B2 y 8/3 en B4); aqui se sigue el manual, que da puntos
      * enteros. En P1/P2/B1/B3 los dos coinciden.
      *
+     * Cambio de R#16: se lleva la ventana a la posicion nueva UNA vez, dentro de su
+     * borrado, con la diferencia entre el desplazamiento nuevo y el que esta en vigor
+     * (adj_v_q/adj_h_q). Vertical (dv = -15..+15 lineas), al acabar el cuadro de la
+     * ventana (h_cnt = H_RESET en la linea V_TOTAL): con dv > 0 el cuadro se alarga dv
+     * lineas (v_cnt sigue mas alla de V_TOTAL, donde no hay ninguna comparacion), con
+     * dv < 0 el cuadro siguiente empieza en su linea -dv (se salta lineas 0..14 del
+     * borrado superior, donde solo esta el VS propio de la ventana, que no sale).
+     * Horizontal (dh = -60..+60 puntos), en la linea ADJ_LINE = 16 de la ventana
+     * (borrado superior en todos los modos; el vertical nunca se la salta), en el
+     * punto hj_p = H_HR_ACTIVE + 80: h_cnt salta a hj_p + 1 - dh (repite o se salta dh
+     * puntos). Entre hj_p - 60 y hj_p + 60 no hay ninguna comparacion de h_cnt en
+     * ningun modo (la ultima de la izquierda es H_HR_ACTIVE, la primera de la derecha
+     * H_MUX_INACTIVE), y en una linea de borrado solo hay accesos de la CPU/blitter y
+     * de refresco, que van por MEM_REQ y no por h_cnt. Asi la irregularidad de un
+     * cambio cae en el cuadro de la ventana (el intervalo entre VI y entre lineas de
+     * imagen), como en openMSX, y nunca en el sincronismo. Un cambio de modo (MCS,
+     * DCKM, HSCN, C25M) baja TG_EN (T9990_CLOCK) y pone a 0 las dos parejas y adj_q:
+     * vuelven a coincidir y el cuadro siguiente aplica R#16 desde 0.
+     *
      * PAL: R#7 bit 3 se toma al empezar cada cuadro de sincronismo (openMSX
      * frameStart, en el VSYNC) -> pal_s, que da la longitud de ese cuadro (VS a VS) y
-     * es la salida PAL_FRAME. La ventana usa pal_w, la copia de pal_s en su linea 10:
-     * con R#16 el VS cae como mucho 9 lineas antes o 7 despues del (0,0) de la
-     * ventana, y ninguna comparacion de la ventana que dependa de PAL cae antes de su
-     * linea 17 (fin del borrado superior), asi que pal_w ya es el del cuadro.
+     * es la salida PAL_FRAME. La ventana usa pal_w, la copia de pal_s al final de su
+     * linea 15 (PAL_LINE): el VS cae como mucho 8 lineas antes o despues del (0,0) de
+     * la ventana, el reajuste vertical se salta como mucho las lineas 0..14 y ninguna
+     * comparacion de la ventana que dependa de PAL cae antes de su linea 17, asi que
+     * pal_w ya es el del cuadro de sincronismo que va con el de la ventana y los dos
+     * cuadros tienen la misma longitud.
      ***************************************************************/
+    wire r16_on  = (ENABLE_R16 != 0);
     wire pal_req = (ENABLE_PAL != 0) && REG.PAL_TIMING && !REG.HSCN;
 
     // k = (n ^ 7) - 7 se indexa con t = n ^ 7 (k = t - 7)
@@ -535,24 +572,104 @@ module T9990_TIMING #(
                                   (!REG.HSCN && REG.DCKM == T9990_REG::DCKM_DIV2) ? (adj_k <<< 1) : (adj_k <<< 2);
     wire signed [4:0] adj_v_new = $signed({1'b0, adj_tv}) - 5'sd7;
 
-    // Reajuste: en la linea TELE_LINE de la ventana, punto tele_h, se toma R#16 y se lleva el sincronismo
-    // a la posicion ventana + desplazamiento (s_h = h + adj_h, s_v = v + adj_v, sin vueltas). En regimen
-    // estable no cambia nada (s_h/s_v ya estan ahi). Se hace ahi y no en el (0,0) de la ventana porque el
-    // limite del cuadro de sincronismo cae a -9..+8 lineas del (0,0): un reajuste que lo cruzase sacaria
-    // dos VS seguidos o se saltaria uno (con R#16 de F0h a 10h, dos VS a 2 lineas; de 70h a 80h, 509
-    // lineas sin VS) y lo mismo con HS en la linea. En la linea 12 el sincronismo esta en su linea
-    // 5..20, despues del VS (lineas 0-2) y lejos del final del cuadro, y el punto tele_h + 1 + adj_h cae
-    // despues del HS y antes del final de la linea en todos los modos (adj_h de -28 a +32): el cambio
-    // de R#16 deja UN cuadro de sincronismo de 262/313 +- 16 lineas y una linea de +- 60 puntos, en el
-    // borrado superior (la ventana no tiene DE hasta su linea 18).
-    localparam [8:0] TELE_LINE = 9'd12;
-    wire [9:0]  tele_h = H_SYNC_PERIOD + 10'd40;
-    wire        tele   = DCLK_EN && (h_cnt == tele_h) && (v_cnt == TELE_LINE);
-    wire [9:0]  sh_t   = tele_h + 10'd1 + {{3{adj_h_new[6]}}, adj_h_new};     // h_cnt despues del flanco + adj_h
-    wire [8:0]  sv_t   = TELE_LINE + {{4{adj_v_new[4]}}, adj_v_new};    // v_cnt + adj_v
+    localparam [8:0] ADJ_LINE = 9'd16;      // linea de la ventana del reajuste horizontal
+    localparam [8:0] PAL_LINE = 9'd15;      // linea de la ventana en la que se copia pal_s en pal_w
 
-    logic signed [6:0] adj_h_q;
+    logic signed [6:0] adj_h_q;             // desplazamiento en vigor (sincronismo - ventana)
     logic signed [4:0] adj_v_q;
+
+    // Tiempo: R#16 y el punto del reajuste pasan por dos registros antes de llegar a los contadores
+    // (R#7/R#16 -> desplazamiento -> diferencia -> destino). El destino de cada eje (h_tgt/h_jump,
+    // v_tgt/v_ext/v_skip) sale del mismo ciclo y del mismo adj_*_q, asi que es coherente; adj_*_q solo
+    // cambia en el reajuste, una vez por cuadro.
+    logic signed [6:0] adj_h_a;
+    logic signed [4:0] adj_v_a;
+    logic [9:0]        hj_p;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            adj_h_a <= 0;
+            adj_v_a <= 0;
+            hj_p    <= 0;
+        end
+        else begin
+            adj_h_a <= r16_on ? adj_h_new : 7'sd0;
+            adj_v_a <= r16_on ? adj_v_new : 5'sd0;
+            hj_p    <= H_HR_ACTIVE + 10'd80;
+        end
+    end
+
+    wire signed [6:0] dh  = adj_h_a - adj_h_q;     // -60..+60
+    wire signed [4:0] dv  = adj_v_a - adj_v_q;     // -15..+15
+    wire        [4:0] ndv = -dv;
+    logic signed [6:0] h_tgt;
+    logic signed [4:0] v_tgt;
+    logic        [3:0] v_skip;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            h_tgt  <= 0;
+            h_jump <= 0;
+            v_tgt  <= 0;
+            v_ext  <= 0;
+            v_skip <= 0;
+        end
+        else begin
+            h_tgt  <= adj_h_a;
+            h_jump <= hj_p + 10'd1 - {{3{dh[6]}}, dh};
+            v_tgt  <= adj_v_a;
+            v_ext  <= (dv > 0) ? dv[3:0]  : 4'd0;
+            v_skip <= (dv < 0) ? ndv[3:0] : 4'd0;
+        end
+    end
+
+    // reajuste vertical: al acabar el cuadro de la ventana (el mismo DCLK_EN en que se calcula v_rst)
+    wire v_dec = r16_on && DCLK_EN && (h_cnt == H_RESET) && !ext_run && (v_cnt == V_TOTAL);
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            adj_v_q  <= 0;
+            ext_run  <= 0;
+            ext_left <= 0;
+            v_first  <= 0;
+        end
+        else if(!TG_EN) begin
+            adj_v_q  <= 0;
+            ext_run  <= 0;
+            ext_left <= 0;
+            v_first  <= 0;
+        end
+        else if(v_dec) begin
+            adj_v_q  <= v_tgt;
+            v_first  <= v_skip;                 // 0 si se alarga
+            ext_run  <= (v_ext != 4'd0);
+            ext_left <= v_ext;
+        end
+        else if(DCLK_EN && ext_run && (h_cnt == H_RESET)) begin
+            ext_left <= ext_left - 1'd1;
+            if(ext_left == 4'd1) ext_run <= 0;  // v_rst en esta misma linea
+        end
+    end
+
+    // reajuste horizontal: una vez en la linea ADJ_LINE (h_adj_done: con dh > 0 h_cnt vuelve a pasar por hj_p)
+    logic h_adj_done;
+    assign h_adj = r16_on && DCLK_EN && (v_cnt == ADJ_LINE) && (h_cnt == hj_p) && !h_adj_done;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            adj_h_q    <= 0;
+            h_adj_done <= 0;
+        end
+        else if(!TG_EN) begin
+            adj_h_q    <= 0;
+            h_adj_done <= 0;
+        end
+        else if(h_adj) begin
+            adj_h_q    <= h_tgt;
+            h_adj_done <= 1;
+        end
+        else if(DCLK_EN && h_rst) begin
+            h_adj_done <= 0;
+        end
+    end
+
+    // sincronismo: cuenta libre, mismas reglas que h_cnt/v_cnt/HS/VS del hito 1
     logic [9:0] s_h;
     logic [8:0] s_v;
     logic       s_hrst;
@@ -560,18 +677,8 @@ module T9990_TIMING #(
     logic       hs_s;
     logic       vs_s;
     logic       eo_s;
-
-    // el VS llega antes que el (0,0) de la ventana, o con el: el EO del cuadro nuevo aun no ha cambiado
-    // (adj_h_q/adj_v_q: el desplazamiento en vigor, tomado en el ultimo reajuste)
-    wire sync_leads = !(adj_v_q < 0 || (adj_v_q == 0 && adj_h_q < 0));
-    wire s_frame = DCLK_EN && s_vrst && !tele;                                  // empieza un cuadro de sincronismo
-    wire eo_next = REG.ILM ? !STATUS.EO : 1'b0;                                 // el EO que la ventana pone en v_rst
-    wire win_frame = DCLK_EN && v_rst;                                          // (0,0) de la ventana (sin R#16)
-
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
-            adj_h_q <= 0;
-            adj_v_q <= 0;
             s_h <= 0;
             s_v <= 0;
             s_hrst <= 0;
@@ -585,19 +692,7 @@ module T9990_TIMING #(
             s_hrst <= 0;
             s_vrst <= 0;
         end
-        else if(tele) begin
-            // los mismos valores que daria la cuenta libre con s_h/s_v en (sh_t, sv_t)
-            adj_h_q <= adj_h_new;
-            adj_v_q <= adj_v_new;
-            s_h    <= sh_t;
-            s_v    <= sv_t;
-            s_hrst <= (sh_t == H_RESET + 1'd1);
-            s_vrst <= (sh_t == H_RESET + 1'd1) && (sv_t == V_TOTAL_S[8:0]);
-            hs_s   <= (sh_t <= H_SYNC_PERIOD);
-            vs_s   <= (sv_t <= V_SYNC_PERIOD[8:0]);
-        end
         else if(DCLK_EN) begin
-            // mismas reglas que h_cnt/v_cnt/HS/VS del hito 1, sobre s_h/s_v
             s_hrst <= (s_h == H_RESET);
             s_vrst <= (s_h == H_RESET) && (s_v == V_TOTAL_S);
             s_h    <= s_hrst ? 10'd0 : (s_h + 1'd1);
@@ -610,7 +705,14 @@ module T9990_TIMING #(
         end
     end
 
-    // PAL del cuadro de sincronismo y EO del campo que empieza con el VS
+    // PAL del cuadro de sincronismo y EO del campo que empieza con el VS. El cuadro de la ventana que va
+    // con este VS empieza como mucho 8 lineas antes o despues: si la ventana esta en sus primeras lineas
+    // (v_cnt < 32) ya ha empezado y STATUS.EO es el suyo; si esta al final de su cuadro (o en las lineas
+    // de mas de un alargue, o en el mismo DCLK_EN de su v_rst) aun no, y su EO sera eo_next.
+    wire s_frame     = DCLK_EN && s_vrst;                       // empieza un cuadro de sincronismo
+    wire win_frame   = DCLK_EN && v_rst;                        // (0,0) de la ventana
+    wire win_started = (v_cnt[8:5] == 4'd0);
+    wire eo_next     = REG.ILM ? !STATUS.EO : 1'b0;             // el EO que la ventana pone en v_rst
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             pal_s <= 0;
@@ -619,7 +721,7 @@ module T9990_TIMING #(
         else if(ENABLE_R16 != 0) begin
             if(s_frame) begin
                 pal_s <= pal_req;
-                eo_s  <= sync_leads ? eo_next : STATUS.EO;
+                eo_s  <= win_started ? STATUS.EO : eo_next;
             end
         end
         else if(win_frame) begin
@@ -631,7 +733,7 @@ module T9990_TIMING #(
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)                                                pal_w <= 0;
         else if(ENABLE_R16 == 0)                                    pal_w <= pal_s;
-        else if(DCLK_EN && v_inc && v_cnt == 9'd9)                  pal_w <= pal_s;
+        else if(DCLK_EN && v_inc && v_cnt == PAL_LINE)              pal_w <= pal_s;
     end
 
     assign HS        = (ENABLE_R16 != 0) ? hs_s : hs_w;

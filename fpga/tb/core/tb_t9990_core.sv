@@ -26,12 +26,15 @@
 //              overscan B2 BP4 en NTSC y PAL -> EOR_OK
 //   +HPOS=1    diagnostico (no falla): que punto del bitmap sale en el primer
 //              punto de la imagen con el scroll a 0
-//   +R16T=1    R#16: desplazamiento del sincronismo frente a DE en B1/B3/B2/B4,
-//              NTSC y PAL -> R16_OK
+//   +R16T=1    R#16: desplazamiento de la imagen (ventana) frente al
+//              sincronismo en B1/B3/B2/B4, NTSC y PAL -> R16_OK
 //   +R16CHG=1  R#16 cambiado en marcha (cruzando el limite del cuadro de
-//              sincronismo): un solo cuadro/linea irregular por cambio, nunca
-//              dos VS seguidos ni un cuadro sin VS -> R16CHG_OK
+//              sincronismo) en B1 entrelazado, B4 PAL entrelazado y B5: el
+//              sincronismo no cambia nunca (cuadros y lineas exactos), la
+//              ventana se reajusta en su borrado -> R16CHG_OK
 //   +PALT=1    cuadro PAL de 313 lineas en B1 y B2 y vuelta a NTSC -> PALT_OK
+//   +BDBP=1    puntos transparentes (indice 0) de BP4 desde el reset y despues
+//              de BD16: color de fondo (R#15) -> BDBP_OK
 //   +REPLAY=f  traza de openMSX (mk_replay.py) con +VRAMOUT=f volcado de la VRAM
 //   +CH0=1     carga en el canal 0 del UMA (lecturas en todas sus ranuras)
 //   +ACKDLY=n  retrasa n ciclos el ACK de la VRAM: la asercion tiene que saltar
@@ -140,6 +143,12 @@ module tb_t9990_core;
     // FIELD (EO): solo cambia con VS; con entrelazado cambia en cada cuadro y coincide con el EO de la
     // ventana (STATUS.EO, el que usa BG_Y) en todas las lineas con DE
     integer eo_chg_bad, eo_notoggle, eo_win_bad, eo_prev_frame;
+    // cuadros de la ventana (h_cnt/v_cnt de T9990_TIMING): puntos entre dos v_rst (con R#16 cambiado en
+    // marcha la irregularidad va aqui y no en el sincronismo); wf_ref = el del regimen estable
+    integer wf_dots = 0, wf_min, wf_max, wf_irr, wf_n, wf_ref = -1;
+    reg     wf_valid = 0;
+    // posicion del VS en la ventana en la ultima subida de VS
+    integer vs_wh_last = -1, vs_wv_last = -1;
 
     task stats_reset;
         begin
@@ -157,9 +166,24 @@ module tb_t9990_core;
             da_lines_min = 1<<30; da_lines_max = -1; da_run_min = 1<<30; da_run_max = -1;
             btop_min = 1<<30; btop_max = -1; bbot_min = 1<<30; bbot_max = -1;
             eo_chg_bad = 0; eo_notoggle = 0; eo_win_bad = 0; eo_prev_frame = -1;
+            wf_min = 1<<30; wf_max = -1; wf_irr = 0; wf_n = 0; wf_valid = 0; wf_dots = 0;
             frames_done = 0;
         end
     endtask
+    always @(posedge clk) if (dclk_en) begin
+        if (meas) begin
+            wf_dots = wf_dots + 1;
+            if (dut.u_tg.v_rst) begin
+                if (wf_valid) begin
+                    if (wf_dots < wf_min) wf_min = wf_dots;
+                    if (wf_dots > wf_max) wf_max = wf_dots;
+                    if (wf_dots != wf_ref) wf_irr = wf_irr + 1;
+                    wf_n = wf_n + 1;
+                end
+                wf_valid = 1; wf_dots = 0;
+            end
+        end
+    end
     initial begin stats_reset; de_nrise = 0; de_lines = 0; de_first = -1; de_last = -1; de_in_line = 0; hsw_cur = -1; gap = 0; da_in_line = 0; da_lines = 0; end
 
     always @(posedge clk) begin
@@ -244,8 +268,8 @@ module tb_t9990_core;
                 frames_done = frames_done + 1;
             end
             if (meas) begin
-                tmp = dut.u_tg.h_cnt; if (tmp < vs_wh_min) vs_wh_min = tmp; if (tmp > vs_wh_max) vs_wh_max = tmp;
-                tmp = dut.u_tg.v_cnt; if (tmp < vs_wv_min) vs_wv_min = tmp; if (tmp > vs_wv_max) vs_wv_max = tmp;
+                tmp = dut.u_tg.h_cnt; if (tmp < vs_wh_min) vs_wh_min = tmp; if (tmp > vs_wh_max) vs_wh_max = tmp; vs_wh_last = tmp;
+                tmp = dut.u_tg.v_cnt; if (tmp < vs_wv_min) vs_wv_min = tmp; if (tmp > vs_wv_max) vs_wv_max = tmp; vs_wv_last = tmp;
                 tmp = eo; if (il && eo_prev_frame >= 0 && tmp == eo_prev_frame) eo_notoggle = eo_notoggle + 1;
                 eo_prev_frame = tmp;
             end
@@ -816,6 +840,71 @@ module tb_t9990_core;
     endtask
 
     // ------------------------------------------------------------------
+    // +BDBP=1: los puntos transparentes de un modo de paleta despues de un modo
+    // de color directo. En BP4 el indice 0 es transparente (T9990_BITMAP: PRI) y
+    // el selector saca ahi la salida de T9990_COLOR_DECODE si su bit 15 es 0, si
+    // no la de la paleta (el fondo). Fuera de BD8/BD16/YJK/YUV la salida de
+    // T9990_COLOR_DECODE se quedaba como estaba (OUT <= OUT): tras un BD16 (bit 15
+    // a 0) los puntos de indice 0 salian con un color fijo de basura hasta el
+    // siguiente reset (revision del area). Desde el reset (OUT = 8000h) salen con
+    // el color de fondo, R#15. Se mide el cuadro de BP4 desde el reset y despues
+    // de unos cuadros de BD16: los dos tienen que dar el color de fondo.
+    // ------------------------------------------------------------------
+    function integer bdbp_errs(input integer bdc, input integer verbose);
+        integer x, y, e;
+        begin
+            e = 0;
+            for (y = 20; y < 200; y = y + 1) for (x = 8; x < 248; x = x + 1)
+                if (fb[l0 + y][d0 + x] !== palc[bdc]) begin
+                    e = e + 1;
+                    if (verbose && e <= 4) $display("    (%0d,%0d): sale %04h, fondo (paleta %0d) %04h", x, y, fb[l0 + y][d0 + x], bdc, palc[bdc]);
+                end
+            bdbp_errs = e;
+        end
+    endfunction
+    task bdbp_frame(input string what, output integer e);
+        begin
+            wait_vs(2);
+            capture_frame;
+            e_f = cap_eo;
+            calibrate(d0, l0);
+            if (l0 < 0) begin $display("ERROR BDBP %0s: no encuentro el bitmap", what); e = -1; end
+            else begin
+                e = bdbp_errs(5, 1);
+                $display("  BDBP %0s: imagen desde el punto %0d linea %0d; %0d puntos de indice 0 (de 43200) distintos del fondo (R#15 = 5: %04h)",
+                         what, d0, l0, e, palc[5]);
+            end
+        end
+    endtask
+    task bdbp_test;
+        integer k, x, y, e1, e2;
+        begin
+            $display("---- BDBP: B1 BP4 (R#6=81h) desde el reset y despues de B1 BD16 (R#6=83h) ----");
+            for (k = 0; k < 16; k = k + 1) begin
+                palc[k] = {5'((k * 7 + 3) & 31), 5'((k * 11 + 5) & 31), 5'((k * 13 + 1) & 31)};   // {G, R, B}
+                pal_set(k[5:0], palc[k][9:5], palc[k][14:10], palc[k][4:0]);
+            end
+            // BP4: lineas 0..15 con indices 1..15 (para calibrate), el resto indice 0 (transparente). En
+            // BD16 se leen 512 bytes por linea: mas alla de estos 32 KB queda el patron de partida de la
+            // VRAM, que da colores distintos de 0
+            for (y = 0; y < 256; y = y + 1) for (x = 0; x < 256; x = x + 2)
+                u_vram.mem[y*128 + x/2] = (y < 16) ? {4'(bpidx(x, y)), 4'(bpidx(x + 1, y))} : 8'h00;
+            wr_reg(6'd13, 8'h00); wr_reg(6'd15, 8'h05); wr_reg(6'd28, 8'h00);
+            wr_reg(6'd17, 8'h00); wr_reg(6'd18, 8'h00); wr_reg(6'd19, 8'h00); wr_reg(6'd20, 8'h00);
+            e_bp = 1; e_il = 0; e_ofs = 0; e_w = 256; e_h = 212;
+            wr_reg(6'd7, 8'h00); wr_reg(6'd8, 8'hC0);
+            wr_reg(6'd6, 8'h81);
+            bdbp_frame("desde el reset   ", e1);
+            wr_reg(6'd6, 8'h83);
+            wait_vs(3);
+            wr_reg(6'd6, 8'h81);
+            bdbp_frame("despues de BD16  ", e2);
+            e_bp = 0;
+            if (e1 == 0 && e2 == 0) $display("BDBP_OK"); else begin nerr = nerr + 1; $display("BDBP_ERRORS %0d %0d", e1, e2); end
+        end
+    endtask
+
+    // ------------------------------------------------------------------
     // +HPOS=1: que pixel del bitmap sale en el primer y el ultimo punto de la
     // imagen (DA) con el scroll a 0. BD16: el color de 15 bits lleva la X;
     // BP4: la paleta 0..15 lleva el indice (X mod 16). Diagnostico, no falla.
@@ -950,17 +1039,22 @@ module tb_t9990_core;
     // ------------------------------------------------------------------
     // +R16CHG=1: R#16 cambiado en marcha, en sitios distintos del cuadro, con
     // cambios que cruzan el limite del cuadro de sincronismo (F0h -> 10h, 10h ->
-    // 80h, 80h -> 70h, 0Fh -> 01h, 08h -> 07h, 88h -> 77h...). Cada cambio puede
-    // dejar UN cuadro de sincronismo de total +- 16 lineas y UNA linea de +- 60
-    // puntos (el reajuste de T9990_TIMING), pero nunca dos VS seguidos ni un
-    // cuadro sin VS (revision de Codex: con el reajuste en el (0,0) de la ventana,
-    // F0h -> 10h sacaba dos VS a 2 lineas y 70h -> 80h 509 lineas sin VS); el VS
-    // siempre de 3 lineas y con la subida de HS, el HS siempre del mismo ancho,
-    // FIELD alterna en cada VS (entrelazado) y solo cambia con el. Al volver a
-    // 00h, el regimen estable es exacto (VS en el (0,0) de la ventana).
+    // 80h, 80h -> 70h, 0Fh -> 01h, 08h -> 07h, 88h -> 77h...). Como en openMSX
+    // (V9990.cc frameStart: el VSYNC cada getUCTicksPerFrame, el principio de la
+    // imagen en getTopBorder) el SINCRONISMO no cambia nunca: todos los cuadros
+    // de VS a VS y todas las lineas de HS a HS iguales al regimen con R#16 = 00h,
+    // el HS siempre del mismo ancho, el VS siempre del ancho del modo y con la
+    // subida de HS, FIELD alterna en cada VS (entrelazado) y solo cambia con el.
+    // La irregularidad de cada cambio va a la VENTANA de T9990_TIMING (el cuadro
+    // de imagen: puntos entre dos v_rst): como mucho 2 cuadros irregulares por
+    // cambio y de +- (15 lineas + 60 puntos). Tres VS despues de cada cambio, el
+    // VS cae en el sitio de la ventana que toca al valor nuevo (el de la prueba
+    // r16). Al volver a 00h, VS en el (0,0) de la ventana. (Con el reajuste del
+    // sincronismo de antes, cada cambio sacaba un cuadro de VS a VS de +- 16
+    // lineas y una linea de HS a HS de +- 60 puntos: revision del area.)
     // ------------------------------------------------------------------
-    task r16chg_case(input string what, input [7:0] r6, input mcs, input [7:0] r7);
-        integer i, ok, tot, dots, fclk, dl, dh, hsw;
+    task r16chg_case(input string what, input integer md, input [7:0] r6, input mcs, input [7:0] r7, input integer vsw);
+        integer i, ok, tot, dots, fclk, hsw, t, edh, edv, n_tot, exp_lin, posbad, wmar;
         reg [7:0] vals [0:12];
         begin
             vals = '{8'h00, 8'hF0, 8'h10, 8'h80, 8'h70, 8'h80, 8'h0F, 8'h01, 8'h08, 8'h07, 8'h88, 8'h77, 8'h00};
@@ -969,39 +1063,54 @@ module tb_t9990_core;
             wait_vs(2);
             measure(1);                         // regimen estable con R#16 = 00h
             tot = f_lines_min; dots = l_dots_min; fclk = f_clk_min; hsw = hsw_min;
+            n_tot = tot * dots; wf_ref = n_tot;
             wait_vs(1);
-            @(negedge clk); stats_reset; meas = 1;
+            @(negedge clk); stats_reset; meas = 1; posbad = 0;
             for (i = 1; i < 13; i = i + 1) begin
-                repeat (fclk + fclk / 3 + i * 7919) @(posedge clk);    // 1,33 cuadros: cada escritura en otro sitio
+                repeat (fclk / 3 + i * 7919) @(posedge clk);    // cada escritura en otro sitio del cuadro
                 wr_reg(6'd16, vals[i]);
+                wait_vs(3);                                     // la ventana se reajusta en menos de 1 cuadro + 31 lineas
+                @(negedge clk);
+                t = vals[i][3:0] ^ 4'd7; edh = (ENABLE_R16 != 0) ? exp_dh(md, t) : 0;
+                t = vals[i][7:4] ^ 4'd7; edv = (ENABLE_R16 != 0) ? (t - 7) : 0;
+                exp_lin = ((-(edv * dots + edh)) % n_tot + n_tot) % n_tot;
+                if (vs_wh_last != exp_lin % dots || vs_wv_last != exp_lin / dots) begin
+                    posbad = posbad + 1;
+                    $display("    R#16=%02h: VS en la ventana (%0d,%0d), esperado (%0d,%0d)", vals[i], vs_wh_last, vs_wv_last, exp_lin % dots, exp_lin / dots);
+                end
             end
-            wait_vs(3);
             meas = 0;
-            dl = (ENABLE_R16 != 0) ? 16 : 0;
-            dh = (ENABLE_R16 != 0) ? 60 : 0;
-            ok = (frames_done >= 14) && (f_lines_min >= tot - dl) && (f_lines_max <= tot + dl) &&
-                 (l_dots_min >= dots - dh) && (l_dots_max <= dots + dh) && (hsw_min == hsw) && (hsw_max == hsw) &&
-                 (vsw_min == 3) && (vsw_max == 3) && (vs_hs_coinc == vs_rises) &&
-                 (eo_chg_bad == 0) && (eo_notoggle == 0) && (eo_win_bad == 0) && (pal_chg_bad == 0) && (lost_slots() == 0);
-            $display("  %0s: %0d cuadros con 12 cambios de R#16: %0d..%0d lineas (estable %0d, margen %0d), %0d..%0d puntos por linea (estable %0d, margen %0d), HS %0d..%0d puntos, VS %0d..%0d lineas, VS con HS %0d de %0d, EO fuera de VS %0d / sin alternar %0d / distinto de la ventana %0d -> %0s",
-                     what, frames_done, f_lines_min, f_lines_max, tot, dl, l_dots_min, l_dots_max, dots, dh, hsw_min, hsw_max,
-                     vsw_min, vsw_max, vs_hs_coinc, vs_rises, eo_chg_bad, eo_notoggle, eo_win_bad, ok ? "ok" : "MAL");
+            wmar = (ENABLE_R16 != 0) ? (15 * dots + 60) : 0;
+            ok = (frames_done >= 36) && (f_lines_min == tot) && (f_lines_max == tot) && (f_clk_min == fclk) && (f_clk_max == fclk) &&
+                 (l_dots_min == dots) && (l_dots_max == dots) && (hsw_min == hsw) && (hsw_max == hsw) &&
+                 (vsw_min == vsw) && (vsw_max == vsw) && (vs_hs_coinc == vs_rises) &&
+                 (eo_chg_bad == 0) && (eo_notoggle == 0) && (eo_win_bad == 0) && (pal_chg_bad == 0) && (posbad == 0) &&
+                 (wf_n >= 30) && (wf_min >= n_tot - wmar) && (wf_max <= n_tot + wmar) && (wf_irr <= 24) && (lost_slots() == 0);
+            $display("  %0s: %0d cuadros con 12 cambios de R#16: sincronismo %0d..%0d lineas (estable %0d), %0d..%0d puntos por linea (estable %0d), HS %0d..%0d puntos, VS %0d..%0d lineas, VS con HS %0d de %0d, EO fuera de VS %0d / sin alternar %0d / distinto de la ventana %0d; ventana: %0d cuadros, %0d irregulares, de %0d a %0d puntos (estable %0d, margen %0d); VS fuera de su sitio tras el cambio %0d -> %0s",
+                     what, frames_done, f_lines_min, f_lines_max, tot, l_dots_min, l_dots_max, dots, hsw_min, hsw_max,
+                     vsw_min, vsw_max, vs_hs_coinc, vs_rises, eo_chg_bad, eo_notoggle, eo_win_bad,
+                     wf_n, wf_irr, wf_min, wf_max, n_tot, wmar, posbad, ok ? "ok" : "MAL");
             if (!ok) begin nerr = nerr + 1; print_json("RESULT_R16CHG"); end
-            // de vuelta en 00h: regimen estable exacto, VS en el (0,0) de la ventana
+            // de vuelta en 00h: regimen estable exacto, VS en el (0,0) de la ventana y ventana regular
             measure(2);
             ok = (f_lines_min == tot) && (f_lines_max == tot) && (l_dots_min == dots) && (l_dots_max == dots) &&
-                 (vs_wh_min == 0) && (vs_wh_max == 0) && (vs_wv_min == 0) && (vs_wv_max == 0) && (eo_notoggle == 0) && (lost_slots() == 0);
-            $display("  %0s: R#16 = 00h otra vez: %0d lineas x %0d puntos, VS en la ventana (%0d,%0d) -> %0s",
-                     what, f_lines_min, l_dots_min, vs_wh_min, vs_wv_min, ok ? "ok" : "MAL");
+                 (vs_wh_min == 0) && (vs_wh_max == 0) && (vs_wv_min == 0) && (vs_wv_max == 0) && (eo_notoggle == 0) &&
+                 (wf_irr == 0) && (wf_n >= 1) && (lost_slots() == 0);
+            $display("  %0s: R#16 = 00h otra vez: %0d lineas x %0d puntos, VS en la ventana (%0d,%0d), cuadros de la ventana irregulares %0d de %0d -> %0s",
+                     what, f_lines_min, l_dots_min, vs_wh_min, vs_wv_min, wf_irr, wf_n, ok ? "ok" : "MAL");
             if (!ok) begin nerr = nerr + 1; print_json("RESULT_R16CHG_FIN"); end
+            wf_ref = -1;
         end
     endtask
     task r16chg_test;
         begin
             $display("---- R16CHG: cambios de R#16 en marcha ----");
-            r16chg_case("B1 IL     ", 8'h82, 1'b0, 8'h06);
-            if (ENABLE_PAL) r16chg_case("B4 PAL IL ", 8'hAA, 1'b1, 8'h0E);
-            else            r16chg_case("B4 IL     ", 8'hAA, 1'b1, 8'h06);
+            r16chg_case("B1 IL     ", 0, 8'h82, 1'b0, 8'h06, 3);
+            if (ENABLE_PAL) r16chg_case("B4 PAL IL ", 3, 8'hAA, 1'b1, 8'h0E, 3);
+            else            r16chg_case("B4 IL     ", 3, 8'hAA, 1'b1, 8'h06, 3);
+            // B5 (HSCN, tabla de 440 lineas con VS de 8): con el reajuste del sincronismo de antes, el de la
+            // linea 12 caia dentro del VS con adj_v <= -5 (revision del area)
+            r16chg_case("B5        ", 3, 8'hA6, 1'b0, 8'h01, 8);
             wr_port(4'd7, 8'h00);
             wr_reg(6'd7, 8'h00);
             if (nerr == 0) $display("R16CHG_OK"); else $display("R16CHG_ERRORS %0d", nerr);
@@ -1130,7 +1239,7 @@ module tb_t9990_core;
     // secuencia
     // ------------------------------------------------------------------
     integer r6 = 0, r7 = 0, r16 = 0, mcs_arg = 0, nframes = 3, k, wd, gdh, gdv, gtot, glin;
-    integer blit_arg = 0, ports_arg = 0, eor_arg = 0, r16t_arg = 0, palt_arg = 0, replay_arg = 0, ch0_arg = 0, slots, hpos_arg = 0, r16chg_arg = 0;
+    integer blit_arg = 0, ports_arg = 0, eor_arg = 0, r16t_arg = 0, palt_arg = 0, replay_arg = 0, ch0_arg = 0, slots, hpos_arg = 0, r16chg_arg = 0, bdbp_arg = 0;
     string  vid_name;
     initial begin
         $timeformat(-9, 1, " ns", 0);      // el instante de la asercion de t9990_ram.sv sale en ns
@@ -1146,6 +1255,7 @@ module tb_t9990_core;
         if (!$value$plusargs("R16CHG=%d", r16chg_arg)) r16chg_arg = 0;
         if (!$value$plusargs("PALT=%d", palt_arg)) palt_arg = 0;
         if (!$value$plusargs("HPOS=%d", hpos_arg)) hpos_arg = 0;
+        if (!$value$plusargs("BDBP=%d", bdbp_arg)) bdbp_arg = 0;
         if (!$value$plusargs("CH0=%d", ch0_arg)) ch0_arg = 0;
         if (!$value$plusargs("ACKDLY=%d", ackdly)) ackdly = 0;
         if ($value$plusargs("REPLAY=%s", rp_file)) replay_arg = 1;
@@ -1180,12 +1290,13 @@ module tb_t9990_core;
         if (r16chg_arg) r16chg_test;
         if (palt_arg)  palt_test;
         if (hpos_arg)  hpos_test;
+        if (bdbp_arg)  bdbp_test;
         if (replay_arg) begin
             replay_run(rp_file);
             $display("registros tras el replay: R#6=%02h R#7=%02h R#8=%02h R#13=%02h RESO=%0d", dut.u_port.vdp_reg[6], dut.u_port.vdp_reg[7], dut.u_port.vdp_reg[8], dut.u_port.vdp_reg[13], reso);
             if (vram_out != "") vram_dump(vram_out);
         end
-        if (!blit_arg && !ports_arg && !eor_arg && !r16t_arg && !r16chg_arg && !palt_arg && !replay_arg && !hpos_arg) begin
+        if (!blit_arg && !ports_arg && !eor_arg && !r16t_arg && !r16chg_arg && !palt_arg && !replay_arg && !hpos_arg && !bdbp_arg) begin
             if ($value$plusargs("VIDDUMP=%s", vid_name)) begin
                 vid_fh = $fopen(vid_name, "wb");
                 if (vid_fh == 0) begin $display("ERROR: no puedo crear %0s", vid_name); $finish; end
