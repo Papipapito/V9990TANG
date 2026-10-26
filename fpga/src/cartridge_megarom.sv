@@ -169,6 +169,20 @@ module CARTRIDGE_MEGAROM #(
         .ExtBus
     );
 
+`ifndef SYNTHESIS
+    // synthesis translate_off
+    // V9990TANG: el /WAIT de memoria supone que el UMA ve el OE_n del
+    // controlador en el ciclo siguiente (EXPANSION_RAM sin flops). Con
+    // RAM_IF_EXPANSION_USES_FF = 1 el ACK_n de un acceso anterior del canal
+    // podria subir antes de que el UMA vea la lectura, y el WAIT se soltaria
+    // con el dato viejo (docs/notas/megaram.md, apartado 4).
+    initial begin
+        if(ENABLE_MEM_WAIT && CONFIG::RAM_IF_EXPANSION_USES_FF)
+            $error("CARTRIDGE_MEGAROM: ENABLE_MEM_WAIT = 1 pide RAM_IF_EXPANSION_USES_FF = 0");
+    end
+    // synthesis translate_on
+`endif
+
     /***************************************************************
      * SCC
      ***************************************************************/
