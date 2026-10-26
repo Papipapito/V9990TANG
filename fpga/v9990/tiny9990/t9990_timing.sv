@@ -71,7 +71,8 @@ endinterface
  ***************************************************************/
 module T9990_TIMING #(
     parameter               ENABLE_PAL = 1,     // V9990TANG: cuadro PAL de 313 lineas (R#7 bit 3)
-    parameter               ENABLE_R16 = 1      // V9990TANG: ajuste de posicion de R#16
+    parameter               ENABLE_R16 = 1,     // V9990TANG: ajuste de posicion de R#16
+    parameter               ENABLE_SPR_LINE0 = 1    // V9990TANG: cursor (y sprites) tambien en la primera linea de imagen
 ) (
     input wire              RESET_n,
     input wire              CLK,
@@ -102,6 +103,7 @@ module T9990_TIMING #(
     T9990_MEM_TIMING.TG     MEM,
 
     output logic            PAL_FRAME,  // V9990TANG: 1 = el cuadro en curso (de VS a VS) es el de 313 lineas
+    output logic            PAL_WIN,    // V9990TANG: 1 = el cuadro de la ventana (h_cnt/v_cnt) es el de 313 lineas
     output logic            FIELD       // V9990TANG: paridad del campo para la salida de video (EO alineado con VS)
 );
     //  HSCN    C25M    MCS     DCKM    width   total   sync    erase   border  border  erase
@@ -396,9 +398,17 @@ module T9990_TIMING #(
     /***************************************************************
      * SPR_START
      ***************************************************************/
+    // V9990TANG (ENABLE_SPR_LINE0): T9990_SPRITE lee en cada linea los datos de la linea siguiente y los
+    // pasa a su salida al acabar la lectura; SPR_START empieza a sacarlos. En las lineas de imagen la
+    // lectura acaba tarde (el bitmap tiene prioridad) y lo leido sale en la linea siguiente, pero en la
+    // linea anterior a la primera (V_SPR_ACTIVE, sin bitmap) puede acabar antes del SPR_START de esa
+    // misma linea (en B1 BD16 pasa: fpga/tb/core, +EOR=1, cursor con Y = 500), se gastaba en ella
+    // (borde) y la primera linea de imagen salia sin cursor (Y de 480 a 511). Sin SPR_START en esa
+    // linea los datos esperan a la primera linea de imagen.
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)                                 SPR_START <= 0;
-        else if(DCLK_EN && h_cnt == H_SPR_OUT_START) SPR_START <= 1;
+        else if(DCLK_EN && h_cnt == H_SPR_OUT_START && !(ENABLE_SPR_LINE0 != 0 && v_cnt == V_SPR_ACTIVE[8:0]))
+                                                     SPR_START <= 1;
         else                                         SPR_START <= 0;
     end
 
@@ -620,6 +630,7 @@ module T9990_TIMING #(
     assign VS        = (ENABLE_R16 != 0) ? vs_s : vs_w;
     assign FIELD     = (ENABLE_R16 != 0) ? eo_s : STATUS.EO;
     assign PAL_FRAME = pal_s;
+    assign PAL_WIN   = pal_w;
 
     /***************************************************************
      * STATUS.HR(ボーダーを含まない表示期間)

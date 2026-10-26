@@ -50,9 +50,10 @@ module T9990_PALETTE #(
     input wire [0:0]        PRI,
     output reg [15:0]       OUT,
 
-    input wire              CUR_IN,     // V9990TANG: el punto es del cursor (opaco), alineado con PA/PRI
+    input wire              DIRECT,     // V9990TANG: bitmap de color directo (BD8/BD16/YJK/YUV/YAE): ver abajo
+    input wire              CUR_IN,     // V9990TANG: el punto es del cursor (opaco), alineado con PA/PRI; solo con DIRECT
     input wire              EOR_IN,     // V9990TANG: EOR del cursor, alineado con PA/PRI
-    output reg              EOR_OUT     // V9990TANG: EOR alineado con OUT
+    output reg              EOR_OUT     // V9990TANG: EOR alineado con el color de OUT
 );
     reg [5:0] p_addr;
     reg [15:0] p_data;
@@ -97,9 +98,19 @@ module T9990_PALETTE #(
      * con el color del punto siguiente (el fondo, BDC) en vez del del cursor.
      * En los puntos del cursor (CUR, por el mismo anillo que PRI) se toma el
      * color del punto anterior, el suyo; el resto sale como en el hito 1.
+     * CUR solo se marca en los modos de color directo (DIRECT): en BP2/BP4/BP6
+     * el cursor y el bitmap van juntos en la misma capa, los dos con el color
+     * k + 1, y alinear solo los puntos del cursor duplicaria su primer punto y
+     * se comeria el punto del bitmap que le sigue.
+     *
+     * EOR_OUT va con el color que sale en OUT: el del punto k (la entrada del
+     * anillo de la transparencia) con DIRECT, donde el selector usa esa
+     * transparencia y el color del cursor ya va alineado, y el del punto k + 1
+     * (la entrada siguiente) en los modos de paleta, donde la imagen es el color.
      ***************************************************************/
     logic [15:0] p_data_q;
     wire  [2+$bits(PRI)+$bits(PA)-1:0] pri_entry = buffer[pri_index];
+    wire  [2+$bits(PRI)+$bits(PA)-1:0] col_entry = buffer[pri_index + 1'd1];  // la del color de OUT (k + 1)
     wire         cur_d = (ENABLE_CURSOR_EOR != 0) && pri_entry[$bits(PRI)+$bits(PA)];
     wire  [15:0] p_color = cur_d ? p_data_q : p_data;
 
@@ -123,7 +134,7 @@ module T9990_PALETTE #(
         end
     end
 
-    // V9990TANG: EOR del cursor, leido del anillo junto con PRI: alineado con OUT
+    // V9990TANG: EOR del cursor, leido del anillo: alineado con el color de OUT
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             p_data_q <= 0;
@@ -131,7 +142,7 @@ module T9990_PALETTE #(
         end
         else if(DCLK_EN) begin
             p_data_q <= p_data;
-            EOR_OUT <= (ENABLE_CURSOR_EOR != 0) && pri_entry[$bits(PRI)+$bits(PA)+1];
+            EOR_OUT <= (ENABLE_CURSOR_EOR != 0) && (DIRECT ? pri_entry[$bits(PRI)+$bits(PA)+1] : col_entry[$bits(PRI)+$bits(PA)+1]);
         end
     end
 endmodule

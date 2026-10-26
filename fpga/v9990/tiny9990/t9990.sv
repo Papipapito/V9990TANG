@@ -49,7 +49,9 @@ endpackage
 module T9990 #(
     // V9990TANG: partes nuevas del core, cada una apagable para medir su coste o si falta sitio
     parameter           ENABLE_PAL        = 1,  // cuadro PAL de 313 lineas con R#7 bit 3
-    parameter           ENABLE_CURSOR_EOR = 1,  // cursor de openMSX: EOR (XOR 7FFFh), linea Y+1 (Y+2 entrelazado), color alineado
+    parameter           ENABLE_CURSOR_EOR = 1,  // cursor de openMSX: EOR (XOR 7FFFh), linea Y+1 (Y+2 entrelazado, en lineas del
+                                                // cuadro), Y desde el borde en overscan, color alineado en color directo,
+                                                // primera linea de imagen
     parameter           ENABLE_R16        = 1   // ajuste de posicion de la imagen de R#16
 ) (
     input wire          RESET_n,            // リセット
@@ -250,10 +252,12 @@ module T9990 #(
     logic [9:0] BG_Y;
     logic field;
     logic pal_frame;
+    logic pal_win;
 
     T9990_TIMING #(
         .ENABLE_PAL(ENABLE_PAL),
-        .ENABLE_R16(ENABLE_R16)
+        .ENABLE_R16(ENABLE_R16),
+        .ENABLE_SPR_LINE0(ENABLE_CURSOR_EOR)    // va con el cursor de openMSX (con 0, como el hito 1)
     ) u_tg (
         .RESET_n(rst_flag),
         .CLK,
@@ -287,6 +291,7 @@ module T9990 #(
 
         // V9990TANG
         .PAL_FRAME(pal_frame),
+        .PAL_WIN(pal_win),
         .FIELD(field)
     );
 
@@ -391,6 +396,17 @@ module T9990 #(
     logic [1:0] SP_PRI;
     logic [5:0] SP_PA;
     logic       SP_EOR;
+
+    // V9990TANG: linea del cursor en las coordenadas de openMSX (V9990SDLRasterizer.cc drawBxMode:
+    // cursorY = displayY - getCursorYOffset(), de 2 en 2 con EO, la del campo impar + 1). Con
+    // entrelazado el cursor va en lineas del cuadro, {linea del campo, EO}, como el bitmap (BG_Y); en
+    // overscan (B0/B2/B4: MCS = 1 sin HSCN) su Y cuenta desde donde empieza la imagen en los modos con
+    // borde: getCursorYOffset (V9990.hh) = border1 de displayNTSC_MCLK / displayPAL_MCLK, 14 o 41
+    // lineas. El +1 (+2 con entrelazado) del atributo lo suma T9990_SPRITE. Con ENABLE_CURSOR_EOR = 0
+    // el cursor usa SPR_Y, como en el hito 1.
+    wire [8:0] cur_line_fr = (REG.ILM && REG.EO && !REG.HSCN) ? {SPR_Y[7:0], STATUS.EO} : SPR_Y;
+    wire [8:0] cur_line    = cur_line_fr - ((REG.MCS && !REG.HSCN) ? (pal_win ? 9'd41 : 9'd14) : 9'd0);
+
 `ifndef DISABLE_SP
     T9990_SPRITE #(
         .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
@@ -407,6 +423,7 @@ module T9990 #(
         .FETCH_START(BG_START),
         .OUT_START(SPR_START),
         .VCNT(SPR_Y),
+        .CUR_VCNT((ENABLE_CURSOR_EOR != 0) ? cur_line : SPR_Y),
 
         // MEM I/F
         .MEM(SP_MEM),
@@ -548,6 +565,16 @@ module T9990 #(
     logic       MUX_CUR;
     logic MUX_VDE;
     logic MUX_HDE;
+
+    // V9990TANG: modos de bitmap de color directo (BD8, BD16, YJK, YUV y YAE: T9990_BITMAP deja la capa
+    // de paleta transparente y el selector coge T9990_COLOR_DECODE). Solo en ellos el selector elige
+    // entre la paleta (cursor) y el bitmap con la transparencia de la paleta, y solo en ellos T9990_PALETTE
+    // alinea el color del cursor con esa transparencia; en BP2/BP4/BP6 el cursor va en la misma capa que
+    // el bitmap y sale con su temporizacion del hito 1.
+    wire bmp_direct = (REG.DSPM == T9990_REG::DSPM_BITMAP) &&
+                      ((REG.CLRM == T9990_REG::CLRM_16BPP) ||
+                       (REG.CLRM == T9990_REG::CLRM_8BPP && (REG.YAE || REG.PLTM != T9990_REG::PLTM_PALETTE)));
+
     T9990_PRIORITY #(
         .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
     ) u_pri (
@@ -561,7 +588,7 @@ module T9990 #(
 
         // 各モジュールから出力されたデータ
         .SP_DISABLE,    .SP_PRI,    .SP_PA,     .SP_EOR,
-        .SP_IS_CUR(REG.DSPM == T9990_REG::DSPM_BITMAP),
+        .SP_IS_CUR(bmp_direct),
         .PA_DISABLE,    .PA_PRI,    .PA_PA,
         .PB_DISABLE,    .PB_PRI,    .PB_PA,
         .BP_DISABLE,    .BP_PRI,    .BP_PA,
@@ -598,6 +625,7 @@ module T9990 #(
         .OUT(PAL_CLR),
 
         // V9990TANG: cursor (color alineado y EOR)
+        .DIRECT(bmp_direct),
         .CUR_IN(MUX_CUR),
         .EOR_IN(MUX_EOR),
         .EOR_OUT(PAL_EOR)
