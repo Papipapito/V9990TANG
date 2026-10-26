@@ -183,11 +183,15 @@ def trigger_table():
             cur = step(cur, t == -1)
             t += 1
         latch = max(e for e in samples[G2] if e <= 8)
-        def pair(gg):
-            ss = [e for e in samples[gg] if e <= latch - 1]
+        def pair(gg, at):
+            ss = [e for e in samples[gg] if e <= at - 1]
             return ss[-2], ss[-1]
         fresh = [e for e in samples[G2] if e >= 0][1]
-        rows.append(((g, ph), num[(g, ph)], latch, pair(G0), pair(G1), fresh))
+        # el pre-WAIT decide en el ciclo [fresh, fresh+1) con el ff_addr que se
+        # latcheo en el flanco 'fresh': su A7-A0 es la ultima pareja del g1
+        # anterior a ese flanco, que puede ser mas vieja que la del latch final
+        rows.append(((g, ph), num[(g, ph)], latch, pair(G0, latch), pair(G1, latch), fresh,
+                     pair(G1, fresh)))
     return rows
 
 
@@ -217,10 +221,12 @@ def main():
             wt = witness(jh, g)
             print("  g%d: %d ciclos (p. ej. disparos %s)" % (g, w, ", ".join(wt[1]) if wt[1] else "-"))
     print()
-    print("disparo en (estado)  latch de ff_addr  pareja g0 (A15-A8)  pareja g1 (A7-A0)  2a muestra fresca del g2")
-    for (g, ph), n, latch, p0, p1, fr in trigger_table():
+    print("disparo en (estado)  latch de ff_addr  pareja g0 (A15-A8)  pareja g1 (A7-A0)  2a muestra fresca del g2"
+          "  pareja g1 en la decision del pre-WAIT")
+    for (g, ph), n, latch, p0, p1, fr, pd in trigger_table():
         print("g%d f%d (%d)            E0%+d              E0%+d / E0%+d         E0%+d / E0%+d        E0%+d"
-              % (g, ph, n, latch, p0[0], p0[1], p1[0], p1[1], fr))
+              "                    E0%+d / E0%+d"
+              % (g, ph, n, latch, p0[0], p0[1], p1[0], p1[1], fr, pd[0], pd[1]))
 
 
 if __name__ == "__main__":
