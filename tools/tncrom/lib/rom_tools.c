@@ -50,6 +50,19 @@ static uint16_t slt_hl;
 static uint16_t slt_bc;
 static uint16_t slt_de;
 
+#if defined(TNCROM_HOST_TEST)
+/***********************************************
+ * V9990TANG: banco del host (tools/tncrom/test): las llamadas a la BIOS van
+ * a un modelo del cartucho en C (test/host_mock.c)
+ ***********************************************/
+void    host_enaslt(uint8_t slt, uint16_t addr);
+void    host_wrslt(uint8_t slt, uint16_t addr, uint8_t data);
+uint8_t host_rdslt(uint8_t slt, uint16_t addr);
+void    host_xfer(uint8_t slt, uint16_t dst, const uint8_t *src, uint16_t size);
+static void bios_enaslt(void) { host_enaslt(slt_a, slt_hl); }
+static void bios_wrslt(void)  { host_wrslt(slt_a, slt_hl, slt_e); }
+static void bios_rdslt(void)  { slt_e = host_rdslt(slt_a, slt_hl); }
+#else
 static void bios_enaslt(void) __naked
 {
 __asm
@@ -94,6 +107,7 @@ __asm
     ret
 __endasm;
 }
+#endif
 
 /***********************************************
  * Page1スロット切り替え
@@ -242,6 +256,9 @@ void xfer_memory(uint8_t sltnum, VOID_PTR_t dst, VOID_PTR_t src, size_t size)
     // V9990TANG (port a SDCC): misma secuencia que el original (DI, pagina 2
     // al cartucho, LDIR, pagina 2 a RAMAD2, EI); la pila tiene que estar en
     // la pagina 3 (crt_msxdos.c lo comprueba al arrancar)
+#if defined(TNCROM_HOST_TEST)
+    host_xfer(sltnum, (uint16_t)(unsigned long)dst, (const uint8_t *)src, (uint16_t)size);
+#else
     slt_a = sltnum; slt_hl = (uint16_t)dst; slt_de = (uint16_t)src; slt_bc = size;
 __asm
     di
@@ -265,6 +282,7 @@ __asm
     pop     ix
     ei
 __endasm;
+#endif
 }
 
 /***********************************************

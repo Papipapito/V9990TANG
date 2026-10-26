@@ -60,10 +60,23 @@ static BDOS_FILE_t rom_file;        // ROM ファイルアクセス用
 static uint8_t image_val_mask;      // V9990TANG: mascara de banco que se escribe en 0Dh
 
 #define BUFFER_SIZE (8192)
-#if 1
+#if defined(TNCROM_HOST_TEST)
+// V9990TANG: banco del host (tools/tncrom/test): un array; bdos_fread_n del
+// banco lee aqui
+uint8_t tncrom_host_buffer[BUFFER_SIZE];
+static uint8_t *buffer = tncrom_host_buffer;
+#elif 1
 static uint8_t *buffer = (uint8_t*)(0x8000 - BUFFER_SIZE);
 #else
 static uint8_t buffer[BUFFER_SIZE];
+#endif
+
+// V9990TANG: EXPTBL (FCC1h); en el banco del host lo da el modelo de slots
+#if defined(TNCROM_HOST_TEST)
+uint8_t host_exptbl(uint8_t primary);
+#define EXPTBL(p)   host_exptbl(p)
+#else
+#define EXPTBL(p)   (*(uint8_t*)(0xFCC1 + (p)))
 #endif
 
 //
@@ -333,9 +346,11 @@ int check_cartridge(uint8_t sltnum)
     int res = -1;
     uint8_t save[4];
 
+#ifndef TNCROM_HOST_TEST    // V9990TANG: sin ensamblador en el banco del host
 __asm
     di
 __endasm;
+#endif
 
     // 元データを取得
     for(uint16_t addr = 0; addr < sizeof(save); addr++) save[addr] = rdslt(sltnum, addr);
@@ -373,9 +388,11 @@ err:
     // 元データに戻す
     for(uint16_t addr = 0; addr < sizeof(save); addr++) wrtslt(sltnum, addr, save[addr]);
 
+#ifndef TNCROM_HOST_TEST    // V9990TANG
 __asm
     ei
 __endasm;
+#endif
 
     return res;
 }
@@ -392,7 +409,7 @@ int search_cartridge(uint8_t *sltnum)
 {
     for(uint8_t primary = 0; primary < 4; primary++)
     {
-        if(*(uint8_t*)(0xFCC1 + primary) & 0x80)
+        if(EXPTBL(primary) & 0x80)
         {
             for(uint8_t secondary = 0; secondary < 4; secondary++)
             {
@@ -483,7 +500,7 @@ static int check_image_size(char *path, ROM_ATTR_PTR_t rom_attr, uint32_t *kb)
     *kb = (size + (uint32_t)1023) >> 10;
     if(*kb > (uint32_t)rom_attr->max_kb)
     {
-        printf(MSG_ERR_TOO_LARGE, rom_attr->name, *kb, rom_attr->max_kb);
+        printf(MSG_ERR_TOO_LARGE, rom_attr->name, (unsigned long)*kb, rom_attr->max_kb);
         return 1;
     }
     return 0;
@@ -611,7 +628,7 @@ int main(int argc, char *argv[])
         uint16_t window_kb = get_window_kb(main_param.sltnum);
         if(image_kb > (uint32_t)window_kb)
         {
-            printf(MSG_ERR_WINDOW, image_kb, window_kb);
+            printf(MSG_ERR_WINDOW, (unsigned long)image_kb, window_kb);
             return 1;
         }
     }
