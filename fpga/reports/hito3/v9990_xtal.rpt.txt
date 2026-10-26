@@ -12,27 +12,27 @@
   <Part Number>: GW2AR-LV18QN88C8/I7
   <Device>: GW2AR-18
   <Device Version>: C
-  <Created Time>:Mon Oct 26 05:11:13 2026
+  <Created Time>:Mon Oct 26 20:18:26 2026
 
 
 2. PnR Details
 
   Running placement:
     Placement Phase 0: CPU time = 0h 0m 11s, Elapsed time = 0h 0m 11s
-    Placement Phase 1: CPU time = 0h 0m 1s, Elapsed time = 0h 0m 1s
-    Placement Phase 2: CPU time = 0h 0m 17s, Elapsed time = 0h 0m 17s
-    Placement Phase 3: CPU time = 0h 1m 6s, Elapsed time = 0h 1m 6s
-    Total Placement: CPU time = 0h 1m 35s, Elapsed time = 0h 1m 35s
+    Placement Phase 1: CPU time = 0h 0m 2s, Elapsed time = 0h 0m 2s
+    Placement Phase 2: CPU time = 0h 0m 25s, Elapsed time = 0h 0m 25s
+    Placement Phase 3: CPU time = 0h 0m 40s, Elapsed time = 0h 0m 40s
+    Total Placement: CPU time = 0h 1m 18s, Elapsed time = 0h 1m 18s
  Running routing:
-    Routing Phase 0: CPU time = 0h 0m 0.012s, Elapsed time = 0h 0m 0.012s
-    Routing Phase 1: CPU time = 0h 0m 9s, Elapsed time = 0h 0m 9s
-    Routing Phase 2: CPU time = 0h 22m 50s, Elapsed time = 0h 22m 50s
+    Routing Phase 0: CPU time = 0h 0m 0.008s, Elapsed time = 0h 0m 0.009s
+    Routing Phase 1: CPU time = 0h 0m 11s, Elapsed time = 0h 0m 11s
+    Routing Phase 2: CPU time = 0h 0m 41s, Elapsed time = 0h 0m 41s
     Routing Phase 3: CPU time = 0h 0m 0s, Elapsed time = 0h 0m 0s
-    Total Routing: CPU time = 0h 22m 59s, Elapsed time = 0h 22m 59s
+    Total Routing: CPU time = 0h 0m 52s, Elapsed time = 0h 0m 52s
  Generate output files:
-    CPU time = 0h 0m 9s, Elapsed time = 0h 0m 9s
+    CPU time = 0h 0m 4s, Elapsed time = 0h 0m 4s
 
- Total Time and Memory Usage: CPU time = 0h 24m 44s, Elapsed time = 0h 24m 44s, Peak memory usage = 586MB
+ Total Time and Memory Usage: CPU time = 0h 2m 14s, Elapsed time = 0h 2m 14s, Peak memory usage = 623MB
 
 
 3. Resource Usage Summary
@@ -40,15 +40,15 @@
   --------------------------------------------------------------------------------
   Resources                   | Usage                               | Utilization
   --------------------------------------------------------------------------------
-  Logic                       | 13258/20736                         |  64%
-    --LUT,ALU,ROM16           | 13258(10663 LUT, 2595 ALU, 0 ROM16) | -
+  Logic                       | 13247/20736                         |  64%
+    --LUT,ALU,ROM16           | 13247(10658 LUT, 2589 ALU, 0 ROM16) | -
     --SSRAM(RAM16)            | 0                                   | -
-  Register                    | 5780/15915                          |  37%
+  Register                    | 5781/15915                          |  37%
     --Logic Register as Latch | 0/15552                             |  0%
-    --Logic Register as FF    | 5721/15552                          |  37%
+    --Logic Register as FF    | 5722/15552                          |  37%
     --I/O Register as Latch   | 0/363                               |  0%
     --I/O Register as FF      | 59/363                              |  17%
-  CLS                         | 8189/10368                          |  79%
+  CLS                         | 8267/10368                          |  80%
   I/O Port                    | 54/66                               |  82%
   I/O Buf                     | 47                                  | -
     --Input Buf               | 13                                  | -
@@ -86,7 +86,7 @@
   Clock Resource| Usage         | Utilization 
   ------------------------------------------
   PRIMARY       | 8/8           | 100%
-  LW            | 7/8           | 88%
+  LW            | 6/8           | 75%
   GCLK_PIN      | 4/5           | 80%
   CLKDIV        | 3/8           | 38%
   rPLL          | 2/2           | 100%
@@ -103,11 +103,10 @@
   CLK_TMDS_P     | PRIMARY        |  TL BR BL
   CLK_BASE       | PRIMARY        |  TR TL BR BL
   O_sdram_clk_d  | PRIMARY        |  TR
-  CLK_DAC        | PRIMARY        |  BR
+  CLK_DAC        | PRIMARY        |  BR BL
   Video.DCLK     | PRIMARY        |  TL BR BL
   u_clk/CLK_5_4M | PRIMARY        |  TR
   DAC_SDMODE_n_d | LW             |  -
-  u_uma/det_we[1]| LW             |  -
   u_tmds/n36_6   | LW             |  -
   u_main/u_v9990/dclk_en| LW             |  -
   u_main/u_v9990/u_vdp/rst_ff| LW             |  -

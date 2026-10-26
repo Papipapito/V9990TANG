@@ -45,7 +45,7 @@ Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\s
 Analyzing Verilog file 'C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv'
 Compiling module 'TNCART_BOARD_WT200B_TOP'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\tnCart_board_wt200b_top.sv":57)
 Compiling module 'BOARD_WT200B_CLOCK'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_clock.sv":49)
-Compiling module 'BOARD_WT200B_GUARD'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_guard.sv":71)
+Compiling module 'BOARD_WT200B_GUARD'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\wt200b\board_wt200b_guard.sv":93)
 Compiling module 'SYSTEM_RESET'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\system\system_reset.sv":51)
 Compiling module 'BOARD_REV1_BUS(Bus=BUS_IF_MSX)'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_bus.sv":39)
 Compiling module 'PIN_FILTER'("C:\Users\alber\proyectosAI\msx\V9990TANG-wt\integ\fpga\src\board\rev1\board_rev1_bus.sv":287)
