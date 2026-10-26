@@ -14,7 +14,10 @@
 #            REUSE=1 (no recompila si el binario del caso ya existe),
 #            GEN="<-Gparam=valor ...>" (variantes del banco: -GSCAN=0, -GPWIO=0,
 #            -GAHOLD=0, -GTAILG=0, -GPW_K=n; ver tb_bus.sv) con TAGX=<sufijo>
-#            para que sus logs no pisen los de la configuracion normal.
+#            para que sus logs no pisen los de la configuracion normal;
+#            CART_SV=<fichero> compila el banco con otro cartridge_v9990.sv (el
+#            mutante sin rearme: git show main:fpga/src/cartridge_v9990.sv > f;
+#            CART_SV=f TAGX=sinrearme fpga/tb/bus/run.sh 0:60:0 1:60:0).
 # Compila cada caso una vez en ~/.tb_bus_obj (en el disco de WSL: el 9p de
 # /mnt/c es lento) y lo ejecuta a todas las frecuencias en paralelo; deja los
 # logs en fpga/tb/bus/out/ (ignorado por git).
@@ -23,7 +26,9 @@
 # ============================================================================
 HERE="$(cd "$(dirname "$0")" && pwd)"
 if ! grep -qi microsoft /proc/version 2>/dev/null; then
-    WSLENV=HZS:SEED:N:EXTRA:REUSE:GEN:TAGX MSYS_NO_PATHCONV=1 exec wsl -e bash "$(echo "$HERE" | sed -e 's,^/\([a-zA-Z]\)/,/mnt/\L\1/,')/run.sh" "$@"
+    # WSLENV /p solo traduce rutas de Windows (C:/...), no las de Git Bash (/c/...)
+    [ -n "$CART_SV" ] && command -v cygpath >/dev/null && CART_SV="$(cygpath -m "$CART_SV")" && export CART_SV
+    WSLENV=HZS:SEED:N:EXTRA:REUSE:GEN:TAGX:CART_SV/p MSYS_NO_PATHCONV=1 exec wsl -e bash "$(echo "$HERE" | sed -e 's,^/\([a-zA-Z]\)/,/mnt/\L\1/,')/run.sh" "$@"
 fi
 FPGA="$HERE/../.."
 OUT="$HERE/out"
@@ -42,7 +47,7 @@ for f in t9990_port t9990_timing t9990 t9990_bitmap t9990_blit t9990_blit_addr t
          t9990_ram t9990_selector t9990_shift_buffer t9990_sprite; do
     SRC="$SRC $FPGA/v9990/tiny9990/$f.sv"
 done
-SRC="$SRC $FPGA/src/peripheral/msx/expansion_slot.sv $FPGA/src/board/rev1/board_rev1_bus.sv $FPGA/src/cartridge_v9990.sv"
+SRC="$SRC $FPGA/src/peripheral/msx/expansion_slot.sv $FPGA/src/board/rev1/board_rev1_bus.sv ${CART_SV:-$FPGA/src/cartridge_v9990.sv}"
 SRC="$SRC $HERE/dpb_sim.sv $HERE/sdram_host_model.sv $HERE/megaram_mock.sv $HERE/tb_bus.sv"
 
 status=0
