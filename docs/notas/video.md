@@ -6,11 +6,15 @@ Parte de vídeo del hito 7 y palanca de CLS del plan (estudio, sección 9). Rama
 nuevos: el banco `fpga/tb/video/`, `fpga/check_video.tcl` y esta nota. Nada de esto
 cambia la cadencia del UMA ni añade relojes.
 
-El trabajo lo empezó un implementador que se cortó por un límite de sesión; en la
-revisión (26/10/2026) se repasó el RTL contra el original, se comprobaron las citas de
-openMSX y se volvieron a correr desde cero todas las pruebas y las síntesis de abajo:
-los resultados son los mismos (las síntesis, con los `*_syn_rsc.xml` idénticos byte a
-byte).
+El trabajo lo empezó un implementador que se cortó por un límite de sesión y lo han
+revisado dos más (26/10/2026, por la mañana y por la tarde). En cada revisión se repasó
+el RTL contra el original del hito 1, se comprobaron las citas de openMSX (en su
+`master` de GitHub) y se volvieron a correr desde cero todas las pruebas y las síntesis
+de abajo, con `build/` e `impl/` apartados antes: los resultados salen siempre los
+mismos (las síntesis, con los `*_syn_rsc.xml` idénticos byte a byte). En la segunda
+revisión el área core ya tenía el cuadro PAL commiteado en su rama (`hito/core`,
+700baa1, "Core: cuadro PAL de 313 lineas (R#7 bit 3) y ajuste de posicion de R#16"):
+las referencias a su RTL de abajo son a ese commit.
 
 ## Qué hace
 
@@ -70,9 +74,9 @@ y 2 abajo. Esto **supone** que el área core pone el cuadro PAL así (sincronism
 líneas en la línea 0 y borde desde la 18); si no, la ventana se mueve con
 `V_BACKPORCH_PAL = 2a + 4`, con `a` la primera línea de borde.
 
-El área core (su árbol de trabajo del 26/10, sin commitear todavía al escribir esto) pone
-el cuadro PAL justo así: `t9990_timing.sv`, `V212P_*` = 18 de borrado arriba contando 3
-de sincronismo, 41 de borde, 212 de imagen, 37 de borde y 5 de borrado (313), y `V290P_*`
+El área core (rama `hito/core`, 700baa1) pone el cuadro PAL justo así, con R#16 = 00h
+(con otro valor mueve el sincronismo frente a la imagen; ver "Riesgos"):
+`t9990_timing.sv`, `V212P_*` = 18 de borrado arriba contando 3 de sincronismo, 41 de borde, 212 de imagen, 37 de borde y 5 de borrado (313), y `V290P_*`
 = 18 + 290 + 5 en B2/B4 (openMSX `displayPAL_XTAL = {313, 15, 0, 290, 0}`). En B2/B4 la
 imagen son 290 líneas de entrada (580 de salida) y la ventana de 576 deja fuera la primera
 y la última: 290 no caben en 288. En NTSC la ventana de tnCart del hito 1 (35-514, las
@@ -126,8 +130,9 @@ Parámetro `BLEND` en `VIDEO_UPSCAN` y `VIDEO_UPSCAN_STRETCH_BUFFER`, 1 por defe
 ## Contratos con la integración y con el área core
 
 1. **`cartridge_v9990.sv` tiene que conducir `Video.PAL`** con la salida PAL del T9990
-   (área core; en su árbol la salida se llama `PAL`, así que `.PAL(Video.PAL)` en la
-   instancia `u_vdp`). Hasta que el core la tenga, `assign Video.PAL = 1'b0;`. Sin conducir,
+   (área core, `hito/core` 700baa1: la salida se llama `PAL`, así que `.PAL(Video.PAL)` en
+   la instancia `u_vdp`, junto al `.EO(Video.FIELD)` que ya hay). Hasta que el core esté en
+   la integración, `assign Video.PAL = 1'b0;`. Sin conducir,
    Gowin avisa `EX0211 ... "Video_PAL" ... has no driver, assigning undriven bits to Z`
    y el valor que acabe usando no está garantizado.
 2. **Cuándo puede cambiar `PAL`**: tiene que valer el del cuadro N al acabar el VSYNC de
@@ -138,10 +143,11 @@ Parámetro `BLEND` en `VIDEO_UPSCAN` y `VIDEO_UPSCAN_STRETCH_BUFFER`, 1 por defe
    flanco de subida de `VS_n`); falla con 259 líneas antes y con 21 000 ciclos después.
    Lo natural en el core, fijarlo en `v_rst` como `STATUS.EO` (un ciclo de `CLK_BASE`
    antes de que `Video.VS_n` baje), queda con casi 3 líneas de margen; puede ir directo o
-   registrado con `Video.DCLK`. Lo que tiene el área core en su árbol de trabajo (26/10,
-   sin commitear) cumple: su salida `PAL` del `T9990` (`PAL_FRAME` = `pal_s`, tomado al
-   empezar cada cuadro de sincronismo y pasado por un registro de `CLK`) cambia en el
-   mismo flanco que su salida `VS`, y `cartridge_v9990.sv` registra `vs` en el flanco
+   registrado con `Video.DCLK`. Lo que tiene el área core (`hito/core` 700baa1) cumple:
+   su salida `PAL` del `T9990` (`PAL_FRAME` = `pal_s` de `t9990_timing.sv`, tomado al
+   empezar cada cuadro de sincronismo y pasado por un registro de `CLK`, `pal_q` en
+   `t9990.sv`) cambia en el mismo flanco que su salida `VS`, también con R#16 (el cuadro
+   de sincronismo es el que va de VS a VS), y `cartridge_v9990.sv` registra `vs` en el flanco
    siguiente de `Video.DCLK` para sacar `Video.VS_n`: con `assign Video.PAL = pal;`
    directo, `PAL` cambia como mucho un periodo de `DCLK` (20 ciclos de `CLK_BASE` en B1)
    antes de que baje `Video.VS_n`, dentro del margen medido.
@@ -159,7 +165,14 @@ Parámetro `BLEND` en `VIDEO_UPSCAN` y `VIDEO_UPSCAN_STRETCH_BUFFER`, 1 por defe
    y la analiza el STA.
 5. **Documentación**: en `docs/VERIFICATION.md`, la matriz de monitores necesita filas
    para 855 x 626 a 50,45 Hz (`xtal`) y 50,16 Hz (`sync`); en `docs/ARCHITECTURE.md`, el
-   upscan "escala a 720x480 o 720x576" y el parámetro `BLEND`.
+   upscan "escala a 720x480 o 720x576" y el parámetro `BLEND`. En la tabla de cruces de
+   `docs/ARCHITECTURE.md`, la fila del buffer de líneas dice "márgenes calculados (~1020
+   ciclos con FIELD=0, ~165 con FIELD=1), no simulados": ahora están simulados (1 021-1 038
+   y 166-183 ciclos de 27 MHz según la fase, `run.sh`, en NTSC y en PAL). Y en "Riesgos
+   que el .sdc no cubre", el segundo driver de `R_ADDR`: el netlist de Gowin simulado se
+   comporta como el RTL sin esa línea (`gowin_netlist/run_nl.sh`), es decir, en el chip,
+   con `BLEND = 1`, B4 avanza 2 en el primer ciclo de cada línea y no enseña nunca el
+   punto 16k+1 (Verilator, con `-Wno-MULTIDRIVEN`, deja ganar el "mantener").
 6. **Disposición del cuadro PAL en el core**: la ventana supone la zona de borde e imagen
    en las líneas de entrada 18-307 (sección "Salida"). Si el core la pone en otro
    sitio, la integración cambia `V_BACKPORCH_PAL`.
@@ -169,8 +182,9 @@ Parámetro `BLEND` en `VIDEO_UPSCAN` y `VIDEO_UPSCAN_STRETCH_BUFFER`, 1 por defe
 Todo en WSL (`wsl -e bash -lc "cd /mnt/c/.../fpga/tb/video && ..."`), Verilator 5.020 e
 Icarus 12. Salidas en `fpga/tb/video/build/` (ignorado por git).
 
-Resultados de la revisión del 26/10/2026, con `build/` borrado antes (iguales a los del
-primer implementador):
+Resultados de las revisiones del 26/10/2026, con `build/` apartado antes (las dos dan
+lo mismo que el primer implementador, cifra a cifra; en la segunda, la matriz tardó unos
+20 minutos con 6 casos en paralelo, `pallag` 13 y `mutants.sh` 3):
 
 | Orden | Qué es | Resultado |
 |---|---|---|
@@ -257,13 +271,19 @@ Síntesis (`run syn`, `impl/gwsynthesis/<base>_syn_rsc.xml`; LUT / ALU / FF / BS
   direcciones (no se han desglosado).
 - El buffer solo, fuera de contexto (`gowin_netlist/`, un canal): 434 LUT / 451 ALU /
   77 FF con `BLEND = 1` (igual que el del hito 1) y 198 / 12 / 77 con `BLEND = 0`.
+- Avisos de la síntesis (`WARN` y `ERROR` del `.log`): los mismos 8 que el hito 1 en
+  todas las variantes (entradas sin usar y módulos barridos), más el `EX0211` de
+  `Video_PAL` cuando `PAL` va sin conducir. Ninguno de los ficheros de vídeo da avisos
+  nuevos; el segundo driver de `R_ADDR` no lo avisa Gowin ni en el hito 1.
 
 P&R (`VIDEO_PNR=1`, con `fpga/constraints/v9990_xtal.sdc`; place 2, route 1), las dos
 con `PAL` vivo, y la puerta de `tools/check_build.py` en modo `--parcial` (sin `.sdf`, así
 que el punto 6, el modelo de `DCLK`, queda sin comprobar), con las referencias del hito 1
 (`--ref-logic 14140 --ref-cls 8679 --ref-bsram 24 --tol 0.01 --max-cls 9331 --rpll 2
---fmax CLK_BASE=109`). Repetidas en la revisión: los `.rpt.txt` salen iguales línea a
-línea a los de la primera vez salvo las fechas. `BLEND = 1` pasa la puerta parcial;
+--fmax CLK_BASE=109`). Repetidas en las dos revisiones: los `.rpt.txt` salen iguales
+línea a línea a los de la primera vez salvo fechas y tiempos de CPU, y en la segunda el
+cuerpo de los dos `.fs` es idéntico al de la anterior (solo cambia `//Created Time`).
+`BLEND = 1` pasa la puerta parcial;
 `BLEND = 0` la suspende en la lógica y los CLS (-14 % y -11 % frente a la referencia de
 ±1 %, que es lo que se busca) y en la Fmax de `CLK_BASE` (108,669 MHz frente a 109):
 
@@ -295,18 +315,26 @@ línea a los de la primera vez salvo las fechas. `BLEND = 1` pasa la puerta parc
 - **En placa, nada**: ni 855 x 626 en ningún monitor ni `BLEND = 0` a la vista. Un cambio
   de PAL cambia el número de líneas del cuadro (524 <-> 626) y el monitor se volverá a
   enganchar, como en cualquier cambio de modo.
-- **El cuadro PAL del core no está en `main` todavía**: el banco usa una fuente sintética
-  con la disposición supuesta (VS de 3 líneas en la línea 0, borde desde la 18), que es
-  la que tiene el área core en su árbol de trabajo, sin commitear al escribir esto.
-  Cuando el core tenga PAL en `main` hay que repetir el banco con su `T9990` o, en
-  placa, mirar dónde cae la imagen en la ventana.
+- **El banco no usa el `T9990` real**: la fuente es sintética, con la disposición del
+  cuadro PAL que tiene el área core en `hito/core` (700baa1: VS de 3 líneas en la línea 0,
+  borde desde la 18, leída de su `t9990_timing.sv`, no simulada aquí). El core no está en
+  `main` y su banco (`fpga/tb/core/` de su árbol) es suyo; cuando la integración junte
+  las dos ramas hay que mirar con el `T9990` (en un banco de la integración o en placa)
+  dónde caen el borde y la imagen PAL dentro de la ventana 42-617.
+- **Ramas sin simular contra el modelo**: las de `RATIO_1_125` (macro no definida en este
+  repo) y B5/B6 (el core no las genera) de `g_nearest` solo están compiladas (Verilator
+  `--lint-only` con y sin la macro, sin errores) y, B5/B6, comparadas netlist de Gowin
+  frente a RTL en `gowin_netlist/`; la caja blanca de `tb_video.sv` cubre B1-B4 sin la
+  macro.
 - **R#16 y la ventana fija**: el ajuste vertical de R#16 mueve la imagen respecto del
   sincronismo de -7 a +8 líneas de entrada (openMSX, `V9990.hh`, `getTopBorder()`), es
   decir de -14 a +16 líneas de salida, y la ventana de DE no se mueve: en PAL solo hay 1
   línea de entrada de borde fuera de la ventana arriba y 1 abajo, así que con R#16 se
   recorta borde (B1/B3) o imagen (B2/B4, que no tienen borde), como en NTSC con la ventana
   de tnCart. Es lo que haría un monitor con la imagen corrida; no se ha simulado con el
-  core.
+  core. El área core ya tiene R#16 (`ENABLE_R16 = 1` en `hito/core`, mueve HS/VS frente a
+  la ventana y deja la ventana quieta), así que este recorte se verá en cuanto un
+  programa ponga en R#16 un ajuste vertical distinto de 0.
 - **Entrelazado PAL**: como en NTSC, bob con FIELD (el tiny9990 no hace medias líneas).
 - **B4 con `BLEND = 1`** sigue sin enseñar el punto 16k+1 (defecto de tnCart que se
   conserva a propósito: la salida tiene que ser la del hito 1).
