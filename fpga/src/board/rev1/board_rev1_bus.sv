@@ -358,14 +358,21 @@ module BOARD_REV1_BUS #(
      * 10,74 MHz, mas que JUMP_HOLD + 1), asi que ese es un rebote del
      * mismo ciclo y las muestras ya tomadas siguen valiendo (si no, el rebote
      * retrasaria el pre-WAIT hasta la siguiente visita al g2).
+     * En el ciclo del flanco (trig visto, cuenta aun sin poner a 0) la cuenta
+     * es la del ciclo ANTERIOR del Z80: fresh vale 0 ahi. Si no, el /RD de un
+     * M1 que sigue a un IN/OUT a 60h/61h decidia con el IORQ_n filtrado y el
+     * ff_addr de ese IN/OUT (el filtro de IORQ ve subir /IORQ hasta ~10
+     * ciclos tarde) y metia un pre-WAIT en el M1 que solo soltaba K
+     * (fpga/tb/bus/tb_m1spur.sv; docs/notas/bus.md, seccion 2).
      ***************************************************************/
     logic [1:0] fresh_cnt;
+    wire        fresh_rst = trig && (jhold == 4'd0);    // flanco de un ciclo nuevo del Z80
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)                                    fresh_cnt <= 2'd0;
-        else if(trig && jhold == 4'd0)                  fresh_cnt <= mux_active[2] ? 2'd1 : 2'd0;
+        else if(fresh_rst)                              fresh_cnt <= mux_active[2] ? 2'd1 : 2'd0;
         else if(mux_active[2] && fresh_cnt != 2'd2)     fresh_cnt <= fresh_cnt + 2'd1;
     end
-    wire fresh = (fresh_cnt == 2'd2);
+    wire fresh = (fresh_cnt == 2'd2) && !fresh_rst;
 
     /***************************************************************
      * Guardia de bus vivo (como el MoonTANG): flancos del CLOCK filtrado en

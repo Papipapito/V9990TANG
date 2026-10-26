@@ -132,7 +132,8 @@ module tb_m1spur;
         else          $display("SRC=1 (lectura de nuestra ranura, PREWAIT_MEM_EN) DIORQ=%0.1f ns: ciclos buenos con pre-WAIT %0d de %0d", DIORQ, good_fire, tot);
         for (int g = 0; g < 6; g++)
             $display("  hueco /RD-/WR arriba -> /RD del M1 = %3.0f ns: pre-WAIT espurio en el M1 en %0d de 400", GAPS[g], hist[g]);
-        $display("%s", fail ? "M1SPUR_FAIL" : "M1SPUR_OK");
+        if (fail) $display("M1SPUR_FAIL");
+        else      $display("M1SPUR_OK");
         $finish;
     end
     initial begin #50.0e6; $display("TB_TIMEOUT"); $finish; end
