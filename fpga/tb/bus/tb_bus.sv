@@ -451,6 +451,9 @@ module tb_bus;
     // ------------------------------------------------------------------
     int last_pair [0:2];
     int cyc = 0;
+    int last_jump = -1;                 // estado (g*3+f) del ultimo salto, para +DBGPW
+    bit dbg_pw = 1'b0;                  // +DBGPW: cada pre-WAIT de mas de 8 ciclos
+    initial dbg_pw = $test$plusargs("DBGPW");
     initial begin
         for (int i = 0; i < 9; i++) jump_hist[i] = 0;
         for (int g = 0; g < 3; g++) begin revisit_max[g] = 0; last_pair[g] = -1; end
@@ -459,6 +462,7 @@ module tb_bus;
         cyc <= cyc + 1;
         if (rst_n) begin
             if (u_bus.trig_ok) begin
+                last_jump = u_bus.grp * 3 + u_bus.ph;
                 n_jump = n_jump + 1;
                 jump_hist[u_bus.grp * 3 + u_bus.ph] = jump_hist[u_bus.grp * 3 + u_bus.ph] + 1;
             end
@@ -775,6 +779,9 @@ module tb_bus;
         if (need_wait && (ls < 0.0 || ls > budget_w || cyc_sv)) st_wbud[c] = st_wbud[c] + 1;
         if (bounce_cyc) st_bn[c] = st_bn[c] + 1;
         if (need_wait && pw_seen_tb && t_pw >= t_stb) begin
+            if (dbg_pw && (t_pw - t_stb) / CLKP > 8.0)
+                $display("  [pre-WAIT %0t] %0.1f ciclos del strobe a pw_hold; ultimo salto en g%0d f%0d; A=%04h; Bus.ADDR=%04h",
+                         $time, (t_pw - t_stb) / CLKP, last_jump / 3, last_jump % 3, chk_a, Bus.ADDR);
             if ((t_pw - t_stb) / CLKP > pw_lat_max) pw_lat_max = int'((t_pw - t_stb) / CLKP);
             pw_fires = pw_fires + 1;
         end
