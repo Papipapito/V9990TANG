@@ -325,6 +325,7 @@ module tb_bus;
     real bounce_off = 0.0;
     int  bb_bad [0:2];              // P#0 con rebote: dato mal, por tipo de rebote
     int  bb_sv  [0:2];              // ciclos con rebote: /WAIT activado dentro del setup del Z80, por tipo
+    int  bb_unst2 = 0;              // lecturas con rebote de /IORQ y dato inestable en la ventana de setup
     real bb_wslot [0:2];            // ciclos con rebote: peor /RD|/WR -> /WAIT en el slot, por tipo
     bit  iorq_bounce_cyc = 1'b0;    // ciclo con rebote de IORQ (Bus.IORQ_n puede estar a 1 al llegar el RD/WR)
     bit  tb_go = 1'b0;              // arranque hecho (bus_ok a 1): antes no se cuentan eventos
@@ -837,7 +838,11 @@ module tb_bus;
         areg = rv;
         c = cat_of(port, 1'b0);
         st_n[c] = st_n[c] + 1;
-        if (n_unst_last) st_unst[c] = st_unst[c] + 1;
+        // dato inestable en un ciclo con rebote de /IORQ: va con los fallos de
+        // ese rebote (esperados a 5,37 MHz, seccion 12 de la nota), no con los
+        // de la categoria
+        if (n_unst_last && bounce_cyc && bounce_kind == 2) bb_unst2 = bb_unst2 + 1;
+        else if (n_unst_last) st_unst[c] = st_unst[c] + 1;
         note_wait(c, ntw, is_ours(port) && port[3:1] == 3'b000 && V99_BASE == 8'h60 && !bounce_cyc);
         note_pw_port(port, prev_a);
         bounce_cyc = 1'b0;
@@ -1449,6 +1454,7 @@ module tb_bus;
         $display("   pre-WAIT en IN/OUT a puertos que no son 60h/61h: %0d (barrido de %0d puertos)", n_pw_spur, n_sweep);
         $display("   ciclos con rebote: P#0 con dato mal / /WAIT dentro del setup del Z80: rebote de /RD o /WR %0d / %0d, de /IORQ %0d / %0d; peor /WAIT en el slot %0.1f / %0.1f ns",
                  bb_bad[1], bb_sv[1], bb_bad[2], bb_sv[2], bb_wslot[1], bb_wslot[2]);
+        $display("   ciclos con rebote de /IORQ: lecturas con dato inestable %0d", bb_unst2);
         $display("   rebotes inyectados %0d; RD/WR sin E/S: %0d con /WAIT; sin dispositivo: rafaga maxima de /WAIT %0d ciclos",
                  n_bounce, glitch_wait, nodev_wait_max);
         $display("   conduccion: sin lectura legitima %0d, tarde %0d, choques %0d; Z80 colgado %0d; /WAIT soltado dentro del setup %0d (informativo)",
@@ -1482,11 +1488,11 @@ module tb_bus;
             // rebotes de /RD o /WR: nada cambia; de /IORQ en la visita rapida: el
             // pre-WAIT espera una vuelta (9 ciclos): a 3,58 cabe, a 5,37 no
             if (bb_bad[1] || bb_sv[1]) fail++;
-            if (hz < 4000000 && (bb_bad[2] || bb_sv[2])) fail++;
-            if (hz >= 4000000 && (bb_bad[2] || bb_sv[2])) expd++;
+            if (hz < 4000000 && (bb_bad[2] || bb_sv[2] || bb_unst2)) fail++;
+            if (hz >= 4000000 && (bb_bad[2] || bb_sv[2] || bb_unst2)) expd++;
         end
         else begin
-            if (bb_bad[1] || bb_sv[1] || bb_bad[2] || bb_sv[2]) expd++;
+            if (bb_bad[1] || bb_sv[1] || bb_bad[2] || bb_sv[2] || bb_unst2) expd++;
             if (slow == 1) begin
                 // 7,16: lecturas de P#2-6 dentro de los 224 ns de 2,5 T - 125
                 if (st_bad[4] || st_unst[4]) fail++;
