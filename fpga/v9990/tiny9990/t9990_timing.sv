@@ -535,16 +535,21 @@ module T9990_TIMING #(
                                   (!REG.HSCN && REG.DCKM == T9990_REG::DCKM_DIV2) ? (adj_k <<< 1) : (adj_k <<< 2);
     wire signed [4:0] adj_v_new = $signed({1'b0, adj_tv}) - 5'sd7;
 
-    // la ventana pasa por (0,0): se toman R#16 y se arrastra el sincronismo a su posicion
-    wire win_frame = DCLK_EN && v_rst;
-
-    // posicion de s_h/s_v cuando la ventana esta en (0,0): (adj_h, adj_v) normalizado
-    wire [9:0]         h_total   = H_RESET + 2'd2;          // puntos por linea
-    wire [9:0]         v_total_s = V_TOTAL_S + 1'd1;        // lineas del cuadro de sincronismo en curso
-    wire               adj_h_neg = adj_h_new[6];
-    wire [9:0]         sh0       = adj_h_neg ? (h_total + {{3{adj_h_new[6]}}, adj_h_new}) : {3'b000, adj_h_new};
-    wire signed [5:0]  sv_pre    = {adj_v_new[4], adj_v_new} - {5'b00000, adj_h_neg};
-    wire [9:0]         sv0       = sv_pre[5] ? (v_total_s + {{4{sv_pre[5]}}, sv_pre}) : {4'b0000, sv_pre};
+    // Reajuste: en la linea TELE_LINE de la ventana, punto tele_h, se toma R#16 y se lleva el sincronismo
+    // a la posicion ventana + desplazamiento (s_h = h + adj_h, s_v = v + adj_v, sin vueltas). En regimen
+    // estable no cambia nada (s_h/s_v ya estan ahi). Se hace ahi y no en el (0,0) de la ventana porque el
+    // limite del cuadro de sincronismo cae a -9..+8 lineas del (0,0): un reajuste que lo cruzase sacaria
+    // dos VS seguidos o se saltaria uno (con R#16 de F0h a 10h, dos VS a 2 lineas; de 70h a 80h, 509
+    // lineas sin VS) y lo mismo con HS en la linea. En la linea 12 el sincronismo esta en su linea
+    // 5..20, despues del VS (lineas 0-2) y lejos del final del cuadro, y el punto tele_h + 1 + adj_h cae
+    // despues del HS y antes del final de la linea en todos los modos (adj_h de -28 a +32): el cambio
+    // de R#16 deja UN cuadro de sincronismo de 262/313 +- 16 lineas y una linea de +- 60 puntos, en el
+    // borrado superior (la ventana no tiene DE hasta su linea 18).
+    localparam [8:0] TELE_LINE = 9'd12;
+    wire [9:0]  tele_h = H_SYNC_PERIOD + 10'd40;
+    wire        tele   = DCLK_EN && (h_cnt == tele_h) && (v_cnt == TELE_LINE);
+    wire [9:0]  sh_t   = tele_h + 10'd1 + {{3{adj_h_new[6]}}, adj_h_new};     // h_cnt despues del flanco + adj_h
+    wire [8:0]  sv_t   = TELE_LINE + {{4{adj_v_new[4]}}, adj_v_new};    // v_cnt + adj_v
 
     logic signed [6:0] adj_h_q;
     logic signed [4:0] adj_v_q;
@@ -557,9 +562,11 @@ module T9990_TIMING #(
     logic       eo_s;
 
     // el VS llega antes que el (0,0) de la ventana, o con el: el EO del cuadro nuevo aun no ha cambiado
+    // (adj_h_q/adj_v_q: el desplazamiento en vigor, tomado en el ultimo reajuste)
     wire sync_leads = !(adj_v_q < 0 || (adj_v_q == 0 && adj_h_q < 0));
-    wire s_frame = win_frame ? (sh0 == 0 && sv0 == 0) : (DCLK_EN && s_vrst);    // empieza un cuadro de sincronismo
+    wire s_frame = DCLK_EN && s_vrst && !tele;                                  // empieza un cuadro de sincronismo
     wire eo_next = REG.ILM ? !STATUS.EO : 1'b0;                                 // el EO que la ventana pone en v_rst
+    wire win_frame = DCLK_EN && v_rst;                                          // (0,0) de la ventana (sin R#16)
 
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
@@ -578,15 +585,16 @@ module T9990_TIMING #(
             s_hrst <= 0;
             s_vrst <= 0;
         end
-        else if(win_frame) begin
+        else if(tele) begin
+            // los mismos valores que daria la cuenta libre con s_h/s_v en (sh_t, sv_t)
             adj_h_q <= adj_h_new;
             adj_v_q <= adj_v_new;
-            s_h    <= sh0;
-            s_v    <= sv0[8:0];
-            s_hrst <= (sh0 == h_total - 1'd1);
-            s_vrst <= (sh0 == h_total - 1'd1) && (sv0 == v_total_s - 1'd1);
-            hs_s   <= (sh0 <= H_SYNC_PERIOD);
-            vs_s   <= (sv0 <= V_SYNC_PERIOD);
+            s_h    <= sh_t;
+            s_v    <= sv_t;
+            s_hrst <= (sh_t == H_RESET + 1'd1);
+            s_vrst <= (sh_t == H_RESET + 1'd1) && (sv_t == V_TOTAL_S[8:0]);
+            hs_s   <= (sh_t <= H_SYNC_PERIOD);
+            vs_s   <= (sv_t <= V_SYNC_PERIOD[8:0]);
         end
         else if(DCLK_EN) begin
             // mismas reglas que h_cnt/v_cnt/HS/VS del hito 1, sobre s_h/s_v
@@ -611,7 +619,7 @@ module T9990_TIMING #(
         else if(ENABLE_R16 != 0) begin
             if(s_frame) begin
                 pal_s <= pal_req;
-                eo_s  <= (win_frame || sync_leads) ? eo_next : STATUS.EO;
+                eo_s  <= sync_leads ? eo_next : STATUS.EO;
             end
         end
         else if(win_frame) begin
