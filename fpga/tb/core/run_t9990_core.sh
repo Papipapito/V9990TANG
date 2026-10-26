@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_t9990_core.sh [prueba ...] -- banco del core (tb_t9990_core.sv) en Verilator 5.020 (WSL).
-#   pruebas: geom pal blit ports eor r16 assert hito1 replay   (sin argumentos: todas menos replay)
+#   pruebas: geom pal blit ports eor r16 r16chg assert hito1 replay   (sin argumentos: todas menos replay)
 #   geom    geometria 1368 x 262 (313 con PAL) en B1/P1/B3/B2/B4, con carga en el canal 0, con R#16 y
 #           con C25M en B1                                -> GEOM_OK
 #   pal     cuadro PAL de 313 lineas (+PALT=1)            -> PALT_OK
@@ -9,6 +9,9 @@
 #   eor     cursores con la semantica de openMSX sobre BD16, BD16 entrelazado, BP4 y B2 BP4 (NTSC y PAL)
 #           (+EOR=1)                                      -> EOR_OK
 #   r16     R#16 en B1/P1/B3/P2/B2/B4, entrelazado y PAL (+R16T=1) -> R16_OK
+#   r16chg  R#16 cambiado en marcha en B1 entrelazado y B4 PAL entrelazado: un cuadro de +-16 lineas y
+#           una linea de +-60 puntos por cambio, nunca dos VS seguidos ni un cuadro sin VS (+R16CHG=1)
+#                                                         -> R16CHG_OK
 #   assert  ACK de la VRAM 8 ciclos tarde (+ACKDLY=8): la asercion de ranura perdida tiene que saltar
 #   hito1   la salida de video (HS, VS, R, G, B, DE, EO, IL en cada DCLK_EN, +VIDDUMP) del core de trabajo
 #           con R#16 = 00h y sin PAL, identica punto a punto a la del core del hito 1 (commit 20936e6, con
@@ -45,7 +48,7 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
     WSLENV=VOPT:OBJTAG:REPLAY:VRAMOUT:OMSX MSYS_NO_PATHCONV=1 exec wsl -d Ubuntu-24.04 -- bash "$(pwd | sed s,^/c/,/mnt/c/,)/tb/core/run_t9990_core.sh" "$@"
 fi
 source tb/core/core_sources.sh
-TESTS="${*:-geom pal blit ports eor r16 assert hito1}"
+TESTS="${*:-geom pal blit ports eor r16 r16chg assert hito1}"
 ROOT=$HOME/.cache/v99tang_core
 OBJ=$ROOT/work_$(echo "$VOPT$OBJTAG" | md5sum | cut -c1-8)    # OBJTAG: otro directorio de objetos con las mismas VOPT
 LOG=$ROOT/log_$$
@@ -95,6 +98,7 @@ for t in $TESTS; do
     ports)  run ports "PORTS_OK" +PORTS=1 ;;
     eor)    run eor "EOR_OK" +EOR=1 ;;
     r16)    run r16 "R16_OK" +R16T=1 ;;
+    r16chg) run r16chg "R16CHG_OK" +R16CHG=1 ;;
     assert) run assert "ASSERT_SELFTEST_OK" +R6=130 +ACKDLY=8 +FRAMES=1 ;;
     hito1)
         H1=$ROOT/hito1
