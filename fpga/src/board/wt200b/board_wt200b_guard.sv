@@ -39,20 +39,38 @@
 //  - POR: al cargar la FPGA, el rPLL base queda en reset POR_CYCLES ciclos.
 //  - Gestor del rPLL: suelta el reset (en sync, solo con el reloj del slot
 //    presente y en frecuencia), espera LOCK seguido LOCK_STABLE ciclos y da
-//    PLL_OK (2,43 ms: UG286-2.0.2E, nota a la tabla 5-2, avisa de que LOCK
-//    puede dar glitches mientras engancha y pide vigilarlo al menos 2 ms; el
-//    tiempo maximo de enganche no esta en las versiones del DS226 que se han
-//    podido leer: LOCK_TIMEOUT lo da por perdido a los 19,4 ms); sin
-//    enganche en LOCK_TIMEOUT, o si se pierde (LOCK bajo LOSS_CYCLES ciclos
+//    PLL_OK. DS226-2.7E (31/07/2026), tabla 3-20, GW2AR-18 C8/I7: TLOCKMAX
+//    1 ms y RSTMINPULSE 10 ns (el reset del rPLL dura 1,21 ms en el POR y 38
+//    us en cada reintento). UG286-2.0.2E, nota a la tabla 5-2: LOCK puede dar
+//    glitches mientras engancha y hay que vigilarlo al menos 2 ms (de ahi los
+//    2,43 ms de LOCK_STABLE). Sin enganche estable en LOCK_TIMEOUT (19,4 ms,
+//    19 veces el TLOCKMAX), o si se pierde (LOCK bajo LOSS_CYCLES ciclos
 //    seguidos, o en sync el reloj del slot ausente o fuera de frecuencia),
 //    quita PLL_OK, resetea el rPLL PLL_RST_CYCLES ciclos y lo reintenta. No
 //    hay lock pegajoso: PLL_OK sigue al PLL en todo momento.
-//  - Guardia de lock: DRIVE_EN_27 = PLL_OK y el sistema listo (SYS_READY,
-//    sincronizado con 2 FF); BOOT_HOLD_27 = PLL_OK y el sistema aun no listo,
-//    con un tope de HOLD_CYCLES (50 ms) que solo se rearma cuando el sistema
-//    llega a estar listo. Sin enganche, las dos a 0: el cartucho no saca nada
-//    al slot y el MSX arranca. Las dos son flops; cuando el sistema queda
-//    listo, DRIVE_EN_27 sube un ciclo antes de que baje BOOT_HOLD_27, asi que
+//  - Guardia de lock:
+//    DRIVE_EN_27 = PLL_OK, LOCK alto en este momento (lock_s, sin filtro) y
+//      el sistema listo (SYS_READY, sincronizado con 2 FF). Si LOCK baja, los
+//      pines se sueltan en 2-3 ciclos (unos 110 ns), aunque PLL_OK aguante
+//      los 152 us del filtro de perdida antes de mandar el diseno a reset.
+//      Contrapartida: un glitch de LOCK con el PLL enganchado corta un /WAIT
+//      en curso (sin reset: DRIVE_EN_27 vuelve con LOCK).
+//    BOOT_HOLD_27 = sistema aun no listo durante un arranque, con un tope de
+//      HOLD_CYCLES (50 ms) por arranque. Arranque en frio: desde que acaba la
+//      configuracion de la FPGA (xtal: el cristal esta siempre) o desde que
+//      hay reloj del slot (sync: el MSX encendido) hasta que el sistema queda
+//      listo por primera vez, con el PLL enganchado o no; asi el MSX no corre
+//      mientras el cartucho arranca (POR, enganche y borrado de la megaROM),
+//      como con el bootloader de tnCart, cuyo reset retenia /WAIT desde la
+//      configuracion. En sync, si el reloj del slot desaparece (MSX apagado
+//      con la Tang alimentada por USB), el siguiente arranque vuelve a ser en
+//      frio. Tras perder el enganche con el sistema ya listo: desde que vuelve
+//      PLL_OK. El tope se rearma cuando el sistema queda listo y, en sync,
+//      cuando desaparece el reloj del slot.
+//    Sin enganche, DRIVE_EN_27 = 0 siempre y BOOT_HOLD_27 = 0 salvo en el
+//    arranque en frio, como mucho 50 ms: el cartucho queda mudo y el MSX
+//    arranca. Las dos son flops; cuando el sistema queda listo, DRIVE_EN_27
+//    sube un ciclo antes de que baje BOOT_HOLD_27, asi que
 //    /WAIT = BOOT_HOLD || (DRIVE_EN && wait) no tiene ningun hueco en el
 //    relevo.
 //
@@ -73,9 +91,9 @@ module BOARD_WT200B_GUARD #(
     parameter int   POR_CYCLES      = 32_768,       // 1,21 ms de reset del rPLL tras cargar la FPGA
     parameter int   PLL_RST_CYCLES  = 1_024,        // 38 us de reset del rPLL en cada reintento
     parameter int   LOCK_STABLE     = 65_536,       // 2,43 ms de LOCK seguido para dar el PLL por enganchado (UG286: >= 2 ms)
-    parameter int   LOCK_TIMEOUT    = 524_288,      // 19,4 ms sin enganche estable: reintento
-    parameter int   LOSS_CYCLES     = 4_096,        // 152 us de LOCK bajo seguido: enganche perdido
-    parameter int   HOLD_CYCLES     = 1_350_000,    // 50,0 ms: tope de BOOT_HOLD_27
+    parameter int   LOCK_TIMEOUT    = 524_288,      // 19,4 ms sin enganche estable: reintento (DS226-2.7E: TLOCKMAX 1 ms)
+    parameter int   LOSS_CYCLES     = 4_096,        // 152 us de LOCK bajo seguido: enganche perdido (los pines se sueltan antes)
+    parameter int   HOLD_CYCLES     = 1_350_000,    // 50,0 ms: tope de BOOT_HOLD_27 por arranque
     parameter int   SLOT_GAP        = 32,           // 1,19 us sin flanco de subida del reloj del slot: ausente
     parameter int   SLOT_WINDOW     = 4_096,        // ventana de medida de la frecuencia del slot (151,7 us)
     parameter int   SLOT_MIN        = 535,          // flancos por ventana: 543,0 a 3,579545 MHz; -1,5 %
@@ -91,7 +109,7 @@ module BOARD_WT200B_GUARD #(
     output wire     PLL_RESET,      // al RESET del rPLL base
     output wire     PLL_OK,         // rPLL base enganchado (filtrado)
     output wire     DRIVE_EN_27,    // el cartucho puede sacar /WAIT, datos e /INT
-    output wire     BOOT_HOLD_27,   // /WAIT de arranque (PLL enganchado, sistema aun no listo)
+    output wire     BOOT_HOLD_27,   // /WAIT de arranque (sistema aun no listo, con tope)
 
     // estado, para el LED y el banco
     output wire     POR_DONE,
@@ -133,7 +151,9 @@ module BOARD_WT200B_GUARD #(
 
     localparam int GAP_W = $clog2(SLOT_GAP + 1);
     localparam logic [GAP_W-1:0] GAP_TOP = GAP_W'(SLOT_GAP);
-    reg [GAP_W-1:0] gap_cnt = '0;
+    // arranca en "ausente": el reloj del slot cuenta como presente desde su
+    // primer flanco de subida, no desde la configuracion
+    reg [GAP_W-1:0] gap_cnt = GAP_TOP;
     always_ff @(posedge CLK_27M) begin
         if(sclk_rise)               gap_cnt <= '0;
         else if(gap_cnt != GAP_TOP) gap_cnt <= gap_cnt + 1'd1;
@@ -290,7 +310,13 @@ module BOARD_WT200B_GUARD #(
     localparam int H_W = $clog2(HOLD_CYCLES + 1);
     localparam logic [H_W-1:0] HOLD_LAST = H_W'(HOLD_CYCLES - 1);
     reg [H_W-1:0] hold_cnt = '0;
-    wire booting = pll_ok && !ready_d;
+
+    // arranque en frio: 1 al configurar la FPGA (GSR) hasta que el sistema
+    // queda listo; en sync vuelve a 1 sin reloj del slot (MSX apagado)
+    reg  cold    = 1'b1;
+    wire msx_on  = (SYNC != 0) ? SLOT_PRESENT : 1'b1;
+    wire msx_off = (SYNC != 0) && !SLOT_PRESENT;
+    wire booting = !ready_d && (pll_ok || (cold && msx_on));
 
     reg drive_en     = 1'b0;
     reg boot_hold    = 1'b0;
@@ -300,10 +326,19 @@ module BOARD_WT200B_GUARD #(
     assign HOLD_EXPIRED = hold_expired;
 
     always_ff @(posedge CLK_27M) begin
-        drive_en <= pll_ok && ready_s;
+        // lock_s sin filtro: con LOCK bajo, el cartucho suelta el slot ya
+        drive_en <= pll_ok && lock_s && ready_s;
 
         if(pll_ok && ready_s) begin
             // sistema listo: el tope se rearma para el proximo arranque
+            cold         <= 1'b0;
+            hold_cnt     <= '0;
+            hold_expired <= 1'b0;
+        end
+        else if(msx_off) begin
+            // sync sin reloj del slot: el proximo arranque es en frio, con
+            // su tope entero
+            cold         <= 1'b1;
             hold_cnt     <= '0;
             hold_expired <= 1'b0;
         end

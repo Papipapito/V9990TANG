@@ -16,8 +16,9 @@
 // Uso: tb/integ/run.sh (Verilator 5.020, --timing). Un binario por variante
 // (-GSYNC=0 / -GSYNC=1) y un escenario por ejecucion (+SCEN=...):
 //   lento    LOCK a los 3 ms de soltar el reset del rPLL
-//   perdida  xtal: un hueco de LOCK de 50 us (se ignora) y una perdida de
-//            1 ms; sync: el reloj del slot se para 2 ms
+//   perdida  xtal: un hueco de LOCK de 50 us (los pines se sueltan, sin
+//            reset) y una perdida de 1 ms; sync: el reloj del slot se para
+//            2 ms (el siguiente arranque es en frio)
 //   nunca    xtal: el rPLL no engancha nunca; sync: sin reloj del slot
 //   turbo    solo sync: reloj del slot a 5,37 MHz (fuera de rango)
 //   tope     el rPLL engancha y la SDRAM no da READY hasta los 70 ms
@@ -27,7 +28,12 @@
 //            puede dar glitches al enganchar): PLL_OK solo tras 2,43 ms de
 //            LOCK seguido despues del ultimo hueco, y una sola vez
 //   turbo_marcha  el reloj del slot pasa a 5,37 MHz con el sistema listo y
-//            vuelve a los 2 ms: en sync, reset y reenganche; en xtal, nada
+//            vuelve a los 2 ms: en sync, pines sueltos en cuanto cae LOCK,
+//            reset y reenganche; en xtal, nada
+// En todos: /WAIT retenido (BOOT_HOLD) desde el fin de la configuracion (xtal)
+// o desde el primer flanco del reloj del slot (sync) hasta que el sistema
+// queda listo, sin huecos y como mucho 50 ms; DRIVE_EN nunca sin PLL_OK ni con
+// LOCK bajo mas de 3 ciclos de 27 MHz.
 //
 
 `timescale 1ns/1ps
@@ -228,34 +234,60 @@ module tb_integ_guard #(
     /***************************************************************
      * Vigilancia continua (en cada flanco de CLK_27M)
      ***************************************************************/
-    int viol_drive = 0, viol_reset = 0, viol_both = 0, both_run = 0;
+    // arranque en frio segun el banco: desde el principio hasta que el sistema
+    // queda listo; en sync, otra vez cuando se para el reloj del slot
+    bit tb_cold = 1'b1;
+    always @(posedge drive_en) tb_cold = 1'b0;
+    always @(negedge slot_on) if(SYNC != 0) tb_cold = 1'b1;
+
+    int viol_drive = 0, viol_hold = 0, viol_mute = 0, viol_reset = 0, viol_both = 0, both_run = 0;
+    int lock_low = 0;               // ciclos de 27 MHz seguidos con LOCK bajo (antes de este flanco)
     logic pll_ok_q = 1'b0;
     always @(posedge clk27) begin
-        // sin enganche (ciclo anterior): ni DRIVE_EN ni BOOT_HOLD
-        if(!pll_ok_q && (drive_en || boot_hold)) viol_drive++;
+        // sin enganche (ciclo anterior): sin DRIVE_EN
+        if(!pll_ok_q && drive_en) viol_drive++;
+        // sin enganche: BOOT_HOLD solo en el arranque en frio (en sync, con
+        // reloj del slot)
+        if(!pll_ok_q && boot_hold && !(tb_cold && (SYNC == 0 || slot_on))) viol_hold++;
+        // LOCK bajo: DRIVE_EN cae como mucho 3 ciclos despues
+        if(drive_en && lock_low > 3) viol_mute++;
         // sin enganche: el sistema en reset (la afirmacion es asincrona)
         if(!pll_ok && sys_reset_n) viol_reset++;
         // relevo BOOT_HOLD -> DRIVE_EN: solapados como mucho un ciclo
         if(drive_en && boot_hold) begin both_run++; if(both_run > 1) viol_both++; end
         else both_run = 0;
+        lock_low = pll_lock ? 0 : lock_low + 1;
         pll_ok_q <= pll_ok;
     end
 
     // huecos de /WAIT con el V9990 pidiendolo: el pin no puede bajar mientras
-    // el PLL siga enganchado
+    // el PLL siga enganchado ni durante el arranque en frio
     int wait_gaps = 0;
-    always @(negedge wait_pin) if(pll_ok && v99_wait && !hold_expired && $time > 0) wait_gaps++;
+    always @(negedge wait_pin) if((pll_ok || tb_cold) && v99_wait && !hold_expired && $time > 0) wait_gaps++;
 
-    // pulsos de reset del rPLL y subidas de PLL_OK
+    // pulsos de reset del rPLL, subidas de PLL_OK y bajadas de SYS_RESET_n
     int pll_reset_rises = 0;
     always @(posedge pll_reset) pll_reset_rises++;
     int pll_ok_rises = 0;
-    always @(posedge pll_ok) pll_ok_rises++;
+    realtime t_pllok = 0.0;
+    always @(posedge pll_ok) begin pll_ok_rises++; t_pllok = $realtime; end
+    int sysrst_falls = 0;
+    always @(negedge sys_reset_n) if($time > 0) sysrst_falls++;
+    realtime t_drive_fall = 0.0;
+    always @(negedge drive_en) t_drive_fall = $realtime;
 
-    // BOOT_HOLD: duracion de cada pulso
-    realtime hold_rise = 0.0, hold_len = 0.0;
-    always @(posedge boot_hold) hold_rise = $realtime;
-    always @(negedge boot_hold) hold_len  = $realtime - hold_rise;
+    // BOOT_HOLD: subidas, duracion de cada pulso y el mas largo
+    int      hold_rises = 0;
+    realtime hold_rise = 0.0, hold_len = 0.0, hold_max = 0.0, hold_first = -1.0;
+    always @(posedge boot_hold) begin
+        hold_rises++;
+        hold_rise = $realtime;
+        if(hold_first < 0.0) hold_first = $realtime;
+    end
+    always @(negedge boot_hold) begin
+        hold_len = $realtime - hold_rise;
+        if(hold_len > hold_max) hold_max = hold_len;
+    end
 
     /***************************************************************
      * LED: subidas y tiempo encendido en un periodo del divisor
@@ -298,10 +330,25 @@ module tb_integ_guard #(
     endtask
 
     task automatic check_invariants(input string when);
-        check(viol_drive == 0, $sformatf("%s: DRIVE_EN/BOOT_HOLD a 0 siempre que el PLL no esta enganchado (%0d violaciones)", when, viol_drive));
+        check(viol_drive == 0, $sformatf("%s: DRIVE_EN a 0 siempre que el PLL no esta enganchado (%0d violaciones)", when, viol_drive));
+        check(viol_hold  == 0, $sformatf("%s: BOOT_HOLD sin enganche solo en el arranque en frio (%0d violaciones)", when, viol_hold));
+        check(hold_max < 50_010_000.0, $sformatf("%s: ningun BOOT_HOLD pasa de 50 ms (el mas largo, %0.4f ms)", when, hold_max / 1.0e6));
+        check(viol_mute  == 0, $sformatf("%s: DRIVE_EN cae a los 3 ciclos de LOCK bajo como mucho (%0d violaciones)", when, viol_mute));
         check(viol_reset == 0, $sformatf("%s: SYS_RESET_n bajo siempre que el PLL no esta enganchado (%0d violaciones)", when, viol_reset));
         check(viol_both  == 0, $sformatf("%s: relevo BOOT_HOLD -> DRIVE_EN con solape de un ciclo como mucho (%0d violaciones)", when, viol_both));
-        check(wait_gaps  == 0, $sformatf("%s: /WAIT del pin sin huecos con el PLL enganchado y el V9990 pidiendolo (%0d huecos)", when, wait_gaps));
+        check(wait_gaps  == 0, $sformatf("%s: /WAIT del pin sin huecos con el V9990 pidiendolo, con el PLL enganchado o en el arranque en frio (%0d huecos)", when, wait_gaps));
+    endtask
+
+    // arranque en frio: BOOT_HOLD sube al empezar (xtal: el primer flanco de
+    // 27 MHz; sync: el primer flanco del reloj del slot), una sola vez, y
+    // baja cuando el sistema queda listo (t_end_us) o al tope
+    task automatic check_cold_hold(input real t0_us, input real t_end_us, input int rises, input string what);
+        real lim;
+        lim = (SYNC != 0) ? 0.5 : 0.1;
+        check(hold_rises == rises && (hold_rise / 1000.0 - t0_us) >= 0.0 && (hold_rise / 1000.0 - t0_us) < lim
+              && ((hold_rise + hold_len) / 1000.0 - t_end_us) > -0.1 && ((hold_rise + hold_len) / 1000.0 - t_end_us) < 0.1,
+              $sformatf("%s: BOOT_HOLD desde los %0.3f us (%0.3f us tras el inicio; limite %0.1f) hasta los %0.3f ms (esperado %0.3f), subidas %0d (esperadas %0d)",
+                        what, hold_rise / 1000.0, hold_rise / 1000.0 - t0_us, lim, (hold_rise + hold_len) / 1.0e6, t_end_us / 1000.0, hold_rises, rises));
     endtask
 
     // espera a que el sistema quede listo, con tope; vuelve tres ciclos de
@@ -317,7 +364,7 @@ module tb_integ_guard #(
     /***************************************************************
      * Escenarios
      ***************************************************************/
-    real t_ready, t_lost, t_loss_ref;
+    real t_ready, t_lost, t_loss_ref, t_mute, t_back;
     real t_glitch_end = 0.0;
 
     initial begin
@@ -338,10 +385,25 @@ module tb_integ_guard #(
             clear_cycles = (SYNC != 0) ? 214_772 : 216_000;   // 2 ms de borrado
         end
 
-        // primeros 1,2 ms: POR, nada enganchado
+        // primeros 1,2 ms: POR, nada enganchado; el BOOT_HOLD del arranque en
+        // frio ya retiene al MSX (xtal siempre; sync, con reloj del slot)
         wait_us(600.0);
-        check(!por_done && pll_reset && !pll_ok && !drive_en && !boot_hold && !sys_reset_n,
-              "durante el POR: rPLL en reset, sin PLL_OK, sin DRIVE_EN ni BOOT_HOLD, sistema en reset");
+        begin
+            bit    exp_hold;
+            string why, first;
+            exp_hold = (SYNC == 0) || slot_on;
+            why      = "arranque en frio";
+            if(!exp_hold) why = "sin reloj del slot no hay MSX";
+            first    = "xtal: primer flanco de 27 MHz";
+            if(SYNC != 0) first = "sync: primer flanco del reloj del slot";
+            check(!por_done && pll_reset && !pll_ok && !drive_en && boot_hold == exp_hold && !sys_reset_n,
+                  $sformatf("durante el POR: rPLL en reset, sin PLL_OK ni DRIVE_EN, sistema en reset; BOOT_HOLD %0d (esperado %0d: %s)",
+                            boot_hold, exp_hold, why));
+            if(exp_hold)
+                check(hold_rises == 1 && hold_first >= 0.0 && hold_first < ((SYNC != 0) ? 500.0 : 100.0),
+                      $sformatf("arranque en frio: BOOT_HOLD sube a los %0.3f us de acabar la configuracion (%s)",
+                                hold_first / 1000.0, first));
+        end
         check_led(0, "durante el POR");
 
         if(scen == "glitch") begin
@@ -365,6 +427,13 @@ module tb_integ_guard #(
             wait_us(60_000.0);
             check(!pll_ok && !drive_en && !boot_hold && !sys_reset_n,
                   "a los 60 ms sin enganche: sin PLL_OK, DRIVE_EN ni BOOT_HOLD; sistema en reset (el cartucho mudo, el MSX arranca)");
+            if(SYNC != 0 && scen == "nunca")
+                check(hold_rises == 0,
+                      $sformatf("sync sin reloj del slot (MSX apagado): ningun BOOT_HOLD (subidas: %0d)", hold_rises));
+            else
+                check(hold_rises == 1 && hold_expired && hold_len > 49_990_000.0 && hold_len < 50_010_000.0,
+                      $sformatf("sin enganche: el BOOT_HOLD del arranque en frio dura %0.4f ms (tope de 50 ms) y suelta al MSX (subidas: %0d)",
+                                hold_len / 1.0e6, hold_rises));
             if(SYNC != 0)
                 check(pll_reset && pll_reset_rises == 0 && !slot_ok,
                       $sformatf("sync sin reloj del slot valido: el rPLL sigue en reset desde el POR (subidas de PLL_RESET: %0d, SLOT_OK %0d)", pll_reset_rises, slot_ok));
@@ -386,11 +455,11 @@ module tb_integ_guard #(
                 check_led(1, "arrancando");
                 wait(!boot_hold);
                 #1;
-                check(hold_len > 49_990_000.0 && hold_len < 50_010_000.0 && hold_expired && !drive_en,
-                      $sformatf("tope de BOOT_HOLD: %0.4f ms (esperado 50 ms) y despues el MSX libre, cartucho mudo", hold_len / 1.0e6));
+                check(hold_rises == 1 && hold_len > 49_990_000.0 && hold_len < 50_010_000.0 && hold_expired && !drive_en,
+                      $sformatf("tope de BOOT_HOLD: %0.4f ms desde la configuracion (esperado 50 ms) y despues el MSX libre, cartucho mudo", hold_len / 1.0e6));
                 check_led(1, "arrancando tras el tope (el arranque fallo)");
                 wait_ready(25_000.0, t_ready);
-                check(drive_en && !boot_hold && sys_reset_n,
+                check(drive_en && !boot_hold && sys_reset_n && hold_rises == 1,
                       $sformatf("tope: el sistema acaba a los 70 ms: DRIVE_EN a los %0.3f ms sin volver a BOOT_HOLD", t_ready / 1000.0));
                 check_led(5, "listo");
                 check_invariants("tope");
@@ -398,12 +467,13 @@ module tb_integ_guard #(
             else begin
                 check(drive_en && sys_reset_n && !boot_hold,
                       $sformatf("arranque: listo a los %0.3f ms (DRIVE_EN, SYS_RESET_n, sin BOOT_HOLD)", t_ready / 1000.0));
+                check_cold_hold(0.0, t_ready, 1, "arranque en frio");
                 if(scen == "mega")
-                    check(hold_len > 1_900_000.0 && hold_len < 2_200_000.0,
-                          $sformatf("mega: BOOT_HOLD durante el borrado de la megaROM: %0.3f ms", hold_len / 1.0e6));
+                    check((t_ready - t_pllok / 1000.0) > 1_900.0 && (t_ready - t_pllok / 1000.0) < 2_200.0,
+                          $sformatf("mega: de PLL_OK a listo, el borrado de la megaROM: %0.3f ms", (t_ready - t_pllok / 1000.0) / 1000.0));
                 else
-                    check(hold_len > 0.0 && hold_len < 2_000.0,
-                          $sformatf("arranque: BOOT_HOLD %0.1f ns (PLL_OK -> SDRAM lista)", hold_len));
+                    check((t_ready - t_pllok / 1000.0) > 0.0 && (t_ready - t_pllok / 1000.0) < 2.0,
+                          $sformatf("arranque: de PLL_OK a listo (SDRAM) %0.1f ns", t_ready * 1000.0 - t_pllok));
                 begin
                     string extra;
                     extra = "";
@@ -432,20 +502,28 @@ module tb_integ_guard #(
 
                 if(scen == "perdida") begin
                     if(SYNC == 0) begin
-                        // hueco corto de LOCK: se ignora
+                        // hueco corto de LOCK: los pines se sueltan en cuanto
+                        // baja LOCK, pero sin perdida de enganche ni reset
+                        t_loss_ref = $realtime;
                         pll_unlock = 1'b1;
                         wait_us(50.0);
                         pll_unlock = 1'b0;
+                        t_mute = (t_drive_fall - t_loss_ref) / 1000.0;
+                        check(t_mute > 0.0 && t_mute < 0.3,
+                              $sformatf("hueco de LOCK de 50 us: DRIVE_EN cae a los %0.3f us (LOCK sin filtro)", t_mute));
                         wait_us(100.0);
-                        check(pll_ok && drive_en && sys_reset_n,
-                              "hueco de LOCK de 50 us: ignorado (sin perdida de enganche)");
+                        check(pll_ok && drive_en && sys_reset_n && pll_ok_rises == 1 && sysrst_falls == 0,
+                              $sformatf("hueco de LOCK de 50 us: sin perdida de enganche ni reset (bajadas de SYS_RESET_n: %0d); DRIVE_EN vuelve con LOCK", sysrst_falls));
                         // perdida larga
                         t_loss_ref = $realtime;
                         pll_unlock = 1'b1;
                         wait(!pll_ok);
                         t_lost = ($realtime - t_loss_ref) / 1000.0;
+                        t_mute = (t_drive_fall - t_loss_ref) / 1000.0;
                         check(t_lost > 150.0 && t_lost < 155.0,
                               $sformatf("perdida de LOCK: PLL_OK cae a los %0.2f us (LOCK bajo 4096 ciclos seguidos)", t_lost));
+                        check(t_mute > 0.0 && t_mute < 0.3,
+                              $sformatf("perdida de LOCK: los pines se sueltan a los %0.3f us, sin esperar al filtro", t_mute));
                     end
                     else begin
                         // el reloj del slot desaparece
@@ -453,8 +531,10 @@ module tb_integ_guard #(
                         slot_on = 1'b0;
                         wait(!pll_ok);
                         t_lost = ($realtime - t_loss_ref) / 1000.0;
-                        check(t_lost < 2.0,
-                              $sformatf("reloj del slot parado: PLL_OK cae a los %0.3f us", t_lost));
+                        @(posedge clk27); @(posedge clk27); #1;
+                        t_mute = (t_drive_fall - t_loss_ref) / 1000.0;
+                        check(t_lost < 2.0 && t_mute > 0.0 && t_mute < 2.0,
+                              $sformatf("reloj del slot parado: PLL_OK cae a los %0.3f us y DRIVE_EN a los %0.3f us", t_lost, t_mute));
                     end
                     @(posedge clk27); @(posedge clk27); #1;
                     check(!drive_en && !boot_hold && !sys_reset_n && !reset_n && !base_ready,
@@ -462,10 +542,16 @@ module tb_integ_guard #(
                     check_led(0, "perdida");
                     // vuelve
                     wait_us((SYNC != 0) ? 2_000.0 : 1_000.0);
+                    t_back = $realtime / 1000.0;
                     if(SYNC != 0) slot_on = 1'b1; else pll_unlock = 1'b0;
                     wait_ready(9_000.0, t_ready);
                     check(drive_en && sys_reset_n && relocked,
                           $sformatf("reenganche: listo otra vez a los %0.3f ms y RELOCKED", t_ready / 1000.0));
+                    if(SYNC != 0)
+                        check_cold_hold(t_back, t_ready, 2, "sync, vuelve el reloj del slot (MSX encendido otra vez: arranque en frio)");
+                    else
+                        check(hold_rises == 2 && hold_rise >= t_pllok && hold_len > 0.0 && hold_len < 2_000.0,
+                              $sformatf("xtal, reenganche con el sistema ya arrancado: BOOT_HOLD solo de PLL_OK a listo (%0.1f ns)", hold_len));
                     check_led(4, "listo tras reenganchar");
                     check_invariants("perdida y reenganche");
                 end
@@ -476,8 +562,11 @@ module tb_integ_guard #(
                     if(SYNC != 0) begin
                         wait(!pll_ok);
                         t_lost = ($realtime - t_loss_ref) / 1000.0;
+                        t_mute = (t_drive_fall - t_loss_ref) / 1000.0;
                         check(t_lost < 320.0,
                               $sformatf("sync, reloj del slot a 5,37 MHz: PLL_OK cae a los %0.2f us", t_lost));
+                        check(t_mute > 0.0 && t_mute < 0.5,
+                              $sformatf("sync, reloj del slot a 5,37 MHz: los pines se sueltan a los %0.3f us (LOCK bajo), sin esperar a PLL_OK", t_mute));
                         @(posedge clk27); @(posedge clk27); #1;
                         check(!drive_en && !boot_hold && !sys_reset_n,
                               "sync, reloj del slot fuera de rango: DRIVE_EN y BOOT_HOLD a 0, sistema en reset");
@@ -489,6 +578,8 @@ module tb_integ_guard #(
                         wait_ready(9_000.0, t_ready);
                         check(drive_en && sys_reset_n && relocked,
                               $sformatf("sync, el reloj del slot vuelve a 3,58 MHz: listo otra vez a los %0.3f ms y RELOCKED", t_ready / 1000.0));
+                        check(hold_rises == 2 && hold_rise >= t_pllok && hold_len > 0.0 && hold_len < 2_000.0,
+                              $sformatf("sync, reenganche sin que se parara el reloj del slot: BOOT_HOLD solo de PLL_OK a listo (%0.1f ns)", hold_len));
                         check_led(4, "listo tras reenganchar");
                     end
                     else begin
