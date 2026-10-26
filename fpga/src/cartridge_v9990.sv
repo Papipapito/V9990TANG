@@ -4,6 +4,7 @@
 // BSD 3-Clause License
 // 
 // Copyright (c) 2024, Shinobu Hashimoto
+// Modificaciones del V9990TANG (rearme de 3 muestras): Copyright (c) 2026, Papipapito
 // 
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -59,12 +60,73 @@ module CARTRIDGE_V9990 #(
     wire cs_n = Bus.IORQ_n || (Bus.ADDR[7:4] != IO_BASE_ADDR[7:4]);
     logic [7:0] dout;
 
+    /***************************************************************
+     * Rearme de 3 muestras (V9990TANG, hito 5; patron 'served' + idle_cnt
+     * de v9990_cpu_glue.v de la MSXimus Z):
+     *  - el ciclo de E/S a nuestros puertos se presenta al core UNA vez:
+     *    CSR_n/CSW_n bajan en la primera muestra con el ciclo y 'served' pasa
+     *    a 1;
+     *  - CSR_n/CSW_n se sueltan en la primera muestra sin el ciclo (el core
+     *    solo mira el flanco de bajada);
+     *  - 'served' solo se borra con RD_n y WR_n en reposo 3 muestras seguidas.
+     *    Un rebote de RD_n/WR_n que pase el PIN_FILTER (2 muestras: un pulso
+     *    de 2 ciclos) o uno de IORQ (que con el mux dura una vuelta, 9 ciclos,
+     *    con RD_n/WR_n quietos) no presenta otro flanco al core. Se mira solo
+     *    RD_n/WR_n, no cs_n, justo por eso: entre dos ciclos del Z80 RD_n y WR_n
+     *    siempre vuelven a 1 al menos 1 T (10 ciclos a 10,74 MHz).
+     *  - el bus de datos se conduce mientras 'served' marque una lectura: ni
+     *    un rebote de IORQ ni uno de 2 muestras de RD_n lo sueltan a mitad de
+     *    la lectura (antes, un rebote de RD_n que pasara el filtro dejaba el
+     *    bus sin dato 2 ciclos unos 130 ns despues, por el camino retrasado).
+     *    La cola de 2 ciclos de mas que esto da a Bus.BUSDIR_n tras el fin
+     *    del ciclo no llega al slot: BOARD_REV1_BUS solo conduce con el /RD
+     *    del pin a 0 y en una lectura que empezo con BUSDIR_n en reposo.
+     ***************************************************************/
+    wire io_rd   = !cs_n && !Bus.RD_n;
+    wire io_wr   = !cs_n && !Bus.WR_n;
+    wire io_any  = io_rd || io_wr;
+    wire rw_idle = Bus.RD_n && Bus.WR_n;
+
+    logic served;           // ciclo de E/S ya presentado al core
+    logic served_rd;        // ... y era una lectura
+    logic [1:0] idle_cnt;   // muestras seguidas con RD_n y WR_n en reposo (satura en 3)
+    logic CSR_n;
+    logic CSW_n;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            served    <= 0;
+            served_rd <= 0;
+            idle_cnt  <= 0;
+            CSR_n     <= 1;
+            CSW_n     <= 1;
+        end
+        else begin
+            if(io_any && !served) begin
+                served    <= 1;
+                served_rd <= io_rd && !io_wr;
+                CSR_n     <= !(io_rd && !io_wr);
+                CSW_n     <= !io_wr;
+            end
+            else if(!io_any) begin
+                CSR_n     <= 1;
+                CSW_n     <= 1;
+            end
+
+            if(!rw_idle)                idle_cnt <= 0;
+            else if(idle_cnt != 2'd3)   idle_cnt <= idle_cnt + 2'd1;
+            if(rw_idle && idle_cnt >= 2'd2) begin   // 3a muestra en reposo seguida
+                served    <= 0;
+                served_rd <= 0;
+            end
+        end
+    end
+
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             Bus.BUSDIR_n <= 1;
             Bus.DOUT <= 0;
         end
-        else if(!MIRROR && !cs_n && !Bus.RD_n && !cs_n) begin
+        else if(!MIRROR && served && served_rd) begin
             Bus.BUSDIR_n <= 0;
             Bus.DOUT <= dout;
         end
@@ -75,14 +137,10 @@ module CARTRIDGE_V9990 #(
     end
 
     logic reset;
-    logic CSR_n;
-    logic CSW_n;
     logic [3:0] MODE;
     logic [7:0] CD_IN;
     always_ff @(posedge CLK) begin
         reset <= Bus.RESET_n && RESET_n;
-        CSR_n <= Bus.RD_n || cs_n;
-        CSW_n <= Bus.WR_n || cs_n;
         MODE <= Bus.ADDR[3:0];
         CD_IN <= Bus.DIN;
     end
