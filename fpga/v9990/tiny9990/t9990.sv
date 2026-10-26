@@ -49,6 +49,7 @@ endpackage
 module T9990 #(
     // V9990TANG: partes nuevas del core, cada una apagable para medir su coste o si falta sitio
     parameter           ENABLE_PAL        = 1,  // cuadro PAL de 313 lineas con R#7 bit 3
+    parameter           ENABLE_CURSOR_EOR = 1,  // cursor de openMSX: EOR (XOR 7FFFh), linea Y+1 (Y+2 entrelazado), color alineado
     parameter           ENABLE_R16        = 1   // ajuste de posicion de la imagen de R#16
 ) (
     input wire          RESET_n,            // リセット
@@ -389,8 +390,11 @@ module T9990 #(
      ***************************************************************/
     logic [1:0] SP_PRI;
     logic [5:0] SP_PA;
+    logic       SP_EOR;
 `ifndef DISABLE_SP
-    T9990_SPRITE u_sp (
+    T9990_SPRITE #(
+        .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
+    ) u_sp (
         .RESET_n(rst_flag),
         .CLK,
         .DCLK_EN,
@@ -409,13 +413,14 @@ module T9990 #(
 
         // 出力
         .PRI(SP_PRI),
-        .EOR(),
+        .EOR(SP_EOR),
         .PA(SP_PA)
     );
 `else
     assign SP_MEM.ADDR = 0;
     assign SP_PRI = 2'b01;
     assign SP_PA  = 0;
+    assign SP_EOR = 0;
 `endif
 
     /***************************************************************
@@ -539,9 +544,13 @@ module T9990 #(
      ***************************************************************/
     logic [0:0] MUX_PRI;
     logic [5:0] MUX_PA;
+    logic       MUX_EOR;
+    logic       MUX_CUR;
     logic MUX_VDE;
     logic MUX_HDE;
-    T9990_PRIORITY u_pri (
+    T9990_PRIORITY #(
+        .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
+    ) u_pri (
         .RESET_n(rst_flag),
         .CLK,
         .DCLK_EN,
@@ -551,7 +560,8 @@ module T9990 #(
         .MUX_HDE,
 
         // 各モジュールから出力されたデータ
-        .SP_DISABLE,    .SP_PRI,    .SP_PA,
+        .SP_DISABLE,    .SP_PRI,    .SP_PA,     .SP_EOR,
+        .SP_IS_CUR(REG.DSPM == T9990_REG::DSPM_BITMAP),
         .PA_DISABLE,    .PA_PRI,    .PA_PA,
         .PB_DISABLE,    .PB_PRI,    .PB_PA,
         .BP_DISABLE,    .BP_PRI,    .BP_PA,
@@ -559,14 +569,19 @@ module T9990 #(
 
         // 出力
         .PRI(MUX_PRI),
-        .PA(MUX_PA)
+        .PA(MUX_PA),
+        .EOR(MUX_EOR),
+        .CUR(MUX_CUR)
     );
 
     /***************************************************************
      * パレット変換
      ***************************************************************/
     logic [15:0] PAL_CLR;
-    T9990_PALETTE u_pal (
+    logic        PAL_EOR;
+    T9990_PALETTE #(
+        .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
+    ) u_pal (
         .RESET_n(rst_flag),
         .CLK,
         .DCLK_EN,
@@ -580,7 +595,12 @@ module T9990 #(
         .PRI(MUX_PRI),
 
         // 出力
-        .OUT(PAL_CLR)
+        .OUT(PAL_CLR),
+
+        // V9990TANG: cursor (color alineado y EOR)
+        .CUR_IN(MUX_CUR),
+        .EOR_IN(MUX_EOR),
+        .EOR_OUT(PAL_EOR)
     );
 
     /***************************************************************
@@ -621,6 +641,7 @@ module T9990 #(
         .IN_VS(vs),                         // VSYNC
         .IN_PALETTE(PAL_CLR),               // PALETTE 側画面
         .IN_BITMAP(DEC_CLR),                // BITMAP 側画面
+        .EOR(PAL_EOR),                      // V9990TANG: cursor con EOR
 
         // 出力
         .OUT_HS(HS),

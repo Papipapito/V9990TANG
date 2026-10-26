@@ -40,6 +40,7 @@
  * スプライト/カーソル生成
  ***************************************************************/
 module T9990_SPRITE #(
+    parameter ENABLE_CURSOR_EOR = 1,        // V9990TANG: cursor de openMSX (V9990BitmapConverter.cc CursorInfo): EOR, Y+1
     parameter SPR_ATR_ADDR_P1 = 19'h3FE00,
     parameter SPR_ATR_ADDR_P2 = 19'h7BE00,
     parameter CUR_ATR_ADDR = 19'h7FE00,
@@ -127,7 +128,13 @@ module T9990_SPRITE #(
     wire spr_y_flag = (spr_offset_y[8:4] == 0);
 
     wire [8:0] cur_signed_y = {MEM.DOUT[16], MEM.DOUT[7:0]};
-    wire [8:0] cur_offset_y = VCNT - cur_signed_y;
+    // V9990TANG: el cursor sale una linea por debajo de su Y, dos con entrelazado (manual del V9990,
+    // "Cursor Attribute Table": "Actual display position is one line below specified, two lines for
+    // interlace"; openMSX V9990BitmapConverter.cc CursorInfo: attrY += isInterlaced() ? 2 : 1). El
+    // tiny9990 lo pintaba en la linea Y. La misma correccion va en la linea del patron (fetch_pat_line
+    // de STATE_CUR_PAT_START y STATE_CUR_PAT).
+    wire [8:0] cur_y_adj = (ENABLE_CURSOR_EOR == 0) ? 9'd0 : (REG.ILM ? 9'd2 : 9'd1);
+    wire [8:0] cur_offset_y = VCNT - cur_signed_y - cur_y_adj;
     reg cur_y_flag;
 
 `ifdef SPR_PAT_USE_DPB
@@ -381,10 +388,10 @@ module T9990_SPRITE #(
             // 最初のパターン
 `ifdef SPR_ATR_USE_DPB
             fetch_pat_xpos <= spr_atr_r_data[25:16];
-            fetch_pat_line <= VCNT[4:0] - spr_atr_r_data[4:0];
+            fetch_pat_line <= VCNT[4:0] - spr_atr_r_data[4:0] - cur_y_adj[4:0];
 `else
             fetch_pat_xpos <= atr_buff[0][25:16];
-            fetch_pat_line <= VCNT[4:0] - atr_buff[0][4:0];
+            fetch_pat_line <= VCNT[4:0] - atr_buff[0][4:0] - cur_y_adj[4:0];
             fetch_index_next <= 1'd1;
 `endif
 
@@ -493,10 +500,10 @@ module T9990_SPRITE #(
                     // 次のパターン Y オフセットを取得
 `ifdef SPR_ATR_USE_DPB
                     fetch_pat_xpos <= spr_atr_r_data[25:16];
-                    fetch_pat_line <= VCNT[4:0] - spr_atr_r_data[4:0];
+                    fetch_pat_line <= VCNT[4:0] - spr_atr_r_data[4:0] - cur_y_adj[4:0];
 `else
                     fetch_pat_xpos <= atr_buff[fetch_index_next][25:16];
-                    fetch_pat_line <= VCNT[4:0] - atr_buff[fetch_index_next][4:0];
+                    fetch_pat_line <= VCNT[4:0] - atr_buff[fetch_index_next][4:0] - cur_y_adj[4:0];
                     fetch_index_next <= fetch_index_next + 1'd1;
 `endif
 
@@ -637,6 +644,7 @@ module T9990_SPRITE #(
     wire [0:0]  cur_pri[0:MAX_CUR_PLANE_COUNT-1];
     wire        cur_eor[0:MAX_CUR_PLANE_COUNT-1];
     wire        cur_pset[0:MAX_CUR_PLANE_COUNT-1];
+    wire        cur_vis[0:MAX_CUR_PLANE_COUNT-1];
 
     generate
         genvar c_num;
@@ -655,6 +663,13 @@ module T9990_SPRITE #(
 
             // 色
             assign cur_pa[c_num] = {REG.CSP, view_sc[c_num]};
+
+            // V9990TANG: pixel visible del cursor. Atributo (openMSX V9990BitmapConverter.cc CursorInfo):
+            // bit 4 = no se muestra (aqui view_pri[0], que el fetch pone a 1 fuera de las 32 lineas), y
+            // (CC1,CC0,EOR) = (0,0,0) es invisible. Incluir el bit 4 en el flag hace que un cursor 0 oculto
+            // no tape al cursor 1 (con el flag original un pixel del cursor 0 oculto salia como "no mostrar"
+            // y el cursor 1 de debajo no se veia).
+            assign cur_vis[c_num] = cur_area[c_num] && !view_pri[c_num][0] && cur_pset[c_num];
 
             // PRIORITY
             assign cur_pri[c_num] = view_pri[c_num][0];
@@ -749,6 +764,30 @@ module T9990_SPRITE #(
 `endif
 
             EOR <= 0;
+        end
+
+        // V9990TANG: cursor con la semantica de openMSX (V9990BitmapConverter.cc, "Missing details in the
+        // V9990 application manual (reverse engineered from tests on a real gfx9000)"): el cursor 0 tapa
+        // al 1; CC != 0 pinta el color de paleta {CSP, CC} (PRI 00, opaco); CC = 0 con EOR deja ver el
+        // fondo (PRI 01, transparente). EOR = 1 hace XOR 7FFFh del color de 15 bits resultante: el de
+        // paleta con CC != 0, el del fondo (lo que pinta el bitmap) con CC = 0. El XOR se aplica en el
+        // selector (T9990_SELECTOR, EOR alineado por la prioridad y la paleta).
+        else if(DCLK_EN && cur_out_flag && (ENABLE_CURSOR_EOR != 0)) begin
+            if(cur_vis[0]) begin
+                PA  <= cur_pa[0];
+                PRI <= (view_sc[0] != 0) ? 2'b00 : 2'b01;
+                EOR <= view_pri[0][1];
+            end
+            else if(cur_vis[1]) begin
+                PA  <= cur_pa[1];
+                PRI <= (view_sc[1] != 0) ? 2'b00 : 2'b01;
+                EOR <= view_pri[1][1];
+            end
+            else begin
+                PA  <= 0;
+                PRI <= 2'b01;
+                EOR <= 0;
+            end
         end
 
         // 表示範囲内のカーソルがあれば出力
