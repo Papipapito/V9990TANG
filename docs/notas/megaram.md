@@ -68,7 +68,14 @@ ISR en 0038h (estudio, sección 7). Es lo que openMSX hace con una ROM plana en
 `NORMAL0000`, o `guessLocation()` si la cabecera lo indica) en páginas de 8 KB
 con `romBase / 0x2000`, es decir, desplazamiento = dirección; las páginas
 fuera de la imagen quedan sin mapear (`setUnmapped`: una de 48 KB deja
-C000h-FFFFh sin respuesta, como PLAIN0). Solo lectura: `RomBlocks` no redefine
+C000h-FFFFh sin respuesta, como PLAIN0, y una de 32 KB deja además
+8000h-BFFFh, donde se lee FFh). PLAIN0 contesta siempre en todo
+`0000h-BFFFh`, mida lo que mida la imagen, así que **`tncrom` r3 rellena con
+FFh hasta 48 KB** las imágenes menores (apartado 6): lo que la imagen no cubre
+lee FFh como en openMSX, y no la SDRAM (basura de encendido pasados los 32 KB
+del borrado, o la ROM anterior con su cabecera "AB" en 4000h, que la BIOS
+tomaría por la de la demo). La diferencia que queda es que ahí la megaROM
+conduce el bus y pide /WAIT; el valor leído es el mismo. Solo lectura: `RomBlocks` no redefine
 `writeMem` y el de `MSXDevice` no hace nada ("write to unmapped memory, do
 nothing"). Releído en el `master` de openMSX el 26/10/2026.
 
@@ -93,7 +100,10 @@ registro más y el modo no actúa: `tncrom` puede configurarlo. Activo:
   registros ya estaban ocultos) y se ignoran **todas** las escrituras a la
   configuración, **la llave `0000h-0003h` incluida** (`cs_reg_wr_n = 1`): una
   escritura casual de la demo no la desbloquea. Tampoco se puede volver a
-  cargar otra ROM: `tncrom` no encuentra el cartucho (lo dice el mensaje).
+  cargar otra ROM: `tncrom` no encuentra el cartucho (lo dice el mensaje),
+  tampoco con `-S` (desde r3 comprueba el cartucho también con el slot
+  explícito; antes leía en 3Eh un byte de la demo como tamaño de la ventana y
+  daba "complete." sin haber cargado nada).
 - **El /RESET del MSX borra el flag y `ENABLE`**, sea cual sea
   `ENABLE_CONTINUOUS` (que en este modo se ignora; rama `!Bus.RESET_n` de
   `megarom_configure.sv`). Se borra `ENABLE` a propósito: sin él, tras el reset
@@ -277,6 +287,26 @@ reset. Con el `uma.sv` de `hito/sdram` (refresco interno en el canal 0, `DOUT`
 solo tras un R/W) el contrato se cumple siempre (`inj_hito4`: 0 de 31; y
 `wait_hito4`). **La integración tiene que fusionar `hito/sdram` antes o a la vez
 que el refresco interno**: es el mismo cambio.
+
+**Con este hito la semántica de `ACK_n` y `DOUT` del canal 0 pasa a ser parte
+de la interfaz del UMA**, y la nota de `hito/sdram` dice lo contrario: su tabla
+"Interfaces: qué cambia" (`docs/notas/sdram.md` de `hito/sdram` `b04ba1a`,
+fila `ACK_n` del canal 0) da "nada para la megaROM (no mira el ACK)". Desde
+`hito/megaram` la megaROM sí lo mira: con `ENABLE_MEM_WAIT = 1` el estado del
+/WAIT avanza con `Ram.ACK_n` (`MW_ACK_LOW`/`MW_ACK_HIGH` en
+`megarom_controller.sv`) y `mem_wait_req` sale de él. Lo que ese cambio de
+`hito/sdram` hace (un R/W aplazado una ranura por la escalación, o por un
+RFSH que llega junto a un R/W, alarga el `ACK_n` 20 ciclos) es compatible: el
+/WAIT dura 20 ciclos más y sigue soltándose con el dato. Lo que **no** se
+puede cambiar sin romper el /WAIT de memoria, y que la integración tiene que
+escribir en `ARCHITECTURE.md` como contrato del UMA para el canal 0:
+
+1. `ACK_n` baja después de que el UMA vea `OE_n` = 0 y no sube mientras quede
+   pendiente la lectura de ese cliente (`save_oe` en `req_any`);
+2. `ACK_n` sube **una sola vez** por lectura y **en el mismo flanco** en que
+   `Secondary[0].DOUT` carga el dato de esa lectura, nunca antes;
+3. `Secondary[0].DOUT` solo cambia al acabar un R/W del canal 0 (no tras un
+   RFSH: lo cumple el `uma.sv` de `hito/sdram`, no el de `main`).
 
 ## 5. Cambios de comportamiento frente a tnCart
 
