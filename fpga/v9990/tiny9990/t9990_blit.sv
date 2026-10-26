@@ -363,6 +363,27 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
     wire cond_dst_is_xy = (REG.OP == T9990_REG::CMD_LMMC) || (REG.OP == T9990_REG::CMD_LMMV) || (REG.OP == T9990_REG::CMD_LMMM) || (REG.OP == T9990_REG::CMD_LINE) || (REG.OP == T9990_REG::CMD_PSET) || (REG.OP == T9990_REG::CMD_CMMC) || (REG.OP == T9990_REG::CMD_CMMK) || (REG.OP == T9990_REG::CMD_CMMM) || (REG.OP == T9990_REG::CMD_BMXL);
     wire cond_dst_is_linear = (REG.OP == T9990_REG::CMD_BMLX || REG.OP == T9990_REG::CMD_BMLL);
 
+    // V9990TANG: START (escritura de R#52) se toma un ciclo despues, con la decodificacion de STOP ya
+    // registrada. Con "START && REG.OP == CMD_STOP" a la cabeza de la cadena de prioridades de este
+    // bloque, R#52 -> decodificacion -> habilitacion de todos los registros del blitter era el camino
+    // critico de la build completa (7 niveles, vdp_reg[52] -> DST_X/CE: 0,003 ns de margen y Fmax
+    // CLK_BASE 108,0 MHz con los cambios del core; en el hito 1 ya era el camino critico, 0,092 ns).
+    // CMD_START y vdp_reg[52] se escriben en el mismo flanco (t9990_port.sv) y el siguiente acceso del
+    // Z80 llega cientos de ciclos despues, asi que un ciclo mas tarde REG.* sigue igual: el comando
+    // hace lo mismo, empezando 9 ns despues.
+    logic start_q;
+    logic start_stop_q;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            start_q      <= 0;
+            start_stop_q <= 0;
+        end
+        else begin
+            start_q      <= START;
+            start_stop_q <= START && REG.OP == T9990_REG::CMD_STOP;
+        end
+    end
+
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             P2_CPU_TO_VDP.REQ <= 0;
@@ -382,7 +403,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         //
         // STOP 書き込み時処理
         //
-        else if(START && REG.OP == T9990_REG::CMD_STOP) begin
+        else if(start_stop_q) begin
             state <= STATE_STOP;
             P2_CPU_TO_VDP.REQ <= 0;
             P2_VDP_TO_CPU.REQ <= 0;
@@ -407,7 +428,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_IDLE) begin
             STATUS.CE_intr <= 0;
 
-            if(START) begin
+            if(start_q) begin
                 FIFO_CLEAR <= 1;
 
                 STATUS.CE <= 1;
