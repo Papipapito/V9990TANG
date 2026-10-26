@@ -216,44 +216,45 @@ RESULTADOS_AQUI
 
 ## Síntesis (Gowin 1.9.12.03, solo `run syn`, top `T9990`)
 
-`CORE_VARIANT=<v> gw_sh check_core.tcl` desde `fpga/`, en serie, 26/10/2026.
-Recursos de `impl/gwsynthesis/check_core_<v>_syn_rsc.xml`. Ningún aviso ni error
-en ninguna variante. `full`, `nopal`, `noeor`, `nor16` y `none` se repitieron
-sobre el RTL final (commit `ef22537`, el último que toca el core) y dieron
-exactamente los mismos números (la síntesis de Gowin es determinista); `main`
-y `parches` salen de git y no dependen del árbol de trabajo. "Tocados" es la suma de los módulos que cambian estas
-partes (`u_tg`, `u_sp`, `u_pri`, `u_pal`, `u_sel`, `u_port`).
+`CORE_VARIANT=<v> gw_sh check_core.tcl` desde `fpga/`, en serie, 26/10/2026,
+sobre el RTL final (commit `ae3e7a5`, R#16 en la línea 12). Recursos de
+`impl/gwsynthesis/check_core_<v>_syn_rsc.xml`. Ningún aviso ni error en ninguna
+variante. La síntesis de Gowin es determinista (repetida sobre el mismo RTL da
+los mismos números); `main` y `parches` salen de git. "Tocados" es la suma de
+los módulos que cambian estas partes (`u_tg`, `u_sp`, `u_pri`, `u_pal`, `u_sel`,
+`u_port`).
 
 | Variante | Qué es | LUT | ALU | FF | BSRAM | Tocados LUT / ALU / FF |
 |---|---|---|---|---|---|---|
 | `main` | tiny9990 de tnCart (rama `main`) | **8 661** | **767** | **4 766** | **18** | 3 373 / 138 / 2 692 |
 | `parches` | commit `2f95eb8`: los seis parches, `chr` y P#8-P#15 | 8 718 | 766 | 4 766 | 18 | 3 393 / 137 / 2 692 |
-| `full` | `hito/core` con los tres parámetros a 1 | **8 951** | **837** | **4 790** | **18** | 3 610 / 195 / 2 715 |
-| `nopal` | `ENABLE_PAL = 0` | 8 733 | 824 | 4 787 | 18 | 3 525 / 183 / 2 713 |
-| `noeor` | `ENABLE_CURSOR_EOR = 0` | 8 727 | 807 | 4 770 | 18 | 3 517 / 177 / 2 695 |
+| `full` | `hito/core` con los tres parámetros a 1 | **8 864** | **817** | **4 790** | **18** | 3 560 / 175 / 2 715 |
+| `nopal` | `ENABLE_PAL = 0` | 8 889 | 815 | 4 787 | 18 | 3 557 / 175 / 2 713 |
+| `noeor` | `ENABLE_CURSOR_EOR = 0` | 8 815 | 788 | 4 770 | 18 | 3 510 / 158 / 2 695 |
 | `nor16` | `ENABLE_R16 = 0` | 8 804 | 808 | 4 761 | 18 | 3 438 / 166 / 2 686 |
 | `none` | los tres a 0 | 8 718 | 776 | 4 739 | 18 | 3 384 / 147 / 2 665 |
 
 `main` reproduce exactamente la referencia del estudio (8 661 / 767 / 4 766 /
-18). Frente a ella `full` cuesta **+290 LUT, +70 ALU, +24 FF y ninguna BSRAM**
-(+3,3 % de LUT del core).
+18). Frente a ella `full` cuesta **+203 LUT, +50 ALU, +24 FF y ninguna BSRAM**
+(+2,3 % de LUT del core).
 
 Coste de cada parte (`full` menos la variante con esa parte a 0):
 
-| Parte | Total LUT / ALU / FF | Tocados LUT / ALU / FF |
-|---|---|---|
-| PAL | +218 / +13 / +3 | +85 / +12 / +2 (casi todo en `u_tg`) |
-| Cursor EOR | +224 / +30 / +20 | +93 / +18 / +20 (`u_sp`, `u_pal`, `u_sel`, `u_tg`) |
-| R#16 | +147 / +29 / +29 | +172 / +29 / +29 (`u_tg`) |
+| Parte | Total LUT / ALU / FF | Tocados LUT / ALU / FF | Dónde |
+|---|---|---|---|
+| PAL | −25 / +2 / +3 (ruido) | +3 / 0 / +2 | `u_tg`: +8 LUT, +2 FF (las tablas verticales PAL son constantes y se van en los multiplexores que ya había) |
+| Cursor EOR | +49 / +29 / +20 | +50 / +17 / +20 | `u_pal` +19 LUT +17 FF, `u_sel` +15, `u_sp` +10 LUT +17 ALU, `u_pri` +3 LUT +2 FF, `u_tg` +3 |
+| R#16 | +60 / +9 / +29 | +122 / +9 / +29 | `u_tg` +126 LUT +10 ALU +29 FF (los contadores de sincronismo y el reajuste) |
 
-Los totales tienen ruido de síntesis de ±100 LUT: el blitter (`u_blit`), que
-es el mismo RTL en todas las variantes, sale entre 4 179 y 4 286 LUT, y el
-resto de módulos no tocados entre 1 009 y 1 080. La columna de módulos tocados
-es mejor estimación del coste de cada parte. Las tres no suman exactamente lo
-que cuestan juntas (`full` − `none`: +226 LUT en los tocados) porque comparten
-lógica (los multiplexores de las tablas verticales, `T9990_PALETTE`). Solo es
-síntesis: el coste en CLS y la Fmax (la puerta pide ≥ 109 MHz; el camino crítico
-del hito 1 era del blitter) los tiene que medir el P&R de la integración.
+Los totales tienen ruido de síntesis de ±60 LUT: el blitter (`u_blit`), que es
+el mismo RTL en todas las variantes, sale entre 4 223 y 4 286 LUT, y el resto de
+módulos no tocados entre 1 055 y 1 080. La columna de módulos tocados es mejor
+estimación del coste de cada parte; las tres suman lo que cuestan juntas
+(`full` − `none` en los tocados: +176 LUT). La primera versión de R#16
+(reajuste en el (0,0) de la ventana, con la normalización módulo la línea y el
+cuadro) costaba 52 LUT y 19 ALU más en `u_tg` (`full` 8 951 / 837 / 4 790).
+Solo es síntesis: el coste en CLS y la Fmax (la puerta pide ≥ 109 MHz; el camino
+crítico del hito 1 era del blitter) los tiene que medir el P&R de la integración.
 
 ## Lo que no se ha hecho o no se ha podido comprobar
 
