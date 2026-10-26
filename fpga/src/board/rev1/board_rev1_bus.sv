@@ -432,24 +432,33 @@ module BOARD_REV1_BUS #(
      * 14,5 a 7,16), la placa conduciria el dato viejo contra la memoria del
      * MSX. drv_arm solo deja conducir en una lectura que empezo con el
      * dispositivo en reposo: se arma con Bus.BUSDIR_n = 1 y se desarma con
-     * RD_n filtrado en reposo 3 muestras seguidas (un rebote de 2 no lo
-     * desarma).
+     * /RD del pin en reposo 3 muestras CRUDAS seguidas (rd_tail; un rebote de
+     * 2 no lo desarma). Con las muestras crudas, sin el PIN_FILTER, la guardia
+     * corta 2-3 ciclos (19-29 ns) despues de subir /RD, en vez de 4-5 con
+     * RD_n filtrado: el /RD de un M1 que baje 30-45 ns despues del fin del IN
+     * (Zilog no da minimos; el banco con +M1RD=30 a 10,74 MHz) ya no se
+     * encuentra la placa conduciendo. rd_tail corta tambien en el mismo ciclo
+     * (combinacional), no solo al desarmar en el flanco siguiente.
      ***************************************************************/
-    logic [1:0] rd_hi_cnt;
+    logic       rd_raw_q;       // CART_RD_n muestreado, sin filtro
+    logic [1:0] rd_raw_hi;      // muestras crudas seguidas con /RD en reposo, antes de la ultima
     logic       drv_arm;
+    wire        rd_tail = rd_raw_q && (rd_raw_hi >= 2'd2);  // 3 muestras crudas seguidas con /RD en reposo
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
-            rd_hi_cnt <= 2'd0;
+            rd_raw_q  <= 1'b1;
+            rd_raw_hi <= 2'd0;
             drv_arm   <= 1'b0;
         end
         else begin
-            if(!RD_n)                   rd_hi_cnt <= 2'd0;
-            else if(rd_hi_cnt != 2'd3)  rd_hi_cnt <= rd_hi_cnt + 2'd1;
-            if(Bus.BUSDIR_n)                        drv_arm <= 1'b1;
-            else if(RD_n && rd_hi_cnt >= 2'd2)      drv_arm <= 1'b0;
+            rd_raw_q <= CART_RD_n;
+            if(!rd_raw_q)               rd_raw_hi <= 2'd0;
+            else if(rd_raw_hi != 2'd3)  rd_raw_hi <= rd_raw_hi + 2'd1;
+            if(Bus.BUSDIR_n)            drv_arm <= 1'b1;
+            else if(rd_tail)            drv_arm <= 1'b0;
         end
     end
-    wire drv_ok = (DRIVE_TAIL_GUARD == 0) || drv_arm;
+    wire drv_ok  = (DRIVE_TAIL_GUARD == 0) || (drv_arm && !rd_tail);
 
     /***************************************************************
      * データバス
