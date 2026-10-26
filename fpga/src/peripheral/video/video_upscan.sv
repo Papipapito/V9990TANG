@@ -41,10 +41,14 @@
  *
  * V9990TANG:
  *  - BLEND = 1 (por defecto): mezcla lineal horizontal de tnCart, sin cambios.
- *    BLEND = 0: replicacion del punto mas cercano con la misma cadencia de
- *    lectura (mismas R_ADDR, out_state y latencias); no se instancian los
- *    sumadores de la mezcla. En cada salida se toma el punto de mayor peso de
- *    la mezcla (R_DATA_P o R_DATA_C) y, a igual peso, el nuevo (R_DATA_C).
+ *    BLEND = 0: replicacion del punto mas cercano con la misma cadencia
+ *    (mismos out_state, OUT_EN y latencias); no se instancian los sumadores
+ *    de la mezcla. En B1/B2/B3/B5/B6 se leen las mismas R_ADDR y cada salida
+ *    toma el punto de mayor peso de la mezcla (R_DATA_P o R_DATA_C; a igual
+ *    peso, R_DATA_C), que es el mas cercano. En B4 la lectura de tnCart (+2
+ *    en el estado 0) no lee nunca el punto 1 de cada 16, asi que BLEND = 0
+ *    usa su propio R_ADDR (+2 en el estado 7: se salta el punto 8) y saca
+ *    siempre R_DATA_C. Ver docs/notas/video.md.
  *  - OUT.PAL: IN.PAL pasado al dominio de DCLK (dos flops) y fijado en el
  *    flanco de VSYNC de entrada, el mismo que reinicia los contadores de
  *    salida: vale para todo el cuadro que empieza. Con 313 lineas de entrada
@@ -676,6 +680,9 @@ module VIDEO_UPSCAN_STRETCH_BUFFER #(
 `endif
 
                 VIDEO::RESOLUTION_B4:                       // 14.3MHz      (0+768+0)*15/16=720
+                    if(!BLEND)                              // V9990TANG, BLEND = 0: lee los puntos 0-7 y 9-15 de cada 16 (salta el 8: el
+                        R_ADDR <= R_ADDR + ((out_state == 4'h7) ? 2'd2 : 2'd1); // mas cercano de 15/16) y g_nearest saca R_DATA_C
+                    else
                     case (out_state)
                         default: R_ADDR <= R_ADDR;          //      R_DATA_P  R_DATA_C
                         4'h0:    R_ADDR <= R_ADDR + 2'd2;   // 0000000000000001     x0
@@ -914,11 +921,11 @@ end
 else begin : g_nearest
     /***************************************************************
      * BLEND = 0 (V9990TANG): replicacion del punto mas cercano
-     * Mismos estados, mismas R_ADDR y misma latencia que g_blend; en
-     * cada estado sale el punto de mayor peso de la mezcla de g_blend
-     * (indicada en cada linea) y, a igual peso, R_DATA_C. Los estados
-     * que g_blend deja a 0 (out_state_delay = F tras OUT_START) siguen
-     * a 0. Sin sumadores: un multiplexor de 2 a 1 por bit.
+     * Mismos estados y misma latencia que g_blend; salvo en B4, mismas
+     * R_ADDR y en cada estado sale el punto de mayor peso de la mezcla
+     * de g_blend (indicada en cada linea) y, a igual peso, R_DATA_C. Los
+     * estados que g_blend deja a 0 (out_state_delay = F tras OUT_START)
+     * siguen a 0. Sin sumadores: un multiplexor de 2 a 1 por bit.
      ***************************************************************/
     always_ff @(posedge OUT_CLK or negedge RESET_n) begin
         if(!RESET_n) begin
@@ -979,13 +986,13 @@ else begin : g_nearest
                     endcase
 `endif
 
-                VIDEO::RESOLUTION_B4:                       // x15/16
+                VIDEO::RESOLUTION_B4:                       // x15/16: R_ADDR propio (arriba), siempre el punto leido
                     case (out_state_delay)
-                        default: R_ADDR <= R_ADDR;          // como en g_blend: segundo driver de R_ADDR (ver docs/notas/video.md)
-                        4'h1, 4'h2, 4'h3, 4'h4, 4'h5, 4'h6:
-                                 OUT <= R_DATA_P;           // pE_c2, pD_c3, pC_c4, pB_c5, pA_c6, p9_c7
-                        4'h0, 4'h7, 4'h8, 4'h9, 4'ha, 4'hb, 4'hc, 4'hd, 4'he:
-                                 OUT <= R_DATA_C;           // c1, p8_c8 (empate), p7_c9 ... p1_cF
+                        default: ;                          // F tras OUT_START: OUT se mantiene, como en g_blend, pero sin
+                                                            // el segundo driver de R_ADDR de g_blend (ver docs/notas/video.md)
+                        4'h0, 4'h1, 4'h2, 4'h3, 4'h4, 4'h5, 4'h6, 4'h7,
+                        4'h8, 4'h9, 4'ha, 4'hb, 4'hc, 4'hd, 4'he:
+                                 OUT <= R_DATA_C;           // puntos 0-7, 9-15
                     endcase
 
                 VIDEO::RESOLUTION_B5,                       // x9/8
