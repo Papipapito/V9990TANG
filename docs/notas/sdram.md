@@ -6,11 +6,13 @@ Rama `hito/sdram`, desde `main` (`20936e6`, hito 1). Ficheros tocados:
 `ram.sv` no cambia: no hacía falta.
 
 Qué funciona, en una frase: el UMA genera su propio AUTO REFRESH en el canal 0
-(intervalo máximo 14,63 µs a 108 MHz y 14,71 µs a 107,386 MHz en el peor caso,
-7,4-7,9 µs en los regímenes reales), el RFSH de un cliente ya no se pierde ni
-sale junto a un R/W, y la inicialización de `sdram.sv` manda los dos AUTO REFRESH
-que pide JEDEC. Todo comprobado en simulación; **nada de esto se ha probado en
-la placa** (no tengo acceso a ella).
+(en el peor caso, con el canal 0 ocupado en todas sus ranuras, 1580 ciclos entre
+refrescos: 14,63 µs a 108 MHz y 14,71 µs a 107,386 MHz; el primer intervalo tras
+la inicialización llega a 1584 ciclos, 14,67 y 14,75 µs; 6,5-7,9 µs en los
+regímenes reales), el RFSH de un cliente ya no se pierde ni sale junto a un
+R/W, y la inicialización de `sdram.sv` manda los dos AUTO REFRESH que pide
+JEDEC. Todo comprobado en simulación; **nada de esto se ha probado en la
+placa** (no tengo acceso a ella).
 
 La cadencia no cambia: `DIV = 30`, una ranura cada 10 ciclos alternando canal 0
 y canal 1, accesos de 9 ciclos en `sdram.sv`, dato listo antes del siguiente
@@ -19,18 +21,39 @@ que el canal 1 (V9990) recibe el ACK 12 ciclos después de su `EXEC` en todas
 las ranuras y en todos los regímenes, igual que con el UMA del hito 1.
 
 **Fuentes.** Las afirmaciones sobre el V9990 son del **tiny9990** (fichero:línea);
-ninguna depende de cómo se comporta el chip real. La única que toca al chip
-real: openMSX no modela pérdida de VRAM en ningún modo. En
-`src/video/v9990/V9990.cc` (master del 25/10/2026) la VRAM solo se borra en
-`powerUp` (líneas 123-127), y al entrar en el reset del sistema por el puerto
-`SYSTEM_CONTROL` el comentario dice que en un MSX real ni la paleta ni la VRAM
-se borran (líneas 374-380); no hay nada de refresco ni de standby que toque la
-VRAM. Por eso tomo como requisito que la VRAM se conserve en todos los modos,
-también en standby, aunque el tiny9990 no pida ningún refresco en ese modo: es
-la razón del temporizador. Las afirmaciones sobre la SDRAM se
-apoyan en el controlador de nand2mario para la misma SDRAM embebida
-(`msx/WonderTANG-ref/fpga/src/sdram.v`), en `wv_to_sdram.v` del MoonTANG y en el
-modelo `sdram_model.v` del MoonTANG.
+ninguna de las que usa el diseño depende de cómo se comporta el chip real.
+Sobre el chip real hay dos fuentes, y no dicen lo mismo de la VRAM en standby:
+
+- **Manual del V9990** (Yamaha, *V9990 E-VDP-III Application Manual*, sección
+  12.2 "Register specifications", página 80, R#6, bits DSPM1-DSPM0; copia de
+  `map.grauw.nl/resources/video/yamaha_v9990.pdf`, página 86 del PDF):
+  `11` = "Stand-by mode (non-display, no VRAM refresh, kanji ROM readable)". El
+  chip real **no refresca** su VRAM en standby. El tiny9990 hace lo mismo: con
+  `DSPM = STANDBY` no pide ningún `RAM_RF` (`t9990_timing.sv:543-546`). De
+  DISP = 0 (R#8, página 81) el manual solo dice que se ve el color de fondo.
+- **openMSX** no modela ninguna pérdida de VRAM. En `src/video/v9990/V9990.cc`
+  (master `a557de7`, 25/10/2026) la VRAM solo se borra en `powerUp` (líneas
+  123-125), y al entrar en el reset del sistema por el puerto `SYSTEM_CONTROL`
+  el comentario dice que en un MSX real ni la paleta ni la VRAM se borran
+  (líneas 374-380). En todo `src/video/v9990/` la única mención de standby es
+  `V9990.hh:270`, sobre el ancho de la imagen ("standby TODO check this"); nada
+  de refresco.
+
+**Decisión: la VRAM se conserva en todos los modos, también en standby.** Es
+más de lo que garantiza el chip real (su VRAM es DRAM y sin refresco se pierde
+pasado el tiempo de retención, que el manual no da) y es lo que hace openMSX.
+Motivos: un AUTO REFRESH de la SDRAM refresca el chip entero, y en la misma
+SDRAM viven, en otras configuraciones, la MegaRAM (en 0) y Nextor (en
+`70_0000h`), que no pueden perderse por que el V9990 entre en standby; el
+estudio pone como puerta del hito 4 que la VRAM sobreviva 1 h en standby; y no
+conozco ningún programa que dependa de perder la VRAM en standby (tampoco
+podría depender de ello: el tiempo de retención no está especificado). Es una
+desviación consciente del chip real, y la integración debería apuntarla en
+`docs/ARCHITECTURE.md` junto a las demás.
+
+Las afirmaciones sobre la SDRAM se apoyan en el controlador de nand2mario para
+la misma SDRAM embebida (`msx/WonderTANG-ref/fpga/src/sdram.v`), en
+`wv_to_sdram.v` del MoonTANG y en el modelo `sdram_model.v` del MoonTANG.
 
 ## Qué cambia
 
@@ -51,7 +74,11 @@ Cómo funciona (`uma.sv:255-343`):
   REFRESH que el UMA presentó a `Primary`, de cualquier fuente: interno, RFSH
   del canal 0 o `RAM_RF` del canal 1 (`ref_issue`, `uma.sv:295`). Cada vez que
   sale uno vuelve a 0. Es decir, el temporizador se rearma con cualquier
-  refresco: con el `/RFSH` del Z80 reenviado casi no hace falta el interno.
+  refresco: con el `/RFSH` del Z80 reenviado casi no hace falta el interno. En
+  esto se aparta del MoonTANG, cuyo temporizador corre libre y pide un
+  refresco cada 781 ciclos pase lo que pase (`wv_to_sdram.v:112-129`): allí el
+  puente es el único que refresca; aquí hay otras dos fuentes, y contar desde
+  el último refresco de cualquiera de ellas es lo que acota el intervalo.
 - Con `REFRESH_CYCLES` = 780 ciclos sin refresco se levanta `int_req` (el
   `REFRESH_CYCLES` de `MoonTANG/fpga/src/wv_to_sdram.v:40`): 7,22 µs a 108 MHz
   y 7,26 µs a 107,386 MHz. Se sirve en la primera ranura `exec_timing[0]` sin
@@ -154,7 +181,7 @@ no recibía ningún AUTO REFRESH antes del MRS. Ahora mandan `CMD_REF`
 (`sdram.sv:270-280`). Los estados y los ciclos son los mismos: 8 ciclos de PRE
 a REF, de REF a REF y de REF al MRS, 74 ns a 108 MHz, por encima del tRC ≥ 55 ns
 del modelo. La secuencia PRE, dos REF y MRS es la de nand2mario para esta misma
-SDRAM (`WonderTANG-ref/fpga/src/sdram.v:155-172`). El resto de `sdram.sv` no
+SDRAM (`WonderTANG-ref/fpga/src/sdram.v:157-174`). El resto de `sdram.sv` no
 cambia: la cadencia es intocable.
 
 Hay un segundo cambio en `sdram.sv`, solo para simulación (`sdram.sv:109-118`).
@@ -170,7 +197,7 @@ La síntesis sigue usando la línea de tnCart: Gowin no define `VERILATOR`, y
 | Elemento | Cambio | Qué hay que conectar |
 |---|---|---|
 | Parámetros de `UMA` | nuevos: `INT_REFRESH` (1), `REFRESH_CYCLES` (780), `REFRESH_ESC` (2 × `REFRESH_CYCLES`), `DBG_W` (16) | nada: los valores por defecto son los del hito. `.INT_REFRESH(0)` quita el temporizador |
-| Salidas de `UMA` | nuevas: `DBG_RF_INT`, `DBG_RF_CH0`, `DBG_RF_CH1`, `DBG_RF_ESC` (contadores de `DBG_W` bits que dan la vuelta: refrescos emitidos por el temporizador, por el RFSH del canal 0 y por el `RAM_RF` del canal 1, y escalaciones), `DBG_RF_MAXGAP[11:0]` (mayor intervalo entre AUTO REFRESH, en ciclos menos 1, satura en 4095) y `DBG_RF_STB` (un ciclo por AUTO REFRESH) | opcional. Sin conectar, Gowin las poda y el top actual compila sin tocarlo. Verilator 5.020 avisa `PINMISSING` si un banco instancia `UMA` sin ellas; el aviso es fatal sin `-Wno-fatal`, y lo quita `-Wno-lint`. Todos los bancos del repositorio compilan con `-Wno-fatal` |
+| Salidas de `UMA` | nuevas: `DBG_RF_INT`, `DBG_RF_CH0`, `DBG_RF_CH1`, `DBG_RF_ESC` (contadores de `DBG_W` bits que dan la vuelta: refrescos emitidos por el temporizador, por el RFSH del canal 0 y por el `RAM_RF` del canal 1, y escalaciones), `DBG_RF_MAXGAP[11:0]` (mayor intervalo entre AUTO REFRESH, en ciclos menos 1, satura en 4095) y `DBG_RF_STB` (un ciclo por AUTO REFRESH) | opcional. Sin conectar, Gowin las poda y el top actual compila sin tocarlo. Verilator 5.020 avisa `PINMISSING` (seis avisos) si un banco instancia `UMA` sin ellas; con las opciones por defecto el aviso es fatal, y lo quitan `-Wno-fatal` o `-Wno-lint` (comprobado con `--lint-only`). No es un requisito nuevo: el `uma.sv` de tnCart ya da tres `WIDTHEXPAND` con las opciones por defecto (`mem_cnt` en las comparaciones de `TIMING`), así que ningún banco con el UMA compilaba sin una de esas dos opciones |
 | `Secondary[n].DOUT` | se actualiza solo tras un R/W, no tras un RFSH | nada (ningún cliente lo lee tras un RFSH, ver arriba) |
 | `ACK_n` del canal 0 | un R/W aplazado por la escalación, o un RFSH que llegó junto a un R/W, alarga el ACK una ranura (20 ciclos) | nada para la megaROM (no mira el ACK) ni para el bootloader (handshake) |
 | Canal 1 | sin cambios de comportamiento: el refresco interno nunca sale en sus ranuras | nada |
@@ -180,7 +207,9 @@ Lo que tiene que hacer la integración (fuera de mis ficheros):
 
 1. **Documentación.** En `docs/ARCHITECTURE.md`, la sección "SDRAM y VRAM" dice
    "Refresco: por debajo de la especificación en el hito 1": pasa a describir el
-   temporizador (780 ciclos, escalación a 1560, intervalo máximo 1580 ciclos).
+   temporizador (780 ciclos, escalación a 1560, intervalo máximo 1580 ciclos) y
+   la desviación consciente del chip real: el V9990 no refresca su VRAM en
+   standby (manual, p. 80) y aquí se conserva, como en openMSX (ver "Fuentes").
    En `docs/VERIFICATION.md`, añadir el banco (`fpga/tb/sdram/run.sh`, sale con
    1 si algo falla; ~30 s con 2 ms por caso). En `docs/changelog.md`, los tres
    arreglos.
@@ -206,18 +235,29 @@ Lo que tiene que hacer la integración (fuera de mis ficheros):
 fpga/tb/sdram/run.sh [US]        # desde Git Bash o WSL; US = µs por caso (2000)
 ```
 
-Compila seis builds de Verilator 5.020 en `/tmp` (WSL) y corre la matriz a 108
+Compila siete builds de Verilator 5.020 en `/tmp` (WSL) y corre la matriz a 108
 y a 107,386 MHz. Escribe `fpga/tb/sdram/resultados.txt` (en el repositorio: la
 salida de la última ejecución, 2 ms por caso) y sale con 1 si algún caso no da
 lo esperado. Tarda unos 30 s. `fpga/tb/sdram/resultados_20ms.txt` es la misma
-matriz con 20 ms por caso (`run.sh 20000`, unos 4 min). Icarus 12 no sirve: no
+matriz con 20 ms por caso (`run.sh 20000`, unos 5 min). Icarus 12 no sirve: no
 compila los puertos `RAM_IF.HOST` de tnCart ("syntax error ... Errors in port
 declarations").
 
 Builds: `new` (el árbol), `int0` (`-GINT_REFRESH=0`), `hito1` (`uma.sv` y
 `sdram.sv` de `20936e6`; referencia de la latencia del canal 1 y control),
 `mut` (refresco interno por `done_ch` y `DOUT` tras cualquier operación),
-`slack0` y `slow` (`sdram.sv` con 10 y 11 ciclos por acceso).
+`mutrw` (solo `DOUT` tras cualquier operación, también tras un RFSH; el
+refresco interno como en el árbol), `slack0` y `slow` (`sdram.sv` con 10 y 11
+ciclos por acceso).
+
+Si un simulador muere sin llegar al informe, el caso sale como
+`FALLA (sin informe; vtb salió con N)` y cuenta como fallo; `run.sh` no lo
+repite. Ha pasado una vez en once ejecuciones de la matriz (26/10, el caso
+`neg_slack0_slot_107386`, con otras builds de Gowin y Verilator corriendo en
+paralelo; entonces `run.sh` aún no guardaba el código de salida). Las ocho
+ejecuciones posteriores pasaron enteras; los binarios son deterministas, así
+que apunta a algo externo (quizá memoria de WSL), pero no lo he podido
+confirmar.
 
 Piezas:
 
@@ -272,6 +312,10 @@ Piezas:
   - `esc` (cliente al 100 %): todos los refrescos internos son escalaciones y
     cada una aplaza un R/W exactamente 20 ciclos (histograma de latencias);
   - `rfsh` (R/W + RFSH): cada RFSH pedido sale como AUTO REFRESH;
+  - `ch0` (cliente al 100 % y R/W + RFSH): cada lectura del canal 0 devuelve
+    el dato correcto al subir el ACK. Con R/W + RFSH se corre también con el
+    V9990 activo, que es cuando un `DOUT` copiado tras el RFSH aplazado traería
+    la lectura del canal 1 (control `mutrw`);
   - `integ0`/`integ1`: los dos canales releen bytes que escribieron antes
     (miles de lecturas por caso), sobre la memoria precargada con un patrón.
 
@@ -286,9 +330,10 @@ las cifras son de 20 ms y coinciden con las de 2 ms salvo los contadores):
 | Z80 a 3,58 MHz sin `/RFSH`, standby | 7,63 µs | 7,64 µs | 0 escalaciones |
 | Z80 a 3,58 y 7,16 MHz con `/RFSH` | 7,59 y 6,67 µs | 7,64 y 6,52 µs | el `/RFSH` reenviado hace casi todo el trabajo (35 y 0 internos) |
 | Z80 a 7,16 MHz sin `/RFSH`, V9990 activo | 7,78 µs | 7,82 µs | canal 1 con latencia 12 |
-| cliente al 100 %, V9990 en standby | 14,67 µs (1580 ciclos entre REF) | 14,75 µs | 1366 escalaciones = 1366 internos = 1366 R/W aplazados exactamente 20 ciclos (latencia 18, aplazados 38) |
+| cliente al 100 %, V9990 en standby | 14,67 µs (el primer intervalo, 1584 ciclos; en régimen 1580) | 14,75 µs | 1366 escalaciones = 1366 internos = 1366 R/W aplazados exactamente 20 ciclos (latencia 18, aplazados 38) |
 | cliente al 100 %, V9990 activo | 14,63 µs | 14,71 µs | ídem, con 1263 |
-| R/W + RFSH a la vez | todos los RFSH salen (37 544 de 37 544) | 37 325 de 37 325 | también con `INT_REFRESH = 0` |
+| R/W + RFSH a la vez | todos los RFSH salen (37 544 pedidos; 37 543 emitidos y el último en curso al acabar) | 37 325 (37 324 + 1) | también con `INT_REFRESH = 0` |
+| R/W + RFSH a la vez, V9990 activo | ídem, 0 errores de dato en el canal 0 | ídem | con `mutrw`, 9096 y 9041 lecturas malas |
 
 En todos los casos: modelo sin errores, 2 AUTO REFRESH antes del MRS, capturas
 dentro de la ventana, cadencia en todas las ranuras (unas 21 500 por 2 ms), canal 1
@@ -302,6 +347,7 @@ Controles negativos, que tienen que fallar en la comprobación indicada (y falla
 | `INT_REFRESH = 0`, standby | sin el temporizador no hay refresco (20 ms sin ninguno) |
 | UMA y `sdram.sv` del hito 1 | 0 REF antes del MRS; 63,3 µs entre refrescos con el V9990 activo (uno por línea) y ninguno en standby; con R/W + RFSH a la vez se pierden los RFSH que llegan junto a un R/W (en 2 ms salen 1258 de 5088, solo los que iban solos) |
 | mutante: refresco interno por `done_ch` y DOUT tras cualquier operación | el Z80 lee el dato del canal 1 durante su `/RD`: `z80` lo detecta |
+| `mutrw`: DOUT tras cualquier operación, también tras un RFSH (refresco interno como en el árbol) | con R/W + RFSH y el V9990 activo, el cliente lee tras su ACK la lectura del canal 1 que se copió al acabar su RFSH aplazado (9096 lecturas malas en 20 ms): `ch0` lo detecta, y por eso `proc_rw` hace falta |
 | `slack0`: `sdram.sv` con 10 ciclos por acceso | falla solo `slot`: sin el ciclo de holgura el resto aún funciona; la comprobación es la regla del estudio |
 | `slow`: `sdram.sv` con 11 ciclos por acceso | falla `slot` y el canal 1 lee datos rancios (47 683 errores en 20 ms) **sin perder ninguna ranura visible**: un acceso lento no avisa, por eso `slot` mira la cadencia directamente |
 
@@ -328,7 +374,9 @@ Límites del banco, dichos para no darlos por cubiertos:
 `v9990`, variante `xtal`) con solo `run syn` y salida `check_sdram`. Recursos
 por módulo de `impl/gwsynthesis/check_sdram_syn_rsc.xml`. La referencia es la
 misma síntesis sobre el árbol de `main` (`20936e6`, hito 1), en una copia en
-una ruta corta. Las cifras que daba el encargo (`u_uma` 178 / 217, `u_sdram`
+una ruta corta; da las mismas cifras por módulo que la build del hito 1 que
+quedó en el repositorio principal (`V9990TANG/fpga/impl/gwsynthesis/v9990_xtal_syn_rsc.xml`,
+22/10, sin seguimiento en git). Las cifras que daba el encargo (`u_uma` 178 / 217, `u_sdram`
 245 / 144) son de la síntesis `full` del estudio (sección 3, tabla de módulos), no
 de esta configuración: en `v9990` los mismos módulos del hito 1 miden 171 / 217 y
 246 / 144.
@@ -348,10 +396,11 @@ en el top) no cuenta. Los avisos de la síntesis son los mismos 8 que en el
 hito 1 (CV0016 x2, NL0002 x6), ninguno de `uma.sv` ni de `sdram.sv`.
 
 **Build completa (P&R).** `gw_sh` con un script de dos líneas,
-`source check_sdram.tcl` y `run pnr`, desde `fpga/` (29 min en total, con
-otras builds de Gowin en paralelo). La puerta del hito 1 (`tools/check_build.py
+`source check_sdram.tcl` y `run pnr`, desde `fpga/` (19 a 29 min en total,
+según las otras builds de Gowin que corran en paralelo). La puerta del hito 1 (`tools/check_build.py
 fpga/impl/pnr/check_sdram` con los mismos argumentos que
-`docs/VERIFICATION.md` da para `v9990_xtal`) **pasa**:
+`docs/VERIFICATION.md` da para `v9990_xtal`) **pasa**. Se ha hecho dos veces
+sobre el mismo RTL (25/10 y 26/10) con cifras idénticas:
 
 | | Hito 1 (`fpga/reports/hito1`) | Hito 4 |
 |---|---|---|
@@ -363,10 +412,40 @@ fpga/impl/pnr/check_sdram` con los mismos argumentos que
 | avisos | CV0016 x2, NL0002 x6, PR1014 x1 | los mismos |
 
 El peor camino sigue siendo el del blitter (`u_blit/state_3_s1` →
-`u_blit/work_22_s0`), y ninguno de los 25 peores caminos de setup pasa por
-`u_uma` ni por `u_sdram`. La mejora de Fmax y los −28 CLS son variación del
+`u_blit/work_22_s0`), y ninguno de los 25 peores caminos de setup empieza ni
+acaba en `u_uma` o en `u_sdram` (todos son del blitter, de `u_port` → `u_sp` o
+de `u_tg` → `u_sp`). La mejora de Fmax y los −28 CLS son variación del
 P&R, no algo que se deba a este cambio. El `.fs` (`impl/pnr/check_sdram.fs`) no
 se ha archivado ni probado en la placa: `fpga/reports/` es de la integración.
+
+## Revisión del 26/10/2026
+
+El hito lo empezó otra sesión, que se cortó por un límite de tiempo. Se ha
+revisado todo lo suyo y se ha vuelto a comprobar lo que daba por hecho. **El
+RTL no cambia**; el banco gana un caso y un control:
+
+- `uma.sv` y `sdram.sv` releídos frente a los de `main`: los tres arreglos
+  hacen lo que dice esta nota y nada más. El cambio de `DOUT` solo tras un R/W
+  (`proc_rw`) es necesario y no un extra: sin él, un cliente con handshake que
+  pida R/W y RFSH a la vez lee tras el ACK la lectura del canal 1 que se copió
+  al terminar su RFSH aplazado. El banco no lo cubría (el caso R/W + RFSH solo
+  corría con el V9990 en standby, donde no hay lecturas del canal 1); ahora
+  corre también con el V9990 activo (`rw_rfsh_v99`), y el control `mutrw`
+  demuestra que lo detecta.
+- Banco vuelto a correr (`run.sh` y `run.sh 20000`): `TOTAL: PASA`; los casos
+  que ya había dan cifras idénticas a las de la sesión anterior (el banco es
+  determinista). `run.sh` apunta ahora el código de salida del simulador si
+  muere sin informe (ver "Cómo se prueba").
+- Síntesis (`check_sdram.tcl`) y P&R vueltas a hacer sobre el árbol: mismas
+  cifras por módulo, mismo informe de timing y la puerta pasa (arriba).
+- Citas (fichero:línea) comprobadas en sus ficheros; openMSX descargado en el
+  master `a557de7` del 25/10/2026.
+- **Corregido:** la nota decía que ninguna afirmación tocaba al chip real salvo
+  la de openMSX. El manual del V9990 dice que en standby no hay refresco de
+  VRAM; ahora está en "Fuentes" y la conservación de la VRAM en standby figura
+  como desviación consciente del chip. La decisión de diseño no cambia.
+- Comprobados también el aviso `PINMISSING` de Verilator (tabla de interfaces)
+  y que Icarus 12 no compila `ram.sv` ni `uma.sv`.
 
 ## Riesgos y observaciones
 
