@@ -130,18 +130,21 @@ foreach f $FILES { add_file $f }
 set_option -use_mspi_as_gpio 1 -use_sspi_as_gpio 1
 set_option -top_module TNCART_BOARD_WT200B_TOP -verilog_std sysv2017
 set_option -output_base_name $NAME
-# Opciones de P&R: place 2 / route 1 (las del hito 1) salvo que el
-# build_<cfg>_<variante>.tcl fije PNR_OPTS antes de cargar este fichero
-# (pares "-opcion valor" de set_option). El P&R de Gowin es determinista: cada
-# juego de opciones es una colocacion distinta del mismo netlist, y los
-# margenes de CLK_BASE (Fmax del core y carrera CLK_BASE -> DCLK) dependen de
-# ella; cada variante guarda el juego con el que paso la puerta
-# (docs/notas/integ.md, seccion 6).
-if {![info exists PNR_OPTS]} {
-    set PNR_OPTS {-place_option 2 -route_option 1}
+# Opciones de sintesis y de P&R: las del hito 1 (map 1, place 2, route 1)
+# salvo que el build_<cfg>_<variante>.tcl fije BUILD_OPTS antes de cargar
+# este fichero (pares "-opcion valor" de set_option). Sintesis y P&R son
+# deterministas, pero un cambio minimo del RTL mueve la colocacion entera, y
+# los margenes de CLK_BASE (Fmax del core, que tiene que dar 109 MHz, y la
+# carrera CLK_BASE -> DCLK) dependen de ella: cada variante guarda el juego
+# con el que paso la puerta, y al cambiar el RTL hay que volver a barrerlo
+# (docs/notas/integ.md, seccion 6). En el GW2AR-18, -place_option 1 da la
+# misma colocacion que 2, 3 y 4 no existen, y -replicate_resources 1 no
+# cambia nada.
+if {![info exists BUILD_OPTS]} {
+    set BUILD_OPTS {-place_option 2 -route_option 1}
 }
-puts "build $NAME: opciones de P&R: $PNR_OPTS"
-eval set_option $PNR_OPTS
+puts "build $NAME: opciones de sintesis y P&R: $BUILD_OPTS"
+eval set_option $BUILD_OPTS
 set_option -gen_text_timing_rpt 1
 # SDF post-PnR: tools/check_build.py (punto 6) toma de el la red
 # CLKOUT -> dclk_en_ff[1]/CLK, el tC2Q de ese flop, la ruta Q -> OR de

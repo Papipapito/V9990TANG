@@ -11,4 +11,9 @@
 # ============================================================================
 set CFG     v9990
 set VARIANT xtal
+# Barrido del 26/10/2026 sobre el RTL de f00c622 (docs/notas/integ.md,
+# seccion 6): con las opciones del hito 1 la carrera CLK_BASE -> DCLK sale a
+# -0,077 ns; con -map_option 2 (mapeo LUT5 sin mas LUT), place 2 y route 0
+# pasa la puerta (Fmax 109,15 MHz, carrera +0,106 ns).
+set BUILD_OPTS {-map_option 2 -place_option 2 -route_option 0}
 source build_common.tcl
