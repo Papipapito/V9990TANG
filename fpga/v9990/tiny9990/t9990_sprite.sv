@@ -132,11 +132,12 @@ module T9990_SPRITE #(
     // V9990TANG: el cursor sale una linea por debajo de su Y, dos con entrelazado (manual del V9990,
     // "Cursor Attribute Table": "Actual display position is one line below specified, two lines for
     // interlace"; openMSX V9990BitmapConverter.cc CursorInfo: attrY += isInterlaced() ? 2 : 1). El
-    // tiny9990 lo pintaba en la linea Y. La misma correccion va en la linea del patron (fetch_pat_line
-    // de STATE_CUR_PAT_START y STATE_CUR_PAT). La linea es CUR_VCNT: con entrelazado cuenta lineas del
-    // cuadro y en overscan va desplazada (t9990.sv); con ENABLE_CURSOR_EOR = 0 es VCNT (hito 1).
-    wire [8:0] cur_y_adj = (ENABLE_CURSOR_EOR == 0) ? 9'd0 : (REG.ILM ? 9'd2 : 9'd1);
-    wire [8:0] cur_offset_y = CUR_VCNT - cur_signed_y - cur_y_adj;
+    // tiny9990 lo pintaba en la linea Y. La correccion va ya restada en CUR_VCNT (t9990.sv, cur_line_q,
+    // registrada por tiempo): aqui, en cur_offset_y y en la linea del patron (fetch_pat_line de
+    // STATE_CUR_PAT_START y STATE_CUR_PAT), solo se resta la Y del atributo, como en el hito 1. CUR_VCNT
+    // con entrelazado cuenta lineas del cuadro y en overscan va desplazada; con ENABLE_CURSOR_EOR = 0 es
+    // VCNT (hito 1).
+    wire [8:0] cur_offset_y = CUR_VCNT - cur_signed_y;
     reg cur_y_flag;
 
 `ifdef SPR_PAT_USE_DPB
@@ -390,10 +391,10 @@ module T9990_SPRITE #(
             // 最初のパターン
 `ifdef SPR_ATR_USE_DPB
             fetch_pat_xpos <= spr_atr_r_data[25:16];
-            fetch_pat_line <= CUR_VCNT[4:0] - spr_atr_r_data[4:0] - cur_y_adj[4:0];
+            fetch_pat_line <= CUR_VCNT[4:0] - spr_atr_r_data[4:0];
 `else
             fetch_pat_xpos <= atr_buff[0][25:16];
-            fetch_pat_line <= CUR_VCNT[4:0] - atr_buff[0][4:0] - cur_y_adj[4:0];
+            fetch_pat_line <= CUR_VCNT[4:0] - atr_buff[0][4:0];
             fetch_index_next <= 1'd1;
 `endif
 
@@ -502,10 +503,10 @@ module T9990_SPRITE #(
                     // 次のパターン Y オフセットを取得
 `ifdef SPR_ATR_USE_DPB
                     fetch_pat_xpos <= spr_atr_r_data[25:16];
-                    fetch_pat_line <= CUR_VCNT[4:0] - spr_atr_r_data[4:0] - cur_y_adj[4:0];
+                    fetch_pat_line <= CUR_VCNT[4:0] - spr_atr_r_data[4:0];
 `else
                     fetch_pat_xpos <= atr_buff[fetch_index_next][25:16];
-                    fetch_pat_line <= CUR_VCNT[4:0] - atr_buff[fetch_index_next][4:0] - cur_y_adj[4:0];
+                    fetch_pat_line <= CUR_VCNT[4:0] - atr_buff[fetch_index_next][4:0];
                     fetch_index_next <= fetch_index_next + 1'd1;
 `endif
 

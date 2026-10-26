@@ -402,10 +402,22 @@ module T9990 #(
     // entrelazado el cursor va en lineas del cuadro, {linea del campo, EO}, como el bitmap (BG_Y); en
     // overscan (B0/B2/B4: MCS = 1 sin HSCN) su Y cuenta desde donde empieza la imagen en los modos con
     // borde: getCursorYOffset (V9990.hh) = border1 de displayNTSC_MCLK / displayPAL_MCLK, 14 o 41
-    // lineas. El +1 (+2 con entrelazado) del atributo lo suma T9990_SPRITE. Con ENABLE_CURSOR_EOR = 0
-    // el cursor usa SPR_Y, como en el hito 1.
+    // lineas. Con ENABLE_CURSOR_EOR = 0 el cursor usa SPR_Y, como en el hito 1.
+    // El cursor sale una linea por debajo de su Y, dos con entrelazado (manual, "Cursor Attribute
+    // Table": "one line below specified, two lines for interlace"; openMSX CursorInfo: attrY +=
+    // isInterlaced() ? 2 : 1). Ese +1/+2 se resta aqui de la linea, no en T9990_SPRITE, y la linea va
+    // REGISTRADA (cur_line_q): asi T9990_SPRITE solo resta la Y del atributo, como en el hito 1. La
+    // linea combinacional (mux, overscan y las dos restas del sprite en serie hasta fetch_pat_line)
+    // daba 12 niveles y la build no cerraba a 108 MHz (Fmax 101,2 MHz; revision del area, 26/10/2026).
+    // SPR_Y, STATUS.EO y R#7 cambian como mucho una vez por linea; el banco (fpga/tb/core, cur_race)
+    // comprueba que en ningun ACK del sprite cur_line_q difiere de la linea combinacional.
     wire [8:0] cur_line_fr = (REG.ILM && REG.EO && !REG.HSCN) ? {SPR_Y[7:0], STATUS.EO} : SPR_Y;
     wire [8:0] cur_line    = cur_line_fr - ((REG.MCS && !REG.HSCN) ? (pal_win ? 9'd41 : 9'd14) : 9'd0);
+    logic [8:0] cur_line_q;
+    always_ff @(posedge CLK or negedge rst_flag) begin
+        if(!rst_flag) cur_line_q <= 0;
+        else          cur_line_q <= cur_line - (REG.ILM ? 9'd2 : 9'd1);
+    end
 
 `ifndef DISABLE_SP
     T9990_SPRITE #(
@@ -423,7 +435,7 @@ module T9990 #(
         .FETCH_START(BG_START),
         .OUT_START(SPR_START),
         .VCNT(SPR_Y),
-        .CUR_VCNT((ENABLE_CURSOR_EOR != 0) ? cur_line : SPR_Y),
+        .CUR_VCNT((ENABLE_CURSOR_EOR != 0) ? cur_line_q : SPR_Y),
 
         // MEM I/F
         .MEM(SP_MEM),

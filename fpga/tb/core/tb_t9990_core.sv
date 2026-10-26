@@ -289,7 +289,21 @@ module tb_t9990_core;
 
 `ifndef CORE_HITO1
     function integer lost_slots; lost_slots = dut.u_ram.lost_slots; endfunction
+    // cursor: T9990_SPRITE compara la linea (CUR_VCNT = cur_line_q, registrada en t9990.sv) en los ACK
+    // de sus lecturas de VRAM y en el ciclo siguiente (STATE_CUR_PAT_START). En esos ciclos la linea
+    // registrada tiene que ser la combinacional (cur_line - 1, - 2 con entrelazado); si no, el registro
+    // se veria (cur_race)
+    integer cur_race = 0, cur_acks = 0;
+    reg sp_ack_d = 0;
+    always @(posedge clk) begin
+        if (ENABLE_CURSOR_EOR != 0 && (dut.SP_MEM.ACK || sp_ack_d)) begin
+            cur_acks = cur_acks + 1;
+            if (dut.cur_line_q !== 9'(dut.cur_line - (dut.REG.ILM ? 9'd2 : 9'd1))) cur_race = cur_race + 1;
+        end
+        sp_ack_d <= dut.SP_MEM.ACK;
+    end
 `else
+    integer cur_race = 0, cur_acks = 0;
     function integer lost_slots; lost_slots = 0; endfunction       // el core del hito 1 no tiene la asercion
 `endif
 
@@ -783,6 +797,20 @@ module tb_t9990_core;
             wr_reg(6'd7, 8'h00); wr_port(4'd7, 8'h00); wr_reg(6'd6, 8'h83);
             e_bp = 0; e_hx = 0;
             e_w = 256; e_h = 212; e_ofs = 0;
+            // 12) la linea registrada del cursor (cur_line_q) frente a la combinacional en cada ACK del
+            //     sprite, tambien en los modos que no se comparan punto a punto (B3, B4, PAL, entrelazado)
+            cx[0] = 40;  cy[0] = 20;  ca[0] = 8'h20;
+            cx[1] = 120; cy[1] = 200; ca[1] = 8'h40;
+            cur_load;
+            for (k = 0; k < 6; k = k + 1) begin
+                wr_port(4'd7, (k >= 3) ? 8'h01 : 8'h00);
+                wr_reg(6'd6, (k == 0) ? 8'h97 : ((k == 1) ? 8'h95 : ((k == 2) ? 8'h83 : ((k == 3) ? 8'hA9 : ((k == 4) ? 8'hAB : 8'h97)))));
+                wr_reg(6'd7, (k == 2 || k == 5) ? 8'h06 : ((k == 4 && ENABLE_PAL != 0) ? 8'h0E : 8'h00));
+                wait_vs(3);
+            end
+            wr_reg(6'd7, 8'h00); wr_port(4'd7, 8'h00); wr_reg(6'd6, 8'h83);
+            $display("  cursor: %0d ACK del sprite (y ciclos siguientes) en todos los casos; cur_line_q distinta de la linea combinacional en %0d", cur_acks, cur_race);
+            if (ENABLE_CURSOR_EOR != 0 && (cur_race != 0 || cur_acks == 0)) nerr = nerr + 1;
             if (nerr == 0) $display("EOR_OK"); else $display("EOR_ERRORS %0d", nerr);
         end
     endtask
