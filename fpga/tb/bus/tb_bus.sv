@@ -308,6 +308,8 @@ module tb_bus;
     int n_bounce = 0;
     int pw_lat_max = 0;             // ciclos /RD|/WR del pin -> pw_hold (accesos P#0/P#1)
     int pw_fires = 0;
+    int n_pw_spur = 0;              // pre-WAIT en un IN/OUT a un puerto que no es 60h/61h
+    int n_sweep = 0;                // puertos del barrido de E/S
     int wait_run_max = 0;           // ciclos seguidos con /WAIT activo (uso normal)
     int glitch_events = 0, glitch_wait = 0, glitch_drive = 0;
     int nodev_wait_max = 0;         // ciclos de la mayor rafaga de /WAIT sin nadie que conteste
@@ -389,6 +391,7 @@ module tb_bus;
     // ajena (M1 y lecturas/escrituras de la memoria del MSX): la direccion
     // que veria cualquier dispositivo de memoria del slot (la MegaRAM).
     reg [15:0] cur_a = 16'h0000;
+    reg [15:0] prev_a = 16'h0000;       // direccion del ciclo anterior del Z80
     int        cur_kind = 0;            // 0 nada, 1 E/S, 2 nuestra memoria, 3 memoria ajena
     bit        exp_armed = 1'b0;
     reg [15:0] chk_a = 16'h0000;       // copia de cur_a/cur_kind para la comprobacion del ciclo
@@ -541,6 +544,7 @@ module tb_bus;
                 s_a = 16'($urandom);
                 at(t1 + T_AD);
                 s_a = a;
+                prev_a = cur_a;
                 cur_a = a;
                 cur_kind = kind;
                 chk_a = a;
@@ -789,6 +793,17 @@ module tb_bus;
         end
     endtask
 
+    // pre-WAIT en un IN/OUT a un puerto que no es 60h/61h: la decision vio la
+    // direccion de otro ciclo (docs/notas/bus.md, seccion 1: el modelo lo da
+    // posible a 10,74 MHz con el ciclo anterior en xx60h/xx61h)
+    task automatic note_pw_port(input [7:0] port, input [15:0] pa);
+        if ((port & 8'hFE) != 8'h60 && pw_seen_tb && t_pw >= t_stb) begin
+            n_pw_spur = n_pw_spur + 1;
+            if (n_pw_spur <= 6) $display("  [pre-WAIT %0t] en un IN/OUT al puerto %02h; ciclo anterior en %04h; ultimo salto en g%0d f%0d",
+                                         $time, port, pa, last_jump / 3, last_jump % 3);
+        end
+    endtask
+
     task automatic z_out(input [7:0] port, input [7:0] v, input int bk, input int bn, input real boff);
         reg [7:0] dmy;
         int ntw, c;
@@ -804,6 +819,7 @@ module tb_bus;
         c = cat_of(port, 1'b1);
         st_n[c] = st_n[c] + 1;
         note_wait(c, ntw, is_ours(port) && port[3:1] == 3'b000 && V99_BASE == 8'h60 && !bounce_cyc);
+        note_pw_port(port, prev_a);
         bounce_cyc = 1'b0;
     endtask
 
@@ -823,6 +839,7 @@ module tb_bus;
         st_n[c] = st_n[c] + 1;
         if (n_unst_last) st_unst[c] = st_unst[c] + 1;
         note_wait(c, ntw, is_ours(port) && port[3:1] == 3'b000 && V99_BASE == 8'h60 && !bounce_cyc);
+        note_pw_port(port, prev_a);
         bounce_cyc = 1'b0;
     endtask
 
@@ -839,6 +856,7 @@ module tb_bus;
         if (c == 3) c = 13;
         st_n[c] = st_n[c] + 1;
         note_wait(c, ntw, is_ours(port) && port[3:1] == 3'b000 && V99_BASE == 8'h60);
+        note_pw_port(port, prev_a);
         idle(5);
     endtask
 
@@ -1001,6 +1019,43 @@ module tb_bus;
                 reg [7:0] d; int t;
                 z_mrd(16'($urandom), 1'b0, 8'($urandom), d, t);
                 z_mwr(16'($urandom), 8'($urandom), 1'b0);
+            end
+        end
+    endtask
+
+    // barrido de los 256 puertos de E/S, desde uno al azar: OUT e IN a los
+    // ajenos (nadie contesta: FFh) e IN a los nuestros (P#2/P#5/P#6 contra el
+    // core; los demas, P#0/P#1 con su /WAIT, solo cuentan eventos: no se
+    // escribe en nuestros puertos para no tocar P#7). La ventana de eventos
+    // comprueba la decodificacion de 60h-6Fh (70h-7Fh) y note_pw_port que el
+    // pre-WAIT solo salte en 60h/61h; el byte alto es el de A, al azar. En los
+    // ajenos el operando del OUT/IN (el ciclo anterior al de E/S, en PC+1) cae
+    // en xx60h/xx61h: es el caso en que la decision del pre-WAIT podria ver la
+    // direccion vieja (docs/notas/bus.md, seccion 1).
+    task automatic phase_portsweep();
+        int p0;
+        $display("-- fase barrido de los 256 puertos de E/S (%0.3f ms)", $realtime / 1.0e6);
+        p0 = $urandom % 256;
+        for (int i = 0; i < 256; i++) begin
+            x = 8'(p0 + i);
+            n_sweep = n_sweep + 1;
+            if (!is_ours(x)) begin
+                pc = {pc[15:8], 8'h5F};             // operando en xx60h
+                z_out(x, 8'($urandom), 0, 0, 0.0);
+                pc = {pc[15:8], 8'h60};             // operando en xx61h
+                z_in(x, rv, 0, 0, 0.0);
+                if (rv !== 8'hFF) begin
+                    st_bad[6] = st_bad[6] + 1;
+                    if (st_bad[6] <= 4) $display("  [dato %0t] puerto ajeno %02h leido %02h", $time, x, rv);
+                end
+            end
+            else begin
+                areg = 8'($urandom);
+                z_in(x, rv, 0, 0, 0.0);
+                if ((x[3:0] == 4'h2 || x[3:0] == 4'h5 || x[3:0] == 4'h6) && rv !== ref_dout) begin
+                    st_bad[4] = st_bad[4] + 1;
+                    if (st_bad[4] <= 4) $display("  [dato %0t] P#%0d leido %02h en el barrido, el core dio %02h", $time, x[3:0], rv, ref_dout);
+                end
             end
         end
     endtask
@@ -1329,6 +1384,7 @@ module tb_bus;
             phase_vram(1);
             phase_palette();
             phase_other();
+            phase_portsweep();
             if (TOPO == 0) phase_slotreg();
             phase_bounce();
             phase_rd_glitch();
@@ -1337,6 +1393,7 @@ module tb_bus;
         else begin
             phase_nodev();
             phase_other();
+            phase_portsweep();
         end
         win_next(0, 1'b0, 4'h0, 8'h00);
         if (V99_BASE == 8'h60) phase_int_guards();
@@ -1387,6 +1444,7 @@ module tb_bus;
         $display("   revisita maxima (ciclos entre parejas): g0 %0d, g1 %0d, g2 %0d", revisit_max[0], revisit_max[1], revisit_max[2]);
         $display("   pre-WAIT: %0d disparos en P#0/P#1, peor /RD|/WR -> pw_hold %0d ciclos; /WAIT seguido maximo en uso normal %0d ciclos",
                  pw_fires, pw_lat_max, wait_run_max);
+        $display("   pre-WAIT en IN/OUT a puertos que no son 60h/61h: %0d (barrido de %0d puertos)", n_pw_spur, n_sweep);
         $display("   ciclos con rebote: P#0 con dato mal / /WAIT dentro del setup del Z80: rebote de /RD o /WR %0d / %0d, de /IORQ %0d / %0d; peor /WAIT en el slot %0.1f / %0.1f ns",
                  bb_bad[1], bb_sv[1], bb_bad[2], bb_sv[2], bb_wslot[1], bb_wslot[2]);
         $display("   rebotes inyectados %0d; RD/WR sin E/S: %0d con /WAIT; sin dispositivo: rafaga maxima de /WAIT %0d ciclos",
@@ -1403,6 +1461,11 @@ module tb_bus;
         if (V99_BASE == 8'h60 && (chain_max < 0 || chain_max > PW_K)) fail++;
         if (MEMPW != 0 && (chain_mem_max < 0 || chain_mem_max > PW_MEM_K)) fail++;
         if (glitch_wait) fail++;
+        // pre-WAIT en otro puerto: hasta 7,16 MHz la decision ve la direccion del
+        // ciclo (T - 35 ns antes de /RD frente a 51-61 ns); a 10,74 puede ver la
+        // del ciclo anterior (fallo esperado, ~65 ns de /WAIT en un IN/OUT ajeno)
+        if (n_pw_spur && slow < 2) fail++;
+        if (n_pw_spur && slow == 2) expd++;
         if (V99_BASE != 8'h60 && (nodev_wait_max == 0 || nodev_wait_max > 40)) fail++;
         if (V99_BASE == 8'h60 && !int_ok) fail++;
         // a cualquier velocidad: escrituras de registro (P#3/P#4/P#6), escrituras por
