@@ -1,5 +1,5 @@
-# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-26 14:24
-# arbol: f852456 docs/notas/sdram.md: segunda revision (reset del UMA, orden con megaram)   referencia hito 1: 20936e6   2000 us por caso
+# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-27 07:49
+# arbol: d3444d9 Bancos tras la fusion: board_wt200b_config_xtal.sv, tb_integ_pins sobre el bus de hito/bus, inj_main con el UMA de main   referencia hito 1: 20936e6   2000 us por caso
 # Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
 ## 108000 kHz
 idle_standby_108000        new    +MHZ=108000 +CH0=0 +V99=0                    gap 7.445 us (804)     init 2 | INT=269 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 

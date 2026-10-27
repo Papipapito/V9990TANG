@@ -10,8 +10,9 @@
 // Modelados: el rPLL base (LOCK que tarda, que se pierde o que no llega; en
 // sync engancha solo con el reloj del slot entre 3 y 5,2 MHz, el rango de PFD
 // y VCO del GW2AR-18 C8/I7 con x30 y ODIV 8), CLK_BASE, el READY de
-// sdram.sv, el DONE del borrado de la megaROM y el /WAIT logico del V9990. En
-// los pines, el /WAIT que saca el top: BOOT_HOLD || (DRIVE_EN && wait).
+// sdram.sv, el DONE del borrado de la megaROM, el /WAIT logico del V9990 y,
+// en el escenario busok, el BUS_OK de BOARD_REV1_BUS. En los pines, el /WAIT
+// que saca el top: BOOT_HOLD || (BUS_OK && DRIVE_EN && wait).
 //
 // Uso: tb/integ/run.sh (Verilator 5.020, --timing). Un binario por variante
 // (-GSYNC=0 / -GSYNC=1) y un escenario por ejecucion (+SCEN=...):
@@ -36,6 +37,13 @@
 //            dentro del rango del rPLL (el modelo no suelta LOCK): en sync el
 //            control rapido del periodo baja PLL_OK y DRIVE_EN en menos de
 //            20 us, sin esperar a la ventana de 151,7 us; en xtal, nada
+//   busok    (desde la fusion con hito/bus) modelo de BUS_OK de BOARD_REV1_BUS:
+//            sube 2^18 ciclos de CLK_BASE despues de RESET_n y cae con el
+//            /RESET del MSX; el top pasa SYS_READY = SYS_RESET_n && BUS_OK y
+//            el /WAIT del pin pide BUS_OK: BOOT_HOLD tiene que cubrir los 2,43
+//            ms de BUS_OK y un /RESET del MSX de 1 ms con el sistema listo,
+//            sin huecos salvo el de 3-4 ciclos de 27 MHz al pulsar el /RESET
+//            (con el Z80 en reset; en los demas escenarios BUS_OK = 1 siempre)
 // En todos: /WAIT retenido (BOOT_HOLD) desde el fin de la configuracion (xtal)
 // o desde el primer flanco del reloj del slot (sync) hasta que el sistema
 // queda listo, sin huecos y como mucho 50 ms; DRIVE_EN nunca sin PLL_OK ni con
@@ -151,6 +159,7 @@ module tb_integ_guard #(
     logic sys_ready_27, hold_expired, relocked, wto_27;
     logic sys_reset_n;
     logic wait_timeout = 1'b0;
+    wire  bus_ok;                       // BUS_OK de BOARD_REV1_BUS (modelo mas abajo)
 
     BOARD_WT200B_GUARD #(
         .SYNC           (SYNC)
@@ -158,7 +167,7 @@ module tb_integ_guard #(
         .CLK_27M        (clk27),
         .PLL_LOCK       (pll_lock),
         .SLOT_CLK       (slot_clk ^ slot_spur),
-        .SYS_READY      (sys_reset_n),
+        .SYS_READY      (sys_reset_n && bus_ok),
         .WAIT_TIMEOUT   (wait_timeout),
         .PLL_RESET      (pll_reset),
         .PLL_OK         (pll_ok),
@@ -174,6 +183,28 @@ module tb_integ_guard #(
     );
 
     logic base_ready, reset_n, sdram_ready = 1'b0;
+
+    // BUS_OK de BOARD_REV1_BUS (escenario busok): flop de CLK_BASE que sube
+    // al acabar la primera ventana de 2^18 ciclos tras RESET_n con el reloj
+    // del slot vivo y cae con el /RESET del slot; fuera de busok, 1
+    bit   busok_model = 1'b0;
+    bit   msx_reset   = 1'b0;           // /RESET del MSX pulsado
+    int   bo_cnt      = 0;
+    logic bo_alive    = 1'b0;
+    logic bo_q        = 1'b0;
+    always @(posedge clk_base or negedge reset_n) begin
+        if(!reset_n) begin
+            bo_cnt   <= 0;
+            bo_alive <= 1'b0;
+            bo_q     <= 1'b0;
+        end
+        else begin
+            if(bo_cnt != (1 << 18)) bo_cnt <= bo_cnt + 1;
+            else                    bo_alive <= slot_on;
+            bo_q <= bo_alive && !msx_reset;
+        end
+    end
+    assign bus_ok = busok_model ? bo_q : 1'b1;
     SYSTEM_RESET u_rst (
         .CLK            (clk_base),
         .PLL_OK         (pll_ok),
@@ -236,7 +267,7 @@ module tb_integ_guard #(
 
     // /WAIT en el pin (CART_WAIT_n = 1 activa el transistor): el gateo del top
     bit  v99_wait = 1'b1;                       // /WAIT logico del V9990 (peor caso: pedido)
-    wire wait_pin = boot_hold || (drive_en && v99_wait);
+    wire wait_pin = boot_hold || (bus_ok && drive_en && v99_wait);
 
     /***************************************************************
      * Vigilancia continua (en cada flanco de CLK_27M)
@@ -268,9 +299,12 @@ module tb_integ_guard #(
     end
 
     // huecos de /WAIT con el V9990 pidiendolo: el pin no puede bajar mientras
-    // el PLL siga enganchado ni durante el arranque en frio
+    // el PLL siga enganchado ni durante el arranque en frio. Con el /RESET del
+    // MSX pulsado (escenario busok) BUS_OK corta el /WAIT del V9990 en el acto
+    // y BOOT_HOLD llega 3-4 ciclos de 27 MHz despues (SYS_READY pasa por dos
+    // FF): ese hueco, con el Z80 en reset, no cuenta
     int wait_gaps = 0;
-    always @(negedge wait_pin) if((pll_ok || tb_cold) && v99_wait && !hold_expired && $time > 0) wait_gaps++;
+    always @(negedge wait_pin) if((pll_ok || tb_cold) && v99_wait && !hold_expired && !msx_reset && $time > 0) wait_gaps++;
 
     // pulsos de reset del rPLL, subidas de PLL_OK y bajadas de SYS_RESET_n
     int pll_reset_rises = 0;
@@ -404,6 +438,9 @@ module tb_integ_guard #(
         else if(scen == "tope") begin
             sdram_ready_after = 70_000_000.0;   // la SDRAM no acaba hasta los 70 ms
         end
+        else if(scen == "busok") begin
+            busok_model = 1'b1;
+        end
         else if(scen == "mega") begin
             mega = 1'b1;
             clear_cycles = (SYNC != 0) ? 214_772 : 216_000;   // 2 ms de borrado
@@ -471,7 +508,7 @@ module tb_integ_guard #(
             // engancha a los 3 ms de soltar el reset (POR 1,21 ms; en sync
             // la ventana de medida del reloj del slot cabe dentro del POR) y
             // PLL_OK llega tras 2,43 ms de LOCK seguido
-            wait_ready(scen == "mega" ? 11_000.0 : (scen == "glitch" ? 12_000.0 : 9_000.0), t_ready);
+            wait_ready((scen == "mega" || scen == "busok") ? 11_000.0 : (scen == "glitch" ? 12_000.0 : 9_000.0), t_ready);
 
             if(scen == "tope") begin
                 check(pll_ok && boot_hold && !drive_en && !sys_reset_n,
@@ -495,6 +532,9 @@ module tb_integ_guard #(
                 if(scen == "mega")
                     check((t_ready - t_pllok / 1000.0) > 1_900.0 && (t_ready - t_pllok / 1000.0) < 2_200.0,
                           $sformatf("mega: de PLL_OK a listo, el borrado de la megaROM: %0.3f ms", (t_ready - t_pllok / 1000.0) / 1000.0));
+                else if(scen == "busok")
+                    check((t_ready - t_pllok / 1000.0) > 2_420.0 && (t_ready - t_pllok / 1000.0) < 2_500.0,
+                          $sformatf("busok: de PLL_OK a listo, la ventana de BUS_OK (2^18 ciclos de CLK_BASE): %0.3f ms", (t_ready - t_pllok / 1000.0) / 1000.0));
                 else
                     check((t_ready - t_pllok / 1000.0) > 0.0 && (t_ready - t_pllok / 1000.0) < 2.0,
                           $sformatf("arranque: de PLL_OK a listo (SDRAM) %0.1f ns", t_ready * 1000.0 - t_pllok));
@@ -502,12 +542,13 @@ module tb_integ_guard #(
                     string extra;
                     extra = "";
                     if(scen == "mega") extra = " + borrado de 2 ms";
+                    if(scen == "busok") extra = " + 2,43 ms de BUS_OK";
                     if(scen == "glitch")
                         check(t_glitch_end > 0.0 && (t_ready - t_glitch_end) > 2_420.0 && (t_ready - t_glitch_end) < 2_500.0 && pll_ok_rises == 1,
                               $sformatf("glitch: PLL_OK %0.3f ms despues del ultimo hueco de LOCK (esperado 2,43) y una sola subida de PLL_OK (%0d)",
                                         (t_ready - t_glitch_end) / 1000.0, pll_ok_rises));
                     else
-                        check(t_ready > 6_550.0 && t_ready < (scen == "mega" ? 9_000.0 : 6_900.0) && pll_ok_rises == 1,
+                        check(t_ready > ((scen == "busok") ? 8_980.0 : 6_550.0) && t_ready < ((scen == "mega" || scen == "busok") ? 9_200.0 : 6_900.0) && pll_ok_rises == 1,
                               $sformatf("arranque: POR 1,21 ms + LOCK de 3 ms + 2,43 ms estable%s: %0.3f ms (subidas de PLL_OK: %0d)", extra, t_ready / 1000.0, pll_ok_rises));
                 end
                 v99_wait = 1'b0;
@@ -522,6 +563,32 @@ module tb_integ_guard #(
                     check(wto_27, "WAIT_TIMEOUT pegajoso visto en 27 MHz");
                     check_led(3, "listo con WAIT_TIMEOUT");
                     check(drive_en, "WAIT_TIMEOUT no quita DRIVE_EN");
+                end
+
+                if(scen == "busok") begin
+                    // /RESET del MSX de ~1 ms con el sistema listo: BUS_OK a 0,
+                    // DRIVE_EN a 0 y BOOT_HOLD a 1 (inofensivo con el Z80 en
+                    // reset), LED en arrancando, sin reset del cartucho; al
+                    // soltarlo BUS_OK vuelve al ciclo y el relevo no deja hueco
+                    real t_rst0, t_rst;
+                    v99_wait = 1'b1;
+                    msx_reset = 1'b1;
+                    t_rst0 = $realtime;
+                    wait_us(20.0);
+                    check(!bus_ok && !drive_en && boot_hold && sys_reset_n && pll_ok,
+                          $sformatf("busok, /RESET del MSX: BUS_OK %0d, DRIVE_EN %0d, BOOT_HOLD %0d, sistema listo %0d (esperado 0 0 1 1)", bus_ok, drive_en, boot_hold, sys_reset_n));
+                    check_led(1, "arrancando con el /RESET del MSX pulsado");
+                    wait_us(680.0);
+                    msx_reset = 1'b0;
+                    t_rst = $realtime - t_rst0;
+                    wait_us(5.0);
+                    check(bus_ok && drive_en && !boot_hold && sysrst_falls == 0,
+                          $sformatf("busok, /RESET del MSX suelto: BUS_OK %0d, DRIVE_EN %0d, BOOT_HOLD %0d, bajadas de SYS_RESET_n %0d", bus_ok, drive_en, boot_hold, sysrst_falls));
+                    check(hold_rises == 2 && (hold_len - t_rst) > -1_000.0 && (hold_len - t_rst) < 1_000.0,
+                          $sformatf("busok: el BOOT_HOLD del /RESET del MSX dura lo que el /RESET (%0.1f ns frente a %0.1f; subidas: %0d)", hold_len, t_rst, hold_rises));
+                    v99_wait = 1'b0;
+                    check_led(5, "listo");
+                    check_invariants("busok");
                 end
 
                 if(scen == "perdida") begin

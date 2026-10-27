@@ -44,7 +44,7 @@ for sync in 0 1; do
         tail -20 build/verilator_sync${sync}.log
         exit 1
     fi
-    if [ ${sync} = 0 ]; then scens="lento perdida nunca tope mega timeout glitch turbo_marcha deriva"; else scens="lento perdida nunca turbo tope mega glitch turbo_marcha deriva"; fi
+    if [ ${sync} = 0 ]; then scens="lento perdida nunca tope mega timeout glitch turbo_marcha deriva busok"; else scens="lento perdida nunca turbo tope mega glitch turbo_marcha deriva busok"; fi
     for s in ${scens}; do
         log=build/sync${sync}_${s}.log
         ./${obj}/tb +SCEN=${s} > ${log} 2>&1
