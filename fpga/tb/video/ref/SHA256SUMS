@@ -1,0 +1,5 @@
+# origen: commit 20936e6, sha256 del fichero original (git show) y de la copia renombrada
+dd2a6aa85dd61a5ef8c361289e8de1e360db7150ec2ba9f79d78750de26a72a8  20936e6:fpga/src/peripheral/video/video_upscan.sv
+3f04113ce31f94e5dec7848269d8ba2c5883cf352619c6d2e3acb061cf8ecafd  20936e6:fpga/src/board/rev1/board_rev1_tmds.sv
+5615214307e80352fc1bba9e1012a883ebf2d01604951f30436718b786b362f1 *ref/video_upscan_orig.sv
+79398061c24cd74d8a9190057082dffff15da0ffa2b5c3c63e23032bc79cc5fe *ref/board_rev1_tmds_orig.sv

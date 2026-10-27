@@ -35,11 +35,28 @@
 
 /***********************************************************************
  * rev1 基板用 TMDS 出力モジュール
+ *
+ * V9990TANG: con IN.PAL = 0 la salida es la de tnCart (720x480 visibles en
+ * 855 x 524 a 27 MHz, DE en las lineas 35-514), bit a bit. Con IN.PAL = 1
+ * (cuadro de 313 lineas del V9990, 626 lineas de salida) la ventana de DE
+ * pasa a 576 lineas (V_ACTIVE_PAL) desde la linea V_SYNC + V_BACKPORCH_PAL
+ * = 42 hasta la 617 (8 lineas de portico delantero). La zona de borde e
+ * imagen del V9990 PAL son 41 + 212 + 37 = 290 lineas (openMSX,
+ * V9990DisplayTiming.hh, displayPAL_MCLK) que, con el mismo arranque que el
+ * NTSC del tiny9990 (3 de sincronismo + 15 de borrado: la linea 18), son las
+ * lineas 18-307 de entrada; el upscan muestra la linea k de entrada en las
+ * de salida 2(k+2) y 2(k+2)+1, asi que salen en las 40-619 y la ventana
+ * 42-617 las centra quitando 2 arriba y 2 abajo. Ver docs/notas/video.md.
+ * IN.PAL se toma una vez por cuadro, en la linea V_PAL_LATCH = 20: el
+ * upscan lo cambia al acabar su VSYNC de entrada, hacia la linea 6.
  ***********************************************************************/
 module BOARD_REV1_TMDS_OUT #(
     parameter           V_ACTIVE = 480,
     parameter           V_SYNC = 2,
     parameter           V_BACKPORCH = 33,
+    parameter           V_ACTIVE_PAL = 576,
+    parameter           V_BACKPORCH_PAL = 40,
+    parameter           V_PAL_LATCH = 20,       // linea en la que se toma IN.PAL: > 7 y < V_SYNC + V_BACKPORCH
     parameter           H_ACTIVE = 720,
     parameter           H_SYNC = 62,
     parameter           H_BACKPORCH = 7
@@ -63,6 +80,7 @@ module BOARD_REV1_TMDS_OUT #(
     logic [$bits(IN.B)-1:0]  in_b;
     logic                    in_hs_n;
     logic                    in_vs_n;
+    logic                    in_pal;
 
     always_ff @(posedge IN.DCLK) begin
         in_r <= IN.R;
@@ -70,6 +88,7 @@ module BOARD_REV1_TMDS_OUT #(
         in_b <= IN.B;
         in_hs_n <= IN.HS_n;
         in_vs_n <= IN.VS_n;
+        in_pal <= IN.PAL;
     end
 
     /***************************************************************
@@ -131,12 +150,27 @@ module BOARD_REV1_TMDS_OUT #(
     BOARD_REV1_TMDS_OUT_DELAY u_dly0_b (.CLK(CLK_P), .IN(in_b), .OUT(delay_b[0]));
 
     /***************************************************************
+     * PAL del cuadro: se toma durante la linea V_PAL_LATCH (despues
+     * de que el upscan lo actualice, hacia la linea 6, y antes del
+     * primer DE, linea 35) y no cambia hasta el cuadro siguiente
+     ***************************************************************/
+    logic frame_pal;
+    always_ff @(posedge CLK_P or negedge TMDS_READY) begin
+        if(!TMDS_READY)                     frame_pal <= 0;
+        else if(v_cnt == 10'(V_PAL_LATCH))  frame_pal <= in_pal;
+    end
+
+    // Ventana vertical de DE: NTSC [V_SYNC+V_BACKPORCH, +V_ACTIVE) como en tnCart; PAL [V_SYNC+V_BACKPORCH_PAL, +V_ACTIVE_PAL)
+    wire [9:0] v_de_start = frame_pal ? 10'(V_SYNC+V_BACKPORCH_PAL) : 10'(V_SYNC+V_BACKPORCH);
+    wire [9:0] v_de_end   = frame_pal ? 10'(V_SYNC+V_BACKPORCH_PAL+V_ACTIVE_PAL) : 10'(V_SYNC+V_BACKPORCH+V_ACTIVE);
+
+    /***************************************************************
      * DE 信号の生成
      ***************************************************************/
     logic de;
     always_ff @(posedge CLK_P or negedge TMDS_READY) begin
         if(!TMDS_READY) de <= 00;
-        else            de <= (v_cnt >= V_SYNC+V_BACKPORCH) && (v_cnt < V_SYNC+V_BACKPORCH+V_ACTIVE) &&
+        else            de <= (v_cnt >= v_de_start) && (v_cnt < v_de_end) &&
                               (h_cnt >= H_SYNC+H_BACKPORCH-1'd1) && (h_cnt < H_SYNC+H_BACKPORCH+H_ACTIVE-1'd1);
     end
 
