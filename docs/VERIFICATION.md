@@ -151,25 +151,29 @@ puerta); los `.fs`, en `fpga/impl/fusion_rev/` (git los ignora).
 
 | | `v9990_xtal` | `v9990_sync` | `v9990_megaram_xtal` | `v9990_megaram_sync` |
 |---|---|---|---|---|
-| Opciones (place / route) | 2 / 2 | 2 / 2 | 0 / 2 | 2 / 1 |
+| Opciones (place / route) | 2 / 2 | 2 / 2 | 0 / 2 | 2 / 2 |
 | Lógica | 13 653 | 13 874 | 15 168 | 15 253 |
 | CLS (máximo 9 331, aviso 9 250) | 8 421 | 8 489 | 9 019 | 8 973 |
 | BSRAM | 24/46 | 24/46 | 29/46 | 29/46 |
 | PRIMARY / rPLL | 8/8, 2/2 | 8/8, 2/2 | 8/8, 2/2 | 8/8, 2/2 |
 | Endpoints violados (setup, hold, recovery, removal) | 0 | 0 | 0 | 0 |
-| Peor slack: setup / hold | +0,312 / +0,074 ns | +0,682 / +0,074 ns | +0,368 / +0,074 ns | +0,180 / +0,074 ns |
-| Peor slack: recovery / removal | +3,455 / +0,608 ns | +3,464 / +0,616 ns | +4,488 / +0,458 ns | +5,292 / +0,747 ns |
-| Fmax `CLK_BASE` (mínimo 109) | 111,763 MHz | 115,873 MHz | 121,542 MHz | 109,501 MHz |
-| Carrera `CLK_BASE` → `DCLK` (setup) | +0,864 ns | +1,238 ns | +0,368 ns | +1,373 ns |
-| Margen del offset de `DCLK` (SDF) | +0,167 ns | +0,169 ns | +0,167 ns | +0,174 ns |
-| `.fs`: CheckSum, md5 del cuerpo | `0x345D`, `aa4b16ac` | `0x7B75`, `0017f68e` | `0x95F1`, `97bb2bee` | `0x10F2`, `981b6ca8` |
+| Peor slack: setup / hold | +0,312 / +0,074 ns | +0,682 / +0,074 ns | +0,368 / +0,074 ns | +1,095 / +0,074 ns |
+| Peor slack: recovery / removal | +3,455 / +0,608 ns | +3,464 / +0,616 ns | +4,488 / +0,458 ns | +4,879 / +0,751 ns |
+| Fmax `CLK_BASE` (mínimo 109) | 111,763 MHz | 115,873 MHz | 121,542 MHz | 125,925 MHz |
+| Carrera `CLK_BASE` → `DCLK` (setup) | +0,864 ns | +1,238 ns | +0,368 ns | +1,095 ns |
+| Margen del offset de `DCLK` (SDF) | +0,167 ns | +0,169 ns | +0,167 ns | +0,169 ns |
+| `.fs`: CheckSum, md5 del cuerpo | `0x345D`, `aa4b16ac` | `0x7B75`, `0017f68e` | `0x95F1`, `97bb2bee` | `0x4693`, `c194119b` |
 
 - **Puerta: pasa en las cuatro**, con `--sin-ref` (el RTL cambió) y
   `--compara` frente a las builds anteriores (`fpga/reports/sdram_nop/`):
   lógica −1,24 %, +0,58 %, +0,14 % y −0,05 %. Los avisos de síntesis y de P&R
   tienen los mismos códigos y en el mismo número que en esas builds.
-- **`v9990_megaram_sync` va justa**: 109,5 MHz con un mínimo de 109. Cualquier
-  cambio de RTL obliga a barrer otra vez las opciones de P&R de las cuatro.
+- **Opciones de `v9990_megaram_sync`**: con las de antes (place 2, route 1)
+  daba 109,50 MHz, al límite; con place 2 y route 2, 125,93 MHz (place 0 y
+  route 2: 119,29), y pasa a ser su juego en `build_v9990_megaram_sync.tcl`.
+  Las otras tres conservan el suyo. Cualquier cambio de RTL obliga a barrer
+  otra vez las opciones de las cuatro: el margen más corto es el de
+  `v9990_xtal` (111,76 MHz).
 
 ## Banco de placa entera (`fpga/tb/top`)
 
