@@ -75,18 +75,18 @@ puertos nuevos de `BOARD_REV1_BUS` sin conectar en el top.
 
 ## 3. Bancos sobre el árbol fusionado
 
-Verilator 5.020 en WSL (Ubuntu 24.04), 27/10/2026, sobre `d3444d9`/`61ca25f`
+Verilator 5.020 en WSL (Ubuntu 24.04), 27/10/2026: core, paleta, replay, bus y megaram sobre `948d900`, sdram, vídeo e integ sobre `d3444d9`/`61ca25f` y repetidos sobre `ca21555`
 (el RTL de las builds; los commits de después solo tocan bancos,
 `build_*.tcl` y documentación):
 
 | Banco | Orden | Resultado |
 |---|---|---|
-| core | `bash fpga/tb/core/run_t9990_core.sh` (geom pal blit ports eor r16 r16chg bdbp assert hito1) | VER_CORE |
+| core | `bash fpga/tb/core/run_t9990_core.sh` (geom pal blit ports eor r16 r16chg bdbp assert hito1) | **pasan todas**: `geom` (15 casos, `GEOM_OK`), `pal` (`PALT_OK`), `blit` (`BLIT_OK`), `ports` (`PORTS_OK`), `eor` (`EOR_OK`), `r16` (`R16_OK`), `r16chg` (`R16CHG_OK`), `bdbp` (`BDBP_OK`), `assert` (`ASSERT_SELFTEST_OK`, salta 29 366 veces con el ACK 8 ciclos tarde) y `hito1` (vídeo idéntico al del hito 1 en los 7 casos); `TB_DONE errores=0` y `LOST_SLOTS=0` en todas. La primera corrida se cortó (la conexión con WSL cayó, código 127) al acabar `geom`; el resto se relanzó con `run_t9990_core.sh pal blit ports eor r16 r16chg bdbp assert hito1` (`RC=0`) |
 | core, paleta | `bash fpga/tb/core/run_t9990_palette.sh` | **pasa** (`PAL_OK`): 404 lecturas por P#1, cero componentes mal, puntero R#14 bien, cero ranuras perdidas |
 | core, *replay* GNG | traza de `fpga/tb/core/trace/` (copiada del worktree de core, fuera de git) | **pasa**: **0 bytes distintos de 524 288** frente a la VRAM de openMSX, `LOST_SLOTS=0`, `TB_DONE errores=0` (`OBJTAG=rep`) |
 | sdram | `bash fpga/tb/sdram/run.sh` | **TOTAL: PASA**: 48 casos (24 a 108 MHz y 24 a 107,386, controles negativos incluidos) y la latencia del canal 1, 12..12 como en el hito 1; `resultados.txt` sale con las mismas cifras que en la rama (solo cambia la cabecera) |
 | bus | `bash fpga/tb/bus/run.sh` (5 topologías x 4 frecuencias) | **20 de 20 `BUS_OK`** (`RC=0`): a 3,58 MHz sin ningún fallo; a 5,37 solo los rebotes de `/IORQ` esperados (`OK*`, 1 por caso) salvo con el V9990 en 70h (`OK`); a 7,16 y 10,74 los fallos esperados de la nota del bus. Cifras de `resumen.py`: `/WAIT` en el slot a 120 ns (158 a 10,74 MHz), 0 pre-WAIT ajenos, 0 en M1 o memoria, 0 choques de conducción. Equivalencia con el bus de main (`run_eq.sh`) y M1 espurio (`run_m1spur.sh`): **pasan** (`RC=0`): `EQ_OK` en MODE 0 y 1 con 3 semillas (0 diferencias en `Bus`, `CART_MUX_CS_n` y los pines con `BUS_OK`, `WAIT_TIMEOUT = 0`) y `EQ_FAIL` en el control (MODE 2), como se espera; `M1SPUR_OK` en los 6 casos |
-| megaram | `tb/megaram/run.sh` (13 variantes; `inj_main` con `UMA_MAIN_SV`) | VER_MEGARAM |
+| megaram | `tb/megaram/run.sh` (17 variantes; `inj_main` y `turbo7_umamain` con el `uma.sv` de `main`) | **pasan las estrictas** (`wait`, `tncrom` con sus 4 trazas, `wait_hito4`, `inj_hito4`, `wait_bus5`, `tncrom_bus5`) y las de medida (`noprewait`, `noprewait_opt`, `wait_rd9`, `wait_rd10`, `nowait`, `turbo5`, `turbo5i`, `inj_main`, `turbo5_bus5`, `turbo7_umamain`, `turbo7_bus5`). Con el bus de `hito/bus` (*_bus5): `/RD` del pin → `/WAIT` del pin 5..7 ciclos, `WAIT_TIMEOUT` 0. **`turbo7` de antes salía FALLA** (2 errores: una lectura entregada a destiempo por el bus de `main` a 7,16 MHz acaba antes de que baje el `/WAIT`): es la mezcla del bus de `main` con el UMA de `hito/sdram`, que ninguna build tiene; con el UMA de `main` da lo de la rama (20 lecturas a destiempo, 11 mal contadas, PASA) y con el bus real pasa, así que `ca21555` la cambia por `turbo7_umamain` y `turbo7_bus5` en la lista por defecto (7,16 MHz no es contrato). La primera corrida también se cortó con WSL (código 127) tras `nowait`; el resto se relanzó por nombre |
 | video | `tb/video/run.sh` | **121 de 121 casos pasan** |
 | integ | `bash fpga/tb/integ/run.sh` | **21 de 21**: pins (150 casos, 968 comprobaciones) y la guardia en 10 escenarios por variante, `busok` incluido |
 
