@@ -1,0 +1,46 @@
+PASA   .rpt.txt y .tr de la misma build (2026-10-27 08:10:15 / 2026-10-27 08:10:17)
+SIN REF  recursos sin referencia: fusion de las seis areas (hito/fusion, c924e80): primera build v9990_xtal del arbol fusionado
+       Logic: 13824/20736 (66.7 %), frente a 13247: +577 (+4.36 %)
+       CLS: 8474/10368 (81.7 %), frente a 8267: +207 (+2.50 %)
+       BSRAM: 24/46 (52.2 %), frente a 24: +0 (+0.00 %)
+       Register: 5973/15915
+PASA   CLS <= 9331
+       CLS por debajo del aviso (9250)
+PASA   BSRAM <= 46
+PASA   PRIMARY: 8/8 (maximo 8)
+PASA   rPLL: 2/2 (esperado 2)
+       LW: 7/8
+       CLKDIV: 3/8
+       GCLK_PIN: 4/5
+PASA   set_clock_groups (TC_CLOCK_GROUP): Actived
+PASA   ordenes no activas: 0 de 16
+       ordenes en el .tr: TC_CLOCK x2, TC_GENERATED_CLOCK x7, TC_FALSE_PATH x1, TC_CLOCK_GROUP x1, TC_REPORT_TIMING x5
+PASA   excepciones sobre DCLK o CLK_BASE fuera de las permitidas: 0
+PASA   el .tr tiene exactamente las ordenes del .sdc (16 en el .sdc, 16 en el .tr)
+PASA   endpoints de setup violados (global): 0
+PASA   endpoints de hold violados (global): 0
+PASA   peor slack de setup: 0.692 ns  [3 informe(s): report_timing -setup -max_paths 25 -max_common_paths 1; report_timing -setup -from_clock [get_clocks {DCLK}] -to_clock [get_clocks {CLK_BASE}] -max_paths 10; report_timing -setup -from_clock [get_clocks {CLK_BASE}] -to_clock [get_clocks {DCLK}] -max_paths 50]
+PASA   peor slack de hold: 0.074 ns  [2 informe(s): report_timing -hold -max_paths 25 -max_common_paths 1; report_timing -hold -from_clock [get_clocks {CLK_BASE}] -to_clock [get_clocks {DCLK}] -max_paths 50]
+PASA   peor slack de recovery: 3.689 ns  [1 informe(s): report_timing -recovery -max_paths 25 -max_common_paths 1]
+PASA   peor slack de removal: 0.459 ns  [1 informe(s): report_timing -removal -max_paths 25 -max_common_paths 1]
+PASA   carrera CLK_BASE -> DCLK analizada en setup: 24 caminos, peor slack 0.692 ns
+PASA   carrera CLK_BASE -> DCLK analizada en hold: 24 caminos, peor slack 4.610 ns
+PASA   informe de setup DCLK -> CLK_BASE presente
+PASA   caminos lanzados desde DCLK hacia otro reloj: 0
+PASA   Fmax CLK_BASE: 119.478 MHz (minimo 109)
+       Fmax CLK_27M: 173.409 MHz
+       Fmax DCLK: 173.767 MHz
+       Fmax CLK_TMDS_P: 59.350 MHz
+       Fmax CLK_DAC: 154.452 MHz
+PASA   forma de DCLK: -offset 8.2 en el .sdc, en el .tr periodo 37.037 (4 x CLK_BASE = 37.036), subida 8.2, maestro CLK_BASE, relacion con CLK_BASE en los set_clock_groups: mismo
+PASA   .sdf de la misma build (2026-10-27 08:10:15)
+PASA   offset de DCLK (modelo lento): flanco real >= 8.362 ns (PLL 5.329 + red 2.274 + tC2Q 0.232 + ruta a la OR 0.156 + LUT mas rapida del .sdf 0.371, u_clk/n11_s2 I0), modelado 8.200 ns, margen +0.162 ns
+PASA   log de sintesis fpga/reports/fusion/v9990_xtal/gwsynthesis.log completo
+PASA   errores en el log de sintesis: 0
+         avisos (leerlos a mano): CV0016 x3, NL0002 x5
+PASA   log de P&R fpga/reports/fusion/v9990_xtal/pnr.log completo
+PASA   log de P&R de esta build (2026-10-27 08:10:18 / .tr 2026-10-27 08:10:17)
+PASA   errores en el log de P&R: 0
+         avisos (leerlos a mano): PR1014 x1
+
+PUERTA: PASA

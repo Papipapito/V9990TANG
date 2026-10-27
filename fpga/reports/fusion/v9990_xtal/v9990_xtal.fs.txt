@@ -1,0 +1,5 @@
+v9990_xtal.fs, build del Tue Oct 27 08:10:14 2026
+CheckSum: 0x54DE
+md5 del fichero: 08564ee8e99ee7b8abdd4f70d842675b
+md5 sin las lineas de cabecera (//): 89f0c2afe43aff91ced24fac156da580
+comparado con v9990_xtal.fs (build del Tue Oct 27 07:57:51 2026, CheckSum 0x54DE): cuerpo IDENTICO
