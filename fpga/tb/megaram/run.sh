@@ -38,6 +38,17 @@
 #   wait_hito4 ESTRICTA  como wait, con el uma.sv de hito/sdram (refresco
 #                        interno activo, DOUT solo tras un R/W)
 #   inj_hito4  ESTRICTA  INJ=1 con el uma.sv de hito/sdram
+# Desde la fusion de las areas (hito/fusion) el board_rev1_bus.sv del arbol es
+# el de hito/bus; el banco se escribio contra el de main (con el pre-WAIT de
+# memoria modelado en el banco), asi que todas las variantes de antes lo
+# compilan con el de main ($BUS_MAIN_SV o git show $BUS_MAIN_REF, por defecto
+# main), y las nuevas *_bus5 con el del arbol y su pre-WAIT real:
+#   wait_bus5   ESTRICTA  como wait, con el bus de hito/bus (PREWAIT_MEM_EN = 1)
+#               y las guardias de la integracion modeladas
+#   tncrom_bus5 ESTRICTA  como tncrom, con el bus de hito/bus
+#   turbo5_bus5 medida    como turbo5, con el bus de hito/bus
+# Lanzado desde Git Bash, el guion saca los dos ficheros de main con git y se
+# relanza en WSL.
 # Desde la fusion de las areas (hito/fusion) el uma.sv de este arbol ES el de
 # hito/sdram: las *_hito4 lo toman del arbol (salvo $UMA_SV) y wait/inj_hito4
 # coinciden con wait e inj_main sobre el; inj_main, el control del defecto,
@@ -67,6 +78,17 @@
 set -u
 cd "$(dirname "$0")"
 HERE=$(pwd)
+# Desde Git Bash: saca de git el uma.sv y el board_rev1_bus.sv de main (el git
+# de WSL no lee los worktrees creados desde Windows) a main_src/ (ignorado por
+# git) y se relanza en WSL con UMA_MAIN_SV y BUS_MAIN_SV apuntando a ellos
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+    mkdir -p main_src
+    git show main:fpga/src/peripheral/ram/uma.sv > main_src/uma.sv || exit 2
+    git show main:fpga/src/board/rev1/board_rev1_bus.sv > main_src/board_rev1_bus.sv || exit 2
+    W=$(pwd | sed -e 's,^/\([a-zA-Z]\)/,/mnt/\L\1/,')
+    UMA_MAIN_SV=$W/main_src/uma.sv BUS_MAIN_SV=$W/main_src/board_rev1_bus.sv \
+        WSLENV=UMA_MAIN_SV:BUS_MAIN_SV:EXTRA_G:TB_OUT:UMA_SV MSYS_NO_PATHCONV=1 exec wsl -e bash "$W/run.sh" "$@"
+fi
 SRC=$HERE/../../src
 CFG=$HERE/../../config
 OUT=${TB_OUT:-$HOME/.cache/v99tang_tb_megaram}
@@ -92,7 +114,7 @@ FILES=(
     $SRC/peripheral/msx/megarom_configure.sv
     $SRC/peripheral/msx/megarom_clear.sv
     $SRC/cartridge_megarom.sv
-    $SRC/board/rev1/board_rev1_bus.sv
+    @BUS@
     $HERE/dpb_model.sv
     $HERE/sdram_if_model.sv
     $HERE/tb_megaram.sv
@@ -112,11 +134,25 @@ declare -A PARAMS=(
     [wait_hito4]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1"
     [inj_hito4]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GINJ=1 -GSTRICT=1"
     [tncrom]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 -GTRACE=1"
+    [wait_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 +define+REALBUS"
+    [turbo5_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=1 -GSTRICT=0 +define+REALBUS"
+    [tncrom_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 -GTRACE=1 +define+REALBUS"
 )
 UMA_MAIN_REF=${UMA_MAIN_REF:-main}
 
 VARIANTS=("$@")
-[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait tncrom noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4)
+[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait tncrom noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4 wait_bus5 tncrom_bus5 turbo5_bus5)
+
+# el BOARD_REV1_BUS de main, el de todas las variantes salvo las *_bus5
+BUS_MAIN_REF=${BUS_MAIN_REF:-main}
+bus_main=$OUT/board_rev1_bus_main.sv
+if [ -n "${BUS_MAIN_SV:-}" ] && [ -f "$BUS_MAIN_SV" ]; then
+    cp "$BUS_MAIN_SV" "$bus_main"; bus_from="$BUS_MAIN_SV"
+elif git -C "$HERE" show "$BUS_MAIN_REF:fpga/src/board/rev1/board_rev1_bus.sv" > "$bus_main" 2>/dev/null; then
+    bus_from="$BUS_MAIN_REF $(git -C "$HERE" rev-parse --short "$BUS_MAIN_REF")"
+else
+    rm -f "$bus_main"; bus_from=""
+fi
 
 rc=0
 for v in "${VARIANTS[@]}"; do
@@ -142,7 +178,15 @@ for v in "${VARIANTS[@]}"; do
     else
         echo "=== $v ($p)"
     fi
+    if [[ "$v" == *_bus5 ]]; then
+        bus=$SRC/board/rev1/board_rev1_bus.sv
+        echo "    (board_rev1_bus.sv del arbol, el de hito/bus)"
+    else
+        if [ -z "$bus_from" ]; then echo "=== $v: no hay BUS_MAIN_SV ni $BUS_MAIN_REF (el bus de main), se salta"; rc=1; continue; fi
+        bus=$bus_main
+    fi
     files=("${FILES[@]/@UMA@/$uma}")
+    files=("${files[@]/@BUS@/$bus}")
     rm -rf "$OUT/obj_$v"
     if ! verilator --binary --timing -j 0 --top-module tb_megaram \
             -Wall -Wno-fatal -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
@@ -153,7 +197,7 @@ for v in "${VARIANTS[@]}"; do
         echo "  error de compilacion ($OUT/build_$v.log)"; grep -E "%Error" "$OUT/build_$v.log" | head -20; rc=1; continue
     fi
     runs=("$v:")
-    if [ "$v" = tncrom ]; then
+    if [ "$v" = tncrom ] || [ "$v" = tncrom_bus5 ]; then
         # el tncrom real contra el modelo en C (tools/tncrom/test) deja las trazas
         echo "  banco del host de tncrom:"
         rm -f "$OUT"/tncrom_host/tncrom_*.trc
@@ -171,7 +215,7 @@ for v in "${VARIANTS[@]}"; do
         arg=${r#*:}
         [ "$name" != "$v" ] && echo "  --- $name"
         "$OUT/obj_$v/tb" $arg > "$OUT/out_$name.log" 2>&1
-        grep -E "^(Z80:|borrado|traza|lecturas|refrescos|pre-WAIT|/RD|Bus\.|rd_mem_n|histograma|SDRAM|VRAM|fallos|RESULTADO)" "$OUT/out_$name.log"
+        grep -E "^(Z80:|BOARD_REV1_BUS|borrado|traza|lecturas|refrescos|pre-WAIT|/RD|Bus\.|rd_mem_n|histograma|SDRAM|VRAM|fallos|RESULTADO)" "$OUT/out_$name.log"
         nerr=$(grep -c "ERROR" "$OUT/out_$name.log")
         [ "$nerr" -gt 0 ] && { echo "  primeros errores:"; grep "ERROR" "$OUT/out_$name.log" | head -8; }
         grep -q "RESULTADO: PASA" "$OUT/out_$name.log" || rc=1

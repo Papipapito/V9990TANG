@@ -7,6 +7,9 @@
 //
 //   Z80 a nivel de pines (modelo)          -> BOARD_REV1_BUS de main (filtros,
 //   mux de 9 estados, linea de 9 de RD/WR)  -> EXPANSION_SLOT (subslot 0)
+//   [con +define+REALBUS, el BOARD_REV1_BUS de hito/bus con su pre-WAIT de
+//   memoria real (PREWAIT_MEM_EN = PREWAIT) y las guardias de la integracion
+//   modeladas, en lugar del de main y del modelo de pre-WAIT de abajo]
 //   -> CARTRIDGE_MEGAROM (configure + controller + SCC) -> EXPANSION_RAM
 //   (canal 0, con MEGAROM_CLEAR en el puerto 1) -> UMA (DIV 30, libre) ->
 //   SDRAM_IF_MODEL (modelo de ciclo del lado RAM_IF de sdram.sv); en el
@@ -46,6 +49,16 @@
 //                  del UMA de tnCart).
 //
 //   D_ADDR, D_CTRL, D_WAIT, D_DATA: supuestos de pines del Z80 (abajo)
+//   REALBUS        (macro +define+REALBUS, no parametro: los puertos de los
+//                  dos buses no son los mismos) desde la fusion de las areas:
+//                  BOARD_REV1_BUS de hito/bus, el del arbol, con
+//                  PREWAIT_MEM_EN = PREWAIT y PREWAIT_MEM_K = 7 por defecto;
+//                  DRIVE_EN y BOOT_HOLD como los saca la guardia del top
+//                  (SYS_READY = SYS_RESET_n && BUS_OK, sincronizado: DRIVE_EN
+//                  sube un ciclo antes de que baje BOOT_HOLD). BUS_OK pide el
+//                  reloj del slot vivo una ventana de 2^18 ciclos: el Z80
+//                  arranca retenido por BOOT_HOLD unos 2,4 ms. Sin la macro,
+//                  el bus de main (run.sh lo saca con git, BUS_MAIN_SV)
 //   TRACE    0/1   1: en lugar del programa, reproduce la traza de tncrom de
 //                  +TRACE=<fichero> (run.sh tncrom). Es un parametro y no solo
 //                  el plusarg porque con las dos ramas vivas Verilator 5.020
@@ -159,10 +172,33 @@ module tb_megaram #(
      * DUT
      ***************************************************************/
     BUS_IF  Bus();
+`ifdef REALBUS
+    localparam REALBUS = 1;
+    // guardias de la integracion (BOARD_WT200B_GUARD del top, modelada en
+    // CLK_BASE): sistema listo = SYS_RESET_n && BUS_OK, por dos FF; DRIVE_EN
+    // sube un ciclo antes de que baje BOOT_HOLD (relevo sin hueco)
+    wire  bus_ok, wait_timeout;
+    logic [2:0] g_ready_q = 3'b000;
+    always @(posedge clk) g_ready_q <= {g_ready_q[1:0], SYS_RESET_n && bus_ok};
+    wire  g_drive_en  = g_ready_q[1];
+    wire  g_boot_hold = !g_ready_q[2];
+    BOARD_REV1_BUS #(
+        .PREWAIT_MEM_EN (PREWAIT)
+    ) u_bus (
+        .RESET_n,
+        .CLK            (clk),
+        .CLK_21M        (1'b0),
+        .DRIVE_EN       (g_drive_en),
+        .BOOT_HOLD      (g_boot_hold),
+        .WAIT_TIMEOUT   (wait_timeout),
+        .BUS_OK         (bus_ok),
+`else
+    localparam REALBUS = 0;
     BOARD_REV1_BUS u_bus (
         .RESET_n,
         .CLK            (clk),
         .CLK_21M        (1'b0),
+`endif
         .CART_BUSDIR_n,
         .CART_INT_n,
         .CART_WAIT_n,
@@ -404,7 +440,7 @@ module tb_megaram #(
     always @(posedge clk) begin
         prev_frd_n <= u_bus.RD_n;
         rw_idle <= (u_bus.RD_n && u_bus.WR_n) ? ((rw_idle < 3) ? rw_idle + 1 : 3) : 0;
-        if(!PREWAIT) begin
+        if(!PREWAIT || REALBUS) begin       // con REALBUS el pre-WAIT es el del bus
             prewait <= 0;
             pw_cnt  <= -1;
         end
@@ -498,6 +534,11 @@ module tb_megaram #(
     initial for(int i = 0; i < 64; i++) hist_rel[i] = 0;
 
     wire rdmem_n   = u_megarom.u_rom.rd_mem_n;
+`ifdef REALBUS
+    `define REALBUS_WTO wait_timeout
+`else
+    `define REALBUS_WTO 1'b0
+`endif
     wire port_wait = ExpBus[0].WAIT_n;
     wire ack0_n    = ExpRam[0].ACK_n;
     // lo que el controlador tomaria por lectura sin la condicion de RFSH_n
@@ -1159,7 +1200,10 @@ module tb_megaram #(
                          n_viol_inj, n_inj);
         $display("refrescos que sin !RFSH_n habrian sido lecturas: %0d", n_rfsh_cand);
         $display("lecturas con otra direccion en el camino retrasado (bus de main a destiempo): %0d", n_addr_bad);
-        if(PREWAIT) $display("pre-WAIT (modelo): %0d disparos, %0d soltados por K; /RD del pin -> /WAIT del pin: %0d..%0d ciclos",
+        if(REALBUS && `REALBUS_WTO) fail("WAIT_TIMEOUT del bus a 1: algun /WAIT duro 2^12 ciclos");
+        if(REALBUS) $display("BOARD_REV1_BUS de hito/bus (PREWAIT_MEM_EN = %0d): /RD del pin -> /WAIT del pin: %0d..%0d ciclos; WAIT_TIMEOUT %0d",
+                             PREWAIT, d_pinw_min, d_pinw_max, `REALBUS_WTO);
+        else if(PREWAIT) $display("pre-WAIT (modelo): %0d disparos, %0d soltados por K; /RD del pin -> /WAIT del pin: %0d..%0d ciclos",
                              pw_fires, pw_rel_k, d_pinw_min, d_pinw_max);
         else        $display("/RD del pin -> /WAIT del pin (solo la cadena): %0d..%0d ciclos", d_pinw_min, d_pinw_max);
         if(n_waited > 0) begin
