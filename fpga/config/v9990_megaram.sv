@@ -159,6 +159,25 @@ package CONFIG;
     // del bus en docs/notas/megaram.md). 0 = como tnCart (sin WAIT).
     localparam          ENABLE_MEM_WAIT         = 1;
 
+    // V9990TANG (fusion de las areas): palancas de cada configuracion.
+    // Pre-WAIT de memoria de BOARD_REV1_BUS (hito/bus): obligatorio con
+    // ENABLE_MEM_WAIT = 1 (PREWAIT_MEM_K = 7 por defecto); sin el, a 3,58 MHz
+    // fallan 71 de 253 lecturas de la megaROM (docs/notas/megaram.md). El top
+    // no elabora si no casa con ENABLE_MEM_WAIT. Con ENABLE_MEM_WAIT = 1,
+    // RAM_IF_EXPANSION_USES_FF (abajo) tiene que seguir a 0.
+    localparam          BUS_PREWAIT_MEM_EN      = 1;
+    // Core T9990 (hito/core): cuadro PAL de 313 lineas con R#7 bit 3, cursor
+    // EOR de openMSX y ajuste de posicion de R#16. Con los tres a 0 el core
+    // es el del hito 1 con los parches 1-3, 8 y 9 (docs/notas/core.md).
+    // ENABLE_R16 y ENABLE_CURSOR_EOR son las dos primeras palancas del
+    // estudio si esta configuracion no cabe en la puerta.
+    localparam          V9990_ENABLE_PAL        = 1;
+    localparam          V9990_ENABLE_CURSOR_EOR = 1;
+    localparam          V9990_ENABLE_R16        = 1;
+    // Upscan (hito/video): 1 = mezcla de puntos de tnCart, 0 = el punto mas
+    // cercano (tercera palanca).
+    localparam          UPSCAN_BLEND            = 1;
+
     /***************************************************************
      * other(ここを変更すると動作しなくなる可能性があります)
      ***************************************************************/

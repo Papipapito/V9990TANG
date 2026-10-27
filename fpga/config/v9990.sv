@@ -141,6 +141,24 @@ package CONFIG;
     localparam          ENABLE_DAC_I2S          = DISABLE;          // I2S DAC を使用するか(DISABLE/ENABLE)
     localparam          ENABLE_DAC_STEREO       = DISABLE;          // ステレオ出力を有効にするか(DISABLE/ENABLE)
 
+    // V9990TANG (fusion de las areas): palancas de cada configuracion.
+    // /WAIT en las lecturas de memoria de la megaROM (hito/megaram): sin
+    // megaROM, 0. Lo lee cartridge_megarom.sv en las configuraciones que lo
+    // compilan; aqui solo lo mira la comprobacion del top.
+    localparam          ENABLE_MEM_WAIT         = 0;
+    // Pre-WAIT de memoria de BOARD_REV1_BUS (hito/bus): 1 solo con una
+    // megaROM con ENABLE_MEM_WAIT = 1 (el top no elabora si no casan).
+    localparam          BUS_PREWAIT_MEM_EN      = 0;
+    // Core T9990 (hito/core): cuadro PAL de 313 lineas con R#7 bit 3, cursor
+    // EOR de openMSX y ajuste de posicion de R#16. Con los tres a 0 el core
+    // es el del hito 1 con los parches 1-3, 8 y 9 (docs/notas/core.md).
+    localparam          V9990_ENABLE_PAL        = 1;
+    localparam          V9990_ENABLE_CURSOR_EOR = 1;
+    localparam          V9990_ENABLE_R16        = 1;
+    // Upscan (hito/video): 1 = mezcla de puntos de tnCart, 0 = el punto mas
+    // cercano.
+    localparam          UPSCAN_BLEND            = 1;
+
     /***************************************************************
      * other(ここを変更すると動作しなくなる可能性があります)
      ***************************************************************/
