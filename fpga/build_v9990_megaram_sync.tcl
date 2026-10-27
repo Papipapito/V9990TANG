@@ -13,4 +13,8 @@
 # ============================================================================
 set CFG     v9990_megaram
 set VARIANT sync
+# Barrido del 27/10/2026, primera build de la configuracion (d3444d9,
+# docs/notas/fusion.md): pasa con las opciones del hito 1 (place 2, route 1):
+# Fmax 120,19 MHz, setup +0,992 ns, carrera CLK_BASE -> DCLK +1,316 ns.
+set BUILD_OPTS {-place_option 2 -route_option 1}
 source build_common.tcl

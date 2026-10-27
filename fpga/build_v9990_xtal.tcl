@@ -11,9 +11,11 @@
 # ============================================================================
 set CFG     v9990
 set VARIANT xtal
-# Barrido del 26/10/2026 sobre el RTL de f00c622 (docs/notas/integ.md,
-# seccion 6): con las opciones del hito 1 la carrera CLK_BASE -> DCLK sale a
-# -0,077 ns; con -map_option 2 (mapeo LUT5 sin mas LUT), place 2 y route 0
-# pasa la puerta (Fmax 109,15 MHz, carrera +0,106 ns).
-set BUILD_OPTS {-map_option 2 -place_option 2 -route_option 0}
+# Barrido del 27/10/2026 sobre el RTL fusionado de las seis areas (d3444d9,
+# docs/notas/fusion.md): el juego anterior (-map_option 2, place 2, route 0;
+# el del barrido del 26/10 sobre f00c622) da Fmax 108,12 MHz y no pasa; con
+# route 0 ninguna opcion de sintesis ni de colocacion llega a 109 MHz, y con
+# route 2 pasan todas las probadas. Place 2 y route 2 es el de mas margen:
+# Fmax 119,48 MHz, setup y carrera CLK_BASE -> DCLK +0,692 ns.
+set BUILD_OPTS {-place_option 2 -route_option 2}
 source build_common.tcl

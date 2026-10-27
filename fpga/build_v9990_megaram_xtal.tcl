@@ -13,4 +13,11 @@
 # ============================================================================
 set CFG     v9990_megaram
 set VARIANT xtal
+# Barrido del 27/10/2026, primera build de la configuracion (d3444d9,
+# docs/notas/fusion.md): con las opciones del hito 1 (place 2, route 1) la
+# Fmax de CLK_BASE sale a 108,04 MHz y con -map_option 2, place 2 y route 0 a
+# 108,93: no pasan. Place 2 y route 2 pasa justo (111,38 MHz, setup +0,281
+# ns); place 0 y route 2, con margen: Fmax 122,96 MHz, setup y carrera
+# CLK_BASE -> DCLK +1,119 ns, CLS 9 046 (por debajo del aviso de 9 250).
+set BUILD_OPTS {-place_option 0 -route_option 2}
 source build_common.tcl
