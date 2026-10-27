@@ -684,6 +684,13 @@ las áreas, que siguen nombrando la lista del hito 1:
   con el cartucho mudo. Si hiciera falta, en la fusión se rearma también en
   `xtal` con `SLOT_PRESENT`, pero entonces `booting` tiene que exigir
   `msx_on` también con `PLL_OK` (si no, sin MSX `BOOT_HOLD` se quedaría a 1).
+  **Arreglado después de la fusión** (`c8e4fd2`, [fusion.md](fusion.md),
+  sección 8): en `xtal` el tope se rearma en el flanco de subida de
+  `SLOT_PRESENT` (el reloj del slot vuelve), no mientras falta, así que sin MSX
+  `BOOT_HOLD` sigue agotando su tope y el LED da el código 2. Al volver el
+  reloj del slot, `BUS_OK` tarda hasta 2,43 ms (de 64 flancos a una ventana
+  entera de 2^18 ciclos, según la fase de la ventana), no 2,43-4,86 ms: esa
+  cifra es la del primer arranque, contada desde `RESET_n`.
 - `DRIVE_EN` puede bajar y volver sin reset (LOCK bajo menos de 152 µs, ver
   sección 3): `BOARD_REV1_BUS` no debe tomar su bajada como un reset (hoy
   solo lo usa en los pines y, sincronizado, para no contar el timeout de

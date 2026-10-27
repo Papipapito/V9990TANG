@@ -18,7 +18,8 @@ Hay dos configuraciones y, de cada una, dos variantes de reloj:
 | `v9990_megaram_sync.fs` | `v9990_megaram` | `sync` | igual, con el reloj del slot; sin MSX no hay HDMI |
 
 Se generan con `cd fpga && gw_sh build_<configuración>_<variante>.tcl`. Los de
-la última build buena quedan en `fpga/impl/fusion/`, que git ignora. La
+la última build buena quedan en `fpga/impl/fusion_rev/`, que git ignora (los de
+`fpga/impl/fusion/` y `fpga/impl/sdram_nop/` son de builds anteriores). La
 evidencia de cada build (recursos, timing y la salida de la puerta) está en
 `fpga/reports/fusion/<variante>/`, y las sumas md5 del cuerpo de cada `.fs`, en
 [notas/fusion.md](notas/fusion.md). Si la variante `sync` da problemas, la

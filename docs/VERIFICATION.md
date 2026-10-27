@@ -45,8 +45,26 @@ la build de un hito, como la variante de comparación de más abajo.
    modelado (ver [ARCHITECTURE.md](ARCHITECTURE.md#dclk-va-con-clk_base)). El
    `.rpt.txt`, el `.tr` y el `.sdf` tienen que ser de la misma build (fechas).
 
-Para la build del hito 1, desde la raíz del repositorio y después de
-`cd fpga && gw_sh build_v9990_xtal.tcl`:
+Para las cuatro builds de `hito/fusion`, desde la raíz del repositorio y
+después de `cd fpga && gw_sh build_<variante>.tcl`, con la referencia de cada
+variante (la de las builds archivadas en `fpga/reports/fusion/`, sección
+[Builds de la fusión](#builds-de-la-fusión)):
+
+```
+python tools/check_build.py fpga/impl/pnr/v9990_xtal --ref-logic 13653 --ref-cls 8421 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_xtal.log --log fpga/impl/pnr/v9990_xtal.log --sdc fpga/constraints/v9990_xtal.sdc
+python tools/check_build.py fpga/impl/pnr/v9990_sync --ref-logic 13874 --ref-cls 8489 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_sync.log --log fpga/impl/pnr/v9990_sync.log --sdc fpga/constraints/v9990_sync.sdc
+python tools/check_build.py fpga/impl/pnr/v9990_megaram_xtal --ref-logic 15168 --ref-cls 9019 --ref-bsram 29 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_megaram_xtal.log --log fpga/impl/pnr/v9990_megaram_xtal.log --sdc fpga/constraints/v9990_megaram_xtal.sdc
+python tools/check_build.py fpga/impl/pnr/v9990_megaram_sync --ref-logic 15253 --ref-cls 8973 --ref-bsram 29 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_megaram_sync.log --log fpga/impl/pnr/v9990_megaram_sync.log --sdc fpga/constraints/v9990_megaram_sync.sdc
+```
+
+Las referencias del hito 1 (la orden de abajo) ya no valen para el árbol
+fusionado: la lógica difiere más del 1 % y la puerta daría FALLA en una build
+buena. Si un cambio de RTL mueve los recursos a propósito, la build nueva se
+pasa con `--sin-ref "motivo" --compara LOGICA,CLS,BSRAM` (la referencia
+anterior, como cifra de comparación) y sus cifras pasan a ser la referencia.
+
+Para la build del hito 1 (rama `main`), desde la raíz del repositorio y
+después de `cd fpga && gw_sh build_v9990_xtal.tcl`:
 
 ```
 python tools/check_build.py fpga/impl/pnr/v9990_xtal --ref-logic 14140 --ref-cls 8696 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_xtal.log --log fpga/impl/pnr/v9990_xtal.log --sdc fpga/constraints/v9990_xtal.sdc
@@ -122,6 +140,36 @@ salida de la puerta.
   TF; entradas `TF_DAT0` y `UART_RX` sin uso) y uno de P&R, también en la
   referencia: `PR1014`, `CLK_27M_d` llega a un CLKDIV por enrutado genérico (solo
   afecta al jitter de `CLK_DAC`).
+
+## Builds de la fusión
+
+Gowin 1.9.12.03, rama `hito/fusion` en `c8e4fd2` (la fusión, el NOP de la
+SDRAM en el reset y los arreglos de la guardia de la revisión). Cada variante
+con las opciones de P&R de su `build_*.tcl`. Evidencia en
+`fpga/reports/fusion/<variante>/` (`check_build.txt` es la salida de la
+puerta); los `.fs`, en `fpga/impl/fusion_rev/` (git los ignora).
+
+| | `v9990_xtal` | `v9990_sync` | `v9990_megaram_xtal` | `v9990_megaram_sync` |
+|---|---|---|---|---|
+| Opciones (place / route) | 2 / 2 | 2 / 2 | 0 / 2 | 2 / 1 |
+| Lógica | 13 653 | 13 874 | 15 168 | 15 253 |
+| CLS (máximo 9 331, aviso 9 250) | 8 421 | 8 489 | 9 019 | 8 973 |
+| BSRAM | 24/46 | 24/46 | 29/46 | 29/46 |
+| PRIMARY / rPLL | 8/8, 2/2 | 8/8, 2/2 | 8/8, 2/2 | 8/8, 2/2 |
+| Endpoints violados (setup, hold, recovery, removal) | 0 | 0 | 0 | 0 |
+| Peor slack: setup / hold | +0,312 / +0,074 ns | +0,682 / +0,074 ns | +0,368 / +0,074 ns | +0,180 / +0,074 ns |
+| Peor slack: recovery / removal | +3,455 / +0,608 ns | +3,464 / +0,616 ns | +4,488 / +0,458 ns | +5,292 / +0,747 ns |
+| Fmax `CLK_BASE` (mínimo 109) | 111,763 MHz | 115,873 MHz | 121,542 MHz | 109,501 MHz |
+| Carrera `CLK_BASE` → `DCLK` (setup) | +0,864 ns | +1,238 ns | +0,368 ns | +1,373 ns |
+| Margen del offset de `DCLK` (SDF) | +0,167 ns | +0,169 ns | +0,167 ns | +0,174 ns |
+| `.fs`: CheckSum, md5 del cuerpo | `0x345D`, `aa4b16ac` | `0x7B75`, `0017f68e` | `0x95F1`, `97bb2bee` | `0x10F2`, `981b6ca8` |
+
+- **Puerta: pasa en las cuatro**, con `--sin-ref` (el RTL cambió) y
+  `--compara` frente a las builds anteriores (`fpga/reports/sdram_nop/`):
+  lógica −1,24 %, +0,58 %, +0,14 % y −0,05 %. Los avisos de síntesis y de P&R
+  tienen los mismos códigos y en el mismo número que en esas builds.
+- **`v9990_megaram_sync` va justa**: 109,5 MHz con un mínimo de 109. Cualquier
+  cambio de RTL obliga a barrer otra vez las opciones de P&R de las cuatro.
 
 ## Banco de placa entera (`fpga/tb/top`)
 
@@ -319,12 +367,21 @@ Sin hacer. Lo que hay que comprobar con el `.fs` del hito 1, en este orden:
 
 ## Matriz de monitores
 
-Salida del hito 1: 720x480 visibles en 855x524 a 27,000 MHz, **60,27 Hz**, DVI
-sin audio. Rellenar una fila por monitor y modo probado.
+Modos de salida (DVI sin audio, ninguno CEA; [WONDERTANG.md](WONDERTANG.md#vídeo)):
 
-| Monitor / TV (marca y modelo) | Entrada | Variante (`xtal`/`sync`) | Modo V9990 | ¿Imagen? | Notas (sobrebarrido, parpadeo, tiempo de enganche, rechazo) | Quién y cuándo |
-|---|---|---|---|---|---|---|
-| | | | | | | |
-| | | | | | | |
-| | | | | | | |
-| | | | | | | |
+| Modo del V9990 | Visible | Cuadro | `xtal` (píxel 27,000 MHz) | `sync` (píxel 26,85 MHz) |
+|---|---|---|---|---|
+| NTSC (262 líneas) | 720x480 | 855x524 | 60,27 Hz | 59,92 Hz |
+| PAL (313 líneas, R#7 bit 3) | 720x576 | 855x626 | 50,45 Hz | 50,16 Hz |
+
+El hito 1 solo sacaba el NTSC de `xtal`. Los modos PAL y los de `sync` son los
+que más pueden rechazar los monitores. Rellenar una fila por monitor, variante
+y modo probados; anotar también si el monitor vuelve a enganchar al cambiar el
+programa de NTSC a PAL.
+
+| Monitor / TV (marca y modelo) | Entrada | Variante (`xtal`/`sync`) | Modo (NTSC/PAL) y frecuencia | Modo V9990 (B1-B7, P1/P2) | ¿Imagen? | Notas (sobrebarrido, parpadeo, tiempo de enganche, rechazo) | Quién y cuándo |
+|---|---|---|---|---|---|---|---|
+| | | | | | | | |
+| | | | | | | | |
+| | | | | | | | |
+| | | | | | | | |
