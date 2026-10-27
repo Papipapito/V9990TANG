@@ -106,7 +106,16 @@ module SDRAM #(
     /***************************************************************
      * アドレスを BANK, ROW, COL へ変換
      ***************************************************************/
+`ifdef VERILATOR
+    // V9990TANG: Verilator 5.020 no admite $bits() de un miembro de un puerto
+    // de interfaz en un localparam ("Parameter-resolved constants must not use
+    // dotted references"). Solo para simulacion; la sintesis usa la linea de
+    // tnCart. RAM_IF es de 24 bits en todo el diseno (ram.sv, ADDR_BIT_WIDTH).
+    localparam ADDR8_BIT_WIDTH = 24;
+    initial if ($bits(Ram.ADDR) != ADDR8_BIT_WIDTH) $fatal(1, "SDRAM: Ram.ADDR no es de %0d bits", ADDR8_BIT_WIDTH);
+`else
     localparam ADDR8_BIT_WIDTH = $bits(Ram.ADDR);
+`endif
     localparam ADDR16_BIT_WIDTH = (ADDR8_BIT_WIDTH - 1);
     localparam ADDR32_BIT_WIDTH = (ADDR16_BIT_WIDTH - 1);
     wire [ADDR8_BIT_WIDTH-1:0]  sdram_addr_16 = Ram.ADDR[ADDR8_BIT_WIDTH-1:1];
@@ -261,7 +270,11 @@ module SDRAM #(
                 STATE_INIT_REF1, STATE_INIT_REF2:
                 begin
                     // SDRAM へ AUTO REFRESH コマンドを送信
-                    SDRAM_CMD <= CMD_PRE;
+                    // V9990TANG: tnCart enviaba aqui CMD_PRE (dos PRECHARGE mas), no
+                    // el AUTO REFRESH que dice el comentario; JEDEC pide al menos dos
+                    // AUTO REFRESH entre el PRECHARGE ALL y el MODE REGISTER SET.
+                    // Mismos estados y ciclos: 8 ciclos REF->REF y REF->MRS (>= tRC).
+                    SDRAM_CMD <= CMD_REF;
                     SDRAM_BA <= 0;
                     SDRAM_A <= 11'b10000000000;
                 end

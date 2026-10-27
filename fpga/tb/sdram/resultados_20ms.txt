@@ -1,0 +1,136 @@
+# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-26 14:26
+# arbol: f852456 docs/notas/sdram.md: segunda revision (reset del UMA, orden con megaram)   referencia hito 1: 20936e6   20000 us por caso
+# Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
+## 108000 kHz
+idle_standby_108000        new    +MHZ=108000 +CH0=0 +V99=0                    gap 7.445 us (804)     init 2 | INT=2699 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 
+    RESULT: PASA
+v99_108000                 new    +MHZ=108000 +CH0=0 +V99=1                    gap 7.408 us (800)     init 2 | INT=2526 CH0=0 CH1=316 ESC=0 | ch1 12..12 perd 0 err 0 | 
+    RESULT: PASA
+z80_358_rfsh_108000        new    +MHZ=108000 +CH0=1 +Z80KHZ=3580 +Z80RFSH=1 +V99=0 gap 7.593 us (820)     init 2 | INT=35 CH0=8947 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 26
+    RESULT: PASA
+z80_358_norfsh_108000      new    +MHZ=108000 +CH0=1 +Z80KHZ=3580 +Z80RFSH=0 +V99=0 gap 7.630 us (824)     init 2 | INT=2688 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 985
+    RESULT: PASA
+z80_716_rfsh_108000        new    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=1 +V99=0 gap 6.667 us (720)     init 2 | INT=0 CH0=17930 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 0
+    RESULT: PASA
+z80_716_norfsh_s1_108000   new    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +SEED=1 gap 7.778 us (840)     init 2 | INT=2676 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 312
+    RESULT: PASA
+z80_716_norfsh_s2_108000   new    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +SEED=2 gap 7.778 us (840)     init 2 | INT=2677 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 333
+    RESULT: PASA
+z80_716_norfsh_s3_108000   new    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +SEED=3 gap 7.815 us (844)     init 2 | INT=2677 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 317
+    RESULT: PASA
+z80_716_norfsh_v99_108000  new    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 gap 7.778 us (840)     init 2 | INT=2526 CH0=0 CH1=316 ESC=0 | ch1 12..12 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 341
+    RESULT: PASA
+full100_s1_108000          new    +MHZ=108000 +CH0=2 +V99=0 +SEED=1            gap 14.668 us (1584)   init 2 | INT=1366 CH0=0 CH1=0 ESC=1366 | ch1 1000..0 perd 0 err 0 | lat0 15:1 18:105256 38:1366
+    RESULT: PASA
+full100_s2_108000          new    +MHZ=108000 +CH0=2 +V99=0 +SEED=2            gap 14.668 us (1584)   init 2 | INT=1366 CH0=0 CH1=0 ESC=1366 | ch1 1000..0 perd 0 err 0 | lat0 15:1 18:105256 38:1366
+    RESULT: PASA
+full100_v99_108000         new    +MHZ=108000 +CH0=2 +V99=1                    gap 14.631 us (1580)   init 2 | INT=1263 CH0=0 CH1=316 ESC=1263 | ch1 12..12 perd 0 err 0 | lat0 15:1 18:105462 38:1263
+    RESULT: PASA
+rw_rfsh_108000             new    +MHZ=108000 +CH0=3 +V99=0                    gap 0.741 us (80)      init 2 | INT=0 CH0=37543 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=37544 rfsh_pedidos=37544 (solo_rfsh=9371) err_dato=0
+    RESULT: PASA
+rw_rfsh_v99_108000         new    +MHZ=108000 +CH0=3 +V99=1                    gap 0.741 us (80)      init 2 | INT=0 CH0=37543 CH1=316 ESC=0 | ch1 12..12 perd 0 err 0 | ops=37544 rfsh_pedidos=37544 (solo_rfsh=9371) err_dato=0
+    RESULT: PASA
+rw_rfsh_int0_108000        int0   +MHZ=108000 +CH0=3 +V99=0                    gap 0.741 us (80)      init 2 | INT=0 CH0=37543 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=37544 rfsh_pedidos=37544 (solo_rfsh=9371) err_dato=0
+    RESULT: PASA
+## controles negativos (se espera que falle la comprobacion indicada) 108000 kHz
+neg_phase0_108000          new    +MHZ=108000 +CH0=0 +V99=1 +PHASE0=1 +NEG=window gap 7.408 us (800)     init 2 | INT=2526 CH0=0 CH1=316 ESC=0 | ch1 12..12 perd 0 err 70014 | 
+    RESULT: PASA (el control negativo 'window' falla como se espera)
+    CHECK window   FALLA  (control negativo: se espera FALLA) capturas dentro de la ventana, escrituras conducidas, sin contienda
+    CHECK ch1      FALLA  (informativo en el control) canal 1 sin ranuras perdidas ni datos malos, latencia fija < 20 (12..12)
+neg_int0_gap_108000        int0   +MHZ=108000 +CH0=0 +V99=0 +NEG=gap           gap 19999.741 us (2159972) init 2 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 
+    RESULT: PASA (el control negativo 'gap' falla como se espera)
+    CHECK gap      FALLA  (control negativo: se espera FALLA) intervalo maximo entre AUTO REFRESH 19999.741 us < 15,6 us
+neg_hito1_init_108000      hito1  +MHZ=108000 +CH0=0 +V99=1 +NEG=init          gap 63.338 us (6841)   init 0 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 12..12 perd 0 err 0 | 
+    RESULT: PASA (el control negativo 'init' falla como se espera)
+    CHECK init     FALLA  (control negativo: se espera FALLA) 0 AUTO REFRESH antes del MRS (JEDEC >= 2)
+    CHECK gap      FALLA  (informativo en el control) intervalo maximo entre AUTO REFRESH 63.338 us < 15,6 us
+neg_hito1_gap_108000       hito1  +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +NEG=gap gap 20000.000 us (2160000) init 0 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 0
+    RESULT: PASA (el control negativo 'gap' falla como se espera)
+    CHECK init     FALLA  (informativo en el control) 0 AUTO REFRESH antes del MRS (JEDEC >= 2)
+    CHECK gap      FALLA  (control negativo: se espera FALLA) intervalo maximo entre AUTO REFRESH 20000.000 us < 15,6 us
+neg_hito1_rwrfsh_108000    hito1  +MHZ=108000 +CH0=3 +V99=0 +NEG=rfsh          gap 15.001 us (1620)   init 0 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=50804 rfsh_pedidos=50804 (solo_rfsh=12701) err_dato=0
+    RESULT: PASA (el control negativo 'rfsh' falla como se espera)
+    CHECK init     FALLA  (informativo en el control) 0 AUTO REFRESH antes del MRS (JEDEC >= 2)
+    CHECK rfsh_rw  FALLA  (informativo en el control) el UMA nunca presenta RFSH junto a OE/WE
+    CHECK rfsh     FALLA  (control negativo: se espera FALLA) cada RFSH pedido junto a un R/W sale como AUTO REFRESH (12701 de 50804)
+neg_mut_dout_108000        mut    +MHZ=108000 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 +NEG=z80 gap 7.778 us (840)     init 2 | INT=2526 CH0=0 CH1=316 ESC=0 | ch1 12..12 perd 0 err 0 | tarde 0 captura_max 37 int_tras_captura 341
+    RESULT: PASA (el control negativo 'z80' falla como se espera)
+    CHECK z80      FALLA  (control negativo: se espera FALLA) DOUT estable y correcto en cada /RD (tarde=0)
+neg_mutrw_dout_108000      mutrw  +MHZ=108000 +CH0=3 +V99=1 +NEG=ch0           gap 0.741 us (80)      init 2 | INT=0 CH0=37543 CH1=316 ESC=0 | ch1 12..12 perd 0 err 0 | ops=37544 rfsh_pedidos=37544 (solo_rfsh=9371) err_dato=9096
+    RESULT: PASA (el control negativo 'ch0' falla como se espera)
+    CHECK ch0      FALLA  (control negativo: se espera FALLA) datos del canal 0 correctos y el handshake avanza (37544 ops)
+neg_slack0_slot_108000     slack0 +MHZ=108000 +CH0=2 +V99=1 +NEG=slot          gap 14.631 us (1580)   init 2 | INT=1263 CH0=0 CH1=316 ESC=1263 | ch1 12..12 perd 0 err 0 | lat0 15:1 18:105462 38:1263
+    RESULT: PASA (el control negativo 'slot' falla como se espera)
+    CHECK slot     FALLA  (control negativo: se espera FALLA) en cada exec_timing la SDRAM ha terminado el acceso anterior (215978 ranuras, 215977 mal)
+neg_slow_slot_108000       slow   +MHZ=108000 +CH0=2 +V99=1 +NEG=slot          gap 14.649 us (1582)   init 2 | INT=1263 CH0=0 CH1=316 ESC=1263 | ch1 12..12 perd 0 err 47683 | lat0 15:1 18:105462 38:1263
+    RESULT: PASA (el control negativo 'slot' falla como se espera)
+    CHECK ch1      FALLA  (informativo en el control) canal 1 sin ranuras perdidas ni datos malos, latencia fija < 20 (12..12)
+    CHECK slot     FALLA  (control negativo: se espera FALLA) en cada exec_timing la SDRAM ha terminado el acceso anterior (215978 ranuras, 161983 mal)
+CANAL1 108000: latencia 12..12 igual que en el hito 1 (12..12): PASA
+## 107386 kHz
+idle_standby_107386        new    +MHZ=107386 +CH0=0 +V99=0                    gap 7.487 us (804)     init 2 | INT=2684 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 
+    RESULT: PASA
+v99_107386                 new    +MHZ=107386 +CH0=0 +V99=1                    gap 7.450 us (800)     init 2 | INT=2512 CH0=0 CH1=314 ESC=0 | ch1 12..12 perd 0 err 0 | 
+    RESULT: PASA
+z80_358_rfsh_107386        new    +MHZ=107386 +CH0=1 +Z80KHZ=3580 +Z80RFSH=1 +V99=0 gap 7.636 us (820)     init 2 | INT=35 CH0=8947 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 26
+    RESULT: PASA
+z80_358_norfsh_107386      new    +MHZ=107386 +CH0=1 +Z80KHZ=3580 +Z80RFSH=0 +V99=0 gap 7.636 us (820)     init 2 | INT=2673 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 973
+    RESULT: PASA
+z80_716_rfsh_107386        new    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=1 +V99=0 gap 6.518 us (700)     init 2 | INT=0 CH0=17930 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 0
+    RESULT: PASA
+z80_716_norfsh_s1_107386   new    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +SEED=1 gap 7.822 us (840)     init 2 | INT=2659 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 312
+    RESULT: PASA
+z80_716_norfsh_s2_107386   new    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +SEED=2 gap 7.822 us (840)     init 2 | INT=2660 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 314
+    RESULT: PASA
+z80_716_norfsh_s3_107386   new    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +SEED=3 gap 7.859 us (844)     init 2 | INT=2658 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 310
+    RESULT: PASA
+z80_716_norfsh_v99_107386  new    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 gap 7.822 us (840)     init 2 | INT=2512 CH0=0 CH1=314 ESC=0 | ch1 12..12 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 306
+    RESULT: PASA
+full100_s1_107386          new    +MHZ=107386 +CH0=2 +V99=0 +SEED=1            gap 14.750 us (1584)   init 2 | INT=1359 CH0=0 CH1=0 ESC=1359 | ch1 1000..0 perd 0 err 0 | lat0 15:1 18:104667 38:1359
+    RESULT: PASA
+full100_s2_107386          new    +MHZ=107386 +CH0=2 +V99=0 +SEED=2            gap 14.750 us (1584)   init 2 | INT=1359 CH0=0 CH1=0 ESC=1359 | ch1 1000..0 perd 0 err 0 | lat0 15:1 18:104667 38:1359
+    RESULT: PASA
+full100_v99_107386         new    +MHZ=107386 +CH0=2 +V99=1                    gap 14.713 us (1580)   init 2 | INT=1256 CH0=0 CH1=314 ESC=1256 | ch1 12..12 perd 0 err 0 | lat0 15:1 18:104873 38:1256
+    RESULT: PASA
+rw_rfsh_107386             new    +MHZ=107386 +CH0=3 +V99=0                    gap 0.745 us (80)      init 2 | INT=0 CH0=37324 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=37325 rfsh_pedidos=37325 (solo_rfsh=9312) err_dato=0
+    RESULT: PASA
+rw_rfsh_v99_107386         new    +MHZ=107386 +CH0=3 +V99=1                    gap 0.745 us (80)      init 2 | INT=0 CH0=37324 CH1=314 ESC=0 | ch1 12..12 perd 0 err 0 | ops=37325 rfsh_pedidos=37325 (solo_rfsh=9312) err_dato=0
+    RESULT: PASA
+rw_rfsh_int0_107386        int0   +MHZ=107386 +CH0=3 +V99=0                    gap 0.745 us (80)      init 2 | INT=0 CH0=37324 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=37325 rfsh_pedidos=37325 (solo_rfsh=9312) err_dato=0
+    RESULT: PASA
+## controles negativos (se espera que falle la comprobacion indicada) 107386 kHz
+neg_phase0_107386          new    +MHZ=107386 +CH0=0 +V99=1 +PHASE0=1 +NEG=window gap 7.450 us (800)     init 2 | INT=2512 CH0=0 CH1=314 ESC=0 | ch1 12..12 perd 0 err 69604 | 
+    RESULT: PASA (el control negativo 'window' falla como se espera)
+    CHECK window   FALLA  (control negativo: se espera FALLA) capturas dentro de la ventana, escrituras conducidas, sin contienda
+    CHECK ch1      FALLA  (informativo en el control) canal 1 sin ranuras perdidas ni datos malos, latencia fija < 20 (12..12)
+neg_int0_gap_107386        int0   +MHZ=107386 +CH0=0 +V99=0 +NEG=gap           gap 19999.739 us (2147692) init 2 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 
+    RESULT: PASA (el control negativo 'gap' falla como se espera)
+    CHECK gap      FALLA  (control negativo: se espera FALLA) intervalo maximo entre AUTO REFRESH 19999.739 us < 15,6 us
+neg_hito1_init_107386      hito1  +MHZ=107386 +CH0=0 +V99=1 +NEG=init          gap 63.694 us (6840)   init 0 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 12..12 perd 0 err 0 | 
+    RESULT: PASA (el control negativo 'init' falla como se espera)
+    CHECK init     FALLA  (control negativo: se espera FALLA) 0 AUTO REFRESH antes del MRS (JEDEC >= 2)
+    CHECK gap      FALLA  (informativo en el control) intervalo maximo entre AUTO REFRESH 63.694 us < 15,6 us
+neg_hito1_gap_107386       hito1  +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=0 +NEG=gap gap 20000.000 us (2147720) init 0 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | tarde 0 captura_max 30 int_tras_captura 0
+    RESULT: PASA (el control negativo 'gap' falla como se espera)
+    CHECK init     FALLA  (informativo en el control) 0 AUTO REFRESH antes del MRS (JEDEC >= 2)
+    CHECK gap      FALLA  (control negativo: se espera FALLA) intervalo maximo entre AUTO REFRESH 20000.000 us < 15,6 us
+neg_hito1_rwrfsh_107386    hito1  +MHZ=107386 +CH0=3 +V99=0 +NEG=rfsh          gap 15.085 us (1620)   init 0 | INT=0 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | ops=50517 rfsh_pedidos=50517 (solo_rfsh=12635) err_dato=0
+    RESULT: PASA (el control negativo 'rfsh' falla como se espera)
+    CHECK init     FALLA  (informativo en el control) 0 AUTO REFRESH antes del MRS (JEDEC >= 2)
+    CHECK rfsh_rw  FALLA  (informativo en el control) el UMA nunca presenta RFSH junto a OE/WE
+    CHECK rfsh     FALLA  (control negativo: se espera FALLA) cada RFSH pedido junto a un R/W sale como AUTO REFRESH (12635 de 50517)
+neg_mut_dout_107386        mut    +MHZ=107386 +CH0=1 +Z80KHZ=7160 +Z80RFSH=0 +V99=1 +NEG=z80 gap 7.822 us (840)     init 2 | INT=2512 CH0=0 CH1=314 ESC=0 | ch1 12..12 perd 0 err 0 | tarde 0 captura_max 37 int_tras_captura 306
+    RESULT: PASA (el control negativo 'z80' falla como se espera)
+    CHECK z80      FALLA  (control negativo: se espera FALLA) DOUT estable y correcto en cada /RD (tarde=0)
+neg_mutrw_dout_107386      mutrw  +MHZ=107386 +CH0=3 +V99=1 +NEG=ch0           gap 0.745 us (80)      init 2 | INT=0 CH0=37324 CH1=314 ESC=0 | ch1 12..12 perd 0 err 0 | ops=37325 rfsh_pedidos=37325 (solo_rfsh=9312) err_dato=9041
+    RESULT: PASA (el control negativo 'ch0' falla como se espera)
+    CHECK ch0      FALLA  (control negativo: se espera FALLA) datos del canal 0 correctos y el handshake avanza (37325 ops)
+neg_slack0_slot_107386     slack0 +MHZ=107386 +CH0=2 +V99=1 +NEG=slot          gap 14.713 us (1580)   init 2 | INT=1256 CH0=0 CH1=314 ESC=1256 | ch1 12..12 perd 0 err 0 | lat0 15:1 18:104873 38:1256
+    RESULT: PASA (el control negativo 'slot' falla como se espera)
+    CHECK slot     FALLA  (control negativo: se espera FALLA) en cada exec_timing la SDRAM ha terminado el acceso anterior (214772 ranuras, 214771 mal)
+neg_slow_slot_107386       slow   +MHZ=107386 +CH0=2 +V99=1 +NEG=slot          gap 14.732 us (1582)   init 2 | INT=1256 CH0=0 CH1=314 ESC=1256 | ch1 12..12 perd 0 err 47395 | lat0 15:1 18:104873 38:1256
+    RESULT: PASA (el control negativo 'slot' falla como se espera)
+    CHECK ch1      FALLA  (informativo en el control) canal 1 sin ranuras perdidas ni datos malos, latencia fija < 20 (12..12)
+    CHECK slot     FALLA  (control negativo: se espera FALLA) en cada exec_timing la SDRAM ha terminado el acceso anterior (214772 ranuras, 161079 mal)
+CANAL1 107386: latencia 12..12 igual que en el hito 1 (12..12): PASA
+TOTAL: PASA
