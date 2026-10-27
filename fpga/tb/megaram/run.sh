@@ -47,6 +47,14 @@
 #               y las guardias de la integracion modeladas
 #   tncrom_bus5 ESTRICTA  como tncrom, con el bus de hito/bus
 #   turbo5_bus5 medida    como turbo5, con el bus de hito/bus
+#   turbo7_bus5 medida    como turbo7, con el bus de hito/bus
+#   turbo7_umamain medida como turbo7, con el uma.sv de main (como inj_main)
+# turbo7 (bus de main con el UMA de hito/sdram) ya no va en la lista por
+# defecto: con esa mezcla, que ninguna build tiene, una de las lecturas que el
+# bus de main entrega a destiempo a 7,16 MHz acaba antes de que baje el /WAIT y
+# sale FALLA (2 errores, 27/10/2026); con el UMA de main (turbo7_umamain) da lo
+# de la rama de megaram (20 lecturas a destiempo, 11 mal contadas, PASA) y con
+# el bus de hito/bus (turbo7_bus5) PASA. 7,16 MHz no es contrato.
 # Lanzado desde Git Bash, el guion saca los dos ficheros de main con git y se
 # relanza en WSL.
 # Desde la fusion de las areas (hito/fusion) el uma.sv de este arbol ES el de
@@ -136,12 +144,14 @@ declare -A PARAMS=(
     [tncrom]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 -GTRACE=1"
     [wait_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 +define+REALBUS"
     [turbo5_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=1 -GSTRICT=0 +define+REALBUS"
+    [turbo7_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=2 -GSTRICT=0 +define+REALBUS"
+    [turbo7_umamain]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=2 -GSTRICT=0"
     [tncrom_bus5]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 -GTRACE=1 +define+REALBUS"
 )
 UMA_MAIN_REF=${UMA_MAIN_REF:-main}
 
 VARIANTS=("$@")
-[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait tncrom noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4 wait_bus5 tncrom_bus5 turbo5_bus5)
+[ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait tncrom noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7_umamain inj_main wait_hito4 inj_hito4 wait_bus5 tncrom_bus5 turbo5_bus5 turbo7_bus5)
 
 # el BOARD_REV1_BUS de main, el de todas las variantes salvo las *_bus5
 BUS_MAIN_REF=${BUS_MAIN_REF:-main}
@@ -165,7 +175,7 @@ for v in "${VARIANTS[@]}"; do
         echo "=== $v ($p, uma.sv de $UMA_SV, md5 $(md5sum < "$uma" | cut -c1-8))"
     elif [[ "$v" == *_hito4 ]]; then
         echo "=== $v ($p, uma.sv del arbol, md5 $(md5sum < "$uma" | cut -c1-8))"
-    elif [ "$v" = inj_main ]; then
+    elif [ "$v" = inj_main ] || [[ "$v" == *_umamain ]]; then
         if [ -n "${UMA_MAIN_SV:-}" ] && [ -f "$UMA_MAIN_SV" ]; then
             cp "$UMA_MAIN_SV" "$OUT/uma_main.sv"; from="$UMA_MAIN_SV"
         elif git -C "$HERE" show "$UMA_MAIN_REF:fpga/src/peripheral/ram/uma.sv" > "$OUT/uma_main.sv" 2>/dev/null; then
