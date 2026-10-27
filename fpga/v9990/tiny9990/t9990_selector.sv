@@ -47,6 +47,7 @@ module T9990_SELECTOR (
     input wire          IN_VS,
     input wire [15:0]   IN_PALETTE,
     input wire [15:0]   IN_BITMAP,
+    input wire          EOR,            // V9990TANG: XOR 7FFFh del color de este pixel (cursor con EOR)
 
     output reg          OUT_HS,
     output reg          OUT_VS,
@@ -57,9 +58,9 @@ module T9990_SELECTOR (
         else if(!DCLK_EN)        OUT <= OUT;
         else if(!DE)             OUT <= 16'b1_00000_00000_00000;    // イレーズ期間
         else if(!DA)             OUT <= {1'b1, IN_PALETTE[14:0]};   // ボーダー期間
-        else if(!IN_PALETTE[15]) OUT <= IN_PALETTE;                 // パレット画面
-        else if(!IN_BITMAP[15])  OUT <= IN_BITMAP;                  // ビットマップ画面
-        else                     OUT <= IN_PALETTE;                 // ビットマップ画面(バックドロップ)
+        else if(!IN_PALETTE[15]) OUT <= IN_PALETTE ^ {1'b0, {15{EOR}}};   // パレット画面
+        else if(!IN_BITMAP[15])  OUT <= IN_BITMAP  ^ {1'b0, {15{EOR}}};   // ビットマップ画面
+        else                     OUT <= IN_PALETTE ^ {1'b0, {15{EOR}}};   // ビットマップ画面(バックドロップ)
     end
 
     always_ff @(posedge CLK or negedge RESET_n) begin

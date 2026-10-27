@@ -36,7 +36,9 @@
 /***************************************************************
  * パレット画面の合成
  ***************************************************************/
-module T9990_PRIORITY (
+module T9990_PRIORITY #(
+    parameter           ENABLE_CURSOR_EOR = 1       // V9990TANG: cursor con EOR
+) (
     input wire          RESET_n,
     input wire          CLK,
     input wire          DCLK_EN,
@@ -47,6 +49,8 @@ module T9990_PRIORITY (
     input wire          SP_DISABLE,
     input wire [1:0]    SP_PRI,
     input wire [5:0]    SP_PA,
+    input wire          SP_EOR,         // V9990TANG: EOR del cursor (solo en modos Bx)
+    input wire          SP_IS_CUR,      // V9990TANG: la capa SP es el cursor (modos Bx)
 
     input wire          PA_DISABLE,
     input wire [1:0]    PA_PRI,
@@ -62,8 +66,25 @@ module T9990_PRIORITY (
     input wire [5:0]    BDC,
 
     output reg [5:0]    PA,
-    output reg [0:0]    PRI
+    output reg [0:0]    PRI,
+    output reg          EOR,            // V9990TANG: XOR 7FFFh de este pixel, alineado con PA/PRI
+    output reg          CUR             // V9990TANG: este pixel lo pinta el cursor (opaco), alineado con PA/PRI
 );
+    // V9990TANG: el EOR del cursor solo vale dentro de la zona activa (openMSX dibuja el cursor sobre la
+    // linea del bitmap, sin bordes) y con el cursor habilitado (SPD): con SP_DISABLE la salida del modulo
+    // del cursor se congela y podria quedarse a 1. CUR marca los puntos en que gana el cursor opaco (la
+    // misma condicion que elige SP_PA abajo); la paleta lo usa para alinear su color (T9990_PALETTE).
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            EOR <= 0;
+            CUR <= 0;
+        end
+        else if(DCLK_EN) begin
+            EOR <= (ENABLE_CURSOR_EOR != 0) && MUX_VDE && MUX_HDE && !SP_DISABLE && SP_EOR;
+            CUR <= (ENABLE_CURSOR_EOR != 0) && MUX_VDE && MUX_HDE && !SP_DISABLE && SP_IS_CUR && SP_PRI == 2'b00;
+        end
+    end
+
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n)                            PA <= 0;
         else if(DCLK_EN) begin

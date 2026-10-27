@@ -1,0 +1,4 @@
+# copia del core del hito 1 que run_t9990_core.sh saca de git para la prueba hito1
+hito1_src/
+# trazas de openMSX y volcados de VRAM (se regeneran con replay_openmsx.sh; no van al repo)
+trace/

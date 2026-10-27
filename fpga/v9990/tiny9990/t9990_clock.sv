@@ -82,7 +82,11 @@ module T9990_CLOCK (
     /***************************************************************
      * マスタークロック選択
      ***************************************************************/
-    assign CLK_MASTER_EN = (REG.C25M == T9990_REG::C25M_25MHZ ? CLK_25M_EN : (REG.MCS == T9990_REG::MCS_14MHZ ? CLK_14M_EN : CLK_21M_EN));
+    // MSXimus Z 21/09/2026: el reloj de 25 MHz solo en B6 (HSCN=1 y C25M=1). GNG pone R#7 = 40h
+    // (C25M=1) en B1: con el maestro a 25 MHz el DCLK pierde la fase con MEM_REQ (c16 0..15 en vez
+    // de fijo) y el bitmap sale con columnas de puntos; openMSX y el chip real ignoran C25M fuera de
+    // los modos HSCN.
+    assign CLK_MASTER_EN = ((REG.C25M == T9990_REG::C25M_25MHZ && REG.HSCN) ? CLK_25M_EN : (REG.MCS == T9990_REG::MCS_14MHZ ? CLK_14M_EN : CLK_21M_EN));
 
     /***************************************************************
      * マスタークロックを分周

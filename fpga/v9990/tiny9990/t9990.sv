@@ -46,7 +46,14 @@ endpackage
 /***********************************************************************
  * tiny9990
  ***********************************************************************/
-module T9990 (
+module T9990 #(
+    // V9990TANG: partes nuevas del core, cada una apagable para medir su coste o si falta sitio
+    parameter           ENABLE_PAL        = 1,  // cuadro PAL de 313 lineas con R#7 bit 3
+    parameter           ENABLE_CURSOR_EOR = 1,  // cursor de openMSX: EOR (XOR 7FFFh), linea Y+1 (Y+2 entrelazado, en lineas del
+                                                // cuadro), Y desde el borde en overscan, color alineado en color directo,
+                                                // primera linea de imagen
+    parameter           ENABLE_R16        = 1   // ajuste de posicion de la imagen de R#16
+) (
     input wire          RESET_n,            // リセット
     input wire          CLK,                // 動作クロック
     input wire          CLK_21M_EN,         // 21MHz タイミング入力
@@ -87,7 +94,8 @@ module T9990 (
     output wire [2:0]   RESO,               // 解像度
     output wire         HSCN,               // HSCN
     output wire         IL,                 // インターレースモード
-    output wire         EO                  // 奇数/偶数
+    output wire         EO,                 // 奇数/偶数 (V9990TANG: paridad del campo alineada con VS)
+    output wire         PAL                 // V9990TANG: 1 = el cuadro en curso es el de 313 lineas (cambia con VS)
 );
 
 //`define DISABLE_SP
@@ -145,7 +153,7 @@ module T9990 (
     T9990_STATUS_IF         STATUS();
     T9990_P2_CPU_TO_VDP_IF  P2_CPU_TO_VDP();
     T9990_P2_VDP_TO_CPU_IF  P2_VDP_TO_CPU();
-    T9990_PALETTE_IF        PAL();
+    T9990_PALETTE_IF        PALETTE();      // V9990TANG: era "PAL" (ahora es el nombre de la salida PAL)
 
     T9990_PORT u_port (
         .RESET_n(rst_flag),
@@ -169,7 +177,7 @@ module T9990 (
         .P2_VDP_TO_CPU,
 
         // P#1 I/F パレット
-        .PAL,
+        .PAL(PALETTE),
 
         // レジスタ
         .STATUS,
@@ -241,9 +249,16 @@ module T9990 (
 
     logic BG_START;
     logic [9:0] BG_X;
-    logic [8:0] BG_Y;
+    logic [9:0] BG_Y;
+    logic field;
+    logic pal_frame;
+    logic pal_win;
 
-    T9990_TIMING u_tg (
+    T9990_TIMING #(
+        .ENABLE_PAL(ENABLE_PAL),
+        .ENABLE_R16(ENABLE_R16),
+        .ENABLE_SPR_LINE0(ENABLE_CURSOR_EOR)    // va con el cursor de openMSX (con 0, como el hito 1)
+    ) u_tg (
         .RESET_n(rst_flag),
         .CLK,
         .CLK_MASTER_EN,
@@ -272,8 +287,22 @@ module T9990 (
         .MUX_HDE,
 
         // メモリタイミング
-        .MEM(MEM_TIMING)
+        .MEM(MEM_TIMING),
+
+        // V9990TANG
+        .PAL_FRAME(pal_frame),
+        .PAL_WIN(pal_win),
+        .FIELD(field)
     );
+
+    // V9990TANG: PAL pasa por un registro de CLK como VS por el selector (OUT_VS <= IN_VS): la salida
+    // PAL cambia en el mismo flanco que la salida VS (la subida del VS del cuadro nuevo).
+    logic pal_q;
+    always_ff @(posedge CLK or negedge rst_flag) begin
+        if(!rst_flag) pal_q <= 0;
+        else          pal_q <= pal_frame;
+    end
+    assign PAL = pal_q;
 
     /***************************************************************
      * RAM 調停(RAM <= VC/SP/CR/BP/PA/PB)
@@ -366,8 +395,34 @@ module T9990 (
      ***************************************************************/
     logic [1:0] SP_PRI;
     logic [5:0] SP_PA;
+    logic       SP_EOR;
+
+    // V9990TANG: linea del cursor en las coordenadas de openMSX (V9990SDLRasterizer.cc drawBxMode:
+    // cursorY = displayY - getCursorYOffset(), de 2 en 2 con EO, la del campo impar + 1). Con
+    // entrelazado el cursor va en lineas del cuadro, {linea del campo, EO}, como el bitmap (BG_Y); en
+    // overscan (B0/B2/B4: MCS = 1 sin HSCN) su Y cuenta desde donde empieza la imagen en los modos con
+    // borde: getCursorYOffset (V9990.hh) = border1 de displayNTSC_MCLK / displayPAL_MCLK, 14 o 41
+    // lineas. Con ENABLE_CURSOR_EOR = 0 el cursor usa SPR_Y, como en el hito 1.
+    // El cursor sale una linea por debajo de su Y, dos con entrelazado (manual, "Cursor Attribute
+    // Table": "one line below specified, two lines for interlace"; openMSX CursorInfo: attrY +=
+    // isInterlaced() ? 2 : 1). Ese +1/+2 se resta aqui de la linea, no en T9990_SPRITE, y la linea va
+    // REGISTRADA (cur_line_q): asi T9990_SPRITE solo resta la Y del atributo, como en el hito 1. La
+    // linea combinacional (mux, overscan y las dos restas del sprite en serie hasta fetch_pat_line)
+    // daba 12 niveles y la build no cerraba a 108 MHz (Fmax 101,2 MHz; revision del area, 26/10/2026).
+    // SPR_Y, STATUS.EO y R#7 cambian como mucho una vez por linea; el banco (fpga/tb/core, cur_race)
+    // comprueba que en ningun ACK del sprite cur_line_q difiere de la linea combinacional.
+    wire [8:0] cur_line_fr = (REG.ILM && REG.EO && !REG.HSCN) ? {SPR_Y[7:0], STATUS.EO} : SPR_Y;
+    wire [8:0] cur_line    = cur_line_fr - ((REG.MCS && !REG.HSCN) ? (pal_win ? 9'd41 : 9'd14) : 9'd0);
+    logic [8:0] cur_line_q;
+    always_ff @(posedge CLK or negedge rst_flag) begin
+        if(!rst_flag) cur_line_q <= 0;
+        else          cur_line_q <= cur_line - (REG.ILM ? 9'd2 : 9'd1);
+    end
+
 `ifndef DISABLE_SP
-    T9990_SPRITE u_sp (
+    T9990_SPRITE #(
+        .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
+    ) u_sp (
         .RESET_n(rst_flag),
         .CLK,
         .DCLK_EN,
@@ -380,19 +435,21 @@ module T9990 (
         .FETCH_START(BG_START),
         .OUT_START(SPR_START),
         .VCNT(SPR_Y),
+        .CUR_VCNT((ENABLE_CURSOR_EOR != 0) ? cur_line_q : SPR_Y),
 
         // MEM I/F
         .MEM(SP_MEM),
 
         // 出力
         .PRI(SP_PRI),
-        .EOR(),
+        .EOR(SP_EOR),
         .PA(SP_PA)
     );
 `else
     assign SP_MEM.ADDR = 0;
     assign SP_PRI = 2'b01;
     assign SP_PA  = 0;
+    assign SP_EOR = 0;
 `endif
 
     /***************************************************************
@@ -419,7 +476,7 @@ module T9990 (
         // 座標
         .START(BG_START),
         .HCNT(BG_X),
-        .VCNT(BG_Y),
+        .VCNT(BG_Y[8:0]),
 
         // MEM I/F
         .MEM(PA_MEM),
@@ -458,7 +515,7 @@ module T9990 (
         // 座標
         .START(BG_START),
         .HCNT(BG_X),
-        .VCNT(BG_Y),
+        .VCNT(BG_Y[8:0]),
 
         // MEM I/F
         .MEM(PB_MEM),
@@ -516,9 +573,23 @@ module T9990 (
      ***************************************************************/
     logic [0:0] MUX_PRI;
     logic [5:0] MUX_PA;
+    logic       MUX_EOR;
+    logic       MUX_CUR;
     logic MUX_VDE;
     logic MUX_HDE;
-    T9990_PRIORITY u_pri (
+
+    // V9990TANG: modos de bitmap de color directo (BD8, BD16, YJK, YUV y YAE: T9990_BITMAP deja la capa
+    // de paleta transparente y el selector coge T9990_COLOR_DECODE). Solo en ellos el selector elige
+    // entre la paleta (cursor) y el bitmap con la transparencia de la paleta, y solo en ellos T9990_PALETTE
+    // alinea el color del cursor con esa transparencia; en BP2/BP4/BP6 el cursor va en la misma capa que
+    // el bitmap y sale con su temporizacion del hito 1.
+    wire bmp_direct = (REG.DSPM == T9990_REG::DSPM_BITMAP) &&
+                      ((REG.CLRM == T9990_REG::CLRM_16BPP) ||
+                       (REG.CLRM == T9990_REG::CLRM_8BPP && (REG.YAE || REG.PLTM != T9990_REG::PLTM_PALETTE)));
+
+    T9990_PRIORITY #(
+        .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
+    ) u_pri (
         .RESET_n(rst_flag),
         .CLK,
         .DCLK_EN,
@@ -528,7 +599,8 @@ module T9990 (
         .MUX_HDE,
 
         // 各モジュールから出力されたデータ
-        .SP_DISABLE,    .SP_PRI,    .SP_PA,
+        .SP_DISABLE,    .SP_PRI,    .SP_PA,     .SP_EOR,
+        .SP_IS_CUR(bmp_direct),
         .PA_DISABLE,    .PA_PRI,    .PA_PA,
         .PB_DISABLE,    .PB_PRI,    .PB_PA,
         .BP_DISABLE,    .BP_PRI,    .BP_PA,
@@ -536,20 +608,25 @@ module T9990 (
 
         // 出力
         .PRI(MUX_PRI),
-        .PA(MUX_PA)
+        .PA(MUX_PA),
+        .EOR(MUX_EOR),
+        .CUR(MUX_CUR)
     );
 
     /***************************************************************
      * パレット変換
      ***************************************************************/
     logic [15:0] PAL_CLR;
-    T9990_PALETTE u_pal (
+    logic        PAL_EOR;
+    T9990_PALETTE #(
+        .ENABLE_CURSOR_EOR(ENABLE_CURSOR_EOR)
+    ) u_pal (
         .RESET_n(rst_flag),
         .CLK,
         .DCLK_EN,
 
         // P#1 I/F
-        .PAL,
+        .PAL(PALETTE),
 
         // 入力
         .START(BG_START),
@@ -557,7 +634,13 @@ module T9990 (
         .PRI(MUX_PRI),
 
         // 出力
-        .OUT(PAL_CLR)
+        .OUT(PAL_CLR),
+
+        // V9990TANG: cursor (color alineado y EOR)
+        .DIRECT(bmp_direct),
+        .CUR_IN(MUX_CUR),
+        .EOR_IN(MUX_EOR),
+        .EOR_OUT(PAL_EOR)
     );
 
     /***************************************************************
@@ -598,6 +681,7 @@ module T9990 (
         .IN_VS(vs),                         // VSYNC
         .IN_PALETTE(PAL_CLR),               // PALETTE 側画面
         .IN_BITMAP(DEC_CLR),                // BITMAP 側画面
+        .EOR(PAL_EOR),                      // V9990TANG: cursor con EOR
 
         // 出力
         .OUT_HS(HS),
@@ -610,7 +694,7 @@ module T9990 (
     assign R = OUT[ 9: 5];
     assign G = OUT[14:10];
     assign B = OUT[ 4: 0];
-    assign EO = STATUS.EO;
+    assign EO = field;                      // V9990TANG: STATUS.EO sin R#16; con R#16, el EO del campo que empieza con VS
     assign IL = REG.ILM && REG.EO && !REG.HSCN;
     assign HSCN = REG.HSCN;
 

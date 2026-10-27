@@ -97,7 +97,7 @@ wire srch_edge_right = work.srch.edge_left;
 
     // LINE / SEARCH 用ワーク
     union {
-        char_work_t char;
+        char_work_t chr;  // MSXimus Z: era "char" (Vivado 2019.2 lo trata como palabra reservada)
         line_work_t line;
         srch_work_t srch;
     } work;
@@ -227,6 +227,17 @@ wire srch_edge_right = work.srch.edge_left;
 
     wire [31:0] cmd_mem_dout_be = { CMD_MEM.DOUT[7:0], CMD_MEM.DOUT[15:8], CMD_MEM.DOUT[23:16], CMD_MEM.DOUT[31:24]};   // 転送元 VRAM 読み出しデータ(ビッグエンディアン)
 
+    // MSXimus Z 20/09/2026: LMCM / POINT entregaban al P#2 siempre WRT_DATA[31:24] (el 4o byte del
+    // grupo de 32 bits), asi que solo salia bien 1 pixel de cada 4 (8 bpp). El byte del pixel es el
+    // de su posicion dentro de la palabra (WRT_DATA es little-endian: [7:0] = direccion menor):
+    // 8 bpp DST_X[1:0], 4 bpp DST_X[2:1] (2 px por byte), 2 bpp DST_X[3:2] (4 px por byte);
+    // 16 bpp: los dos bytes del pixel, direccion menor primero (mismo orden que antes).
+    wire [1:0] cpu_lane_sel = (DST_CLRM == T9990_REG::CLRM_2BPP) ? DST_X[3:2] :
+                              (DST_CLRM == T9990_REG::CLRM_4BPP) ? DST_X[2:1] : DST_X[1:0];
+    wire [7:0] cpu_lane    = WRT_DATA[cpu_lane_sel*8 +: 8];
+    wire [7:0] cpu_lane_lo = DST_X[0] ? WRT_DATA[23:16] : WRT_DATA[ 7:0];
+    wire [7:0] cpu_lane_hi = DST_X[0] ? WRT_DATA[31:24] : WRT_DATA[15:8];
+
     wire [4:0] SRC_OUT_COUNT = SRC_COUNT;
     wire [4:0] SRC_POS_COUNT = SRC_COUNT;
     wire [4:0] DST_IN_COUNT = DST_COUNT;
@@ -352,6 +363,27 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
     wire cond_dst_is_xy = (REG.OP == T9990_REG::CMD_LMMC) || (REG.OP == T9990_REG::CMD_LMMV) || (REG.OP == T9990_REG::CMD_LMMM) || (REG.OP == T9990_REG::CMD_LINE) || (REG.OP == T9990_REG::CMD_PSET) || (REG.OP == T9990_REG::CMD_CMMC) || (REG.OP == T9990_REG::CMD_CMMK) || (REG.OP == T9990_REG::CMD_CMMM) || (REG.OP == T9990_REG::CMD_BMXL);
     wire cond_dst_is_linear = (REG.OP == T9990_REG::CMD_BMLX || REG.OP == T9990_REG::CMD_BMLL);
 
+    // V9990TANG: START (escritura de R#52) se toma un ciclo despues, con la decodificacion de STOP ya
+    // registrada. Con "START && REG.OP == CMD_STOP" a la cabeza de la cadena de prioridades de este
+    // bloque, R#52 -> decodificacion -> habilitacion de todos los registros del blitter era el camino
+    // critico de la build completa (7 niveles, vdp_reg[52] -> DST_X/CE: 0,003 ns de margen y Fmax
+    // CLK_BASE 108,0 MHz con los cambios del core; en el hito 1 ya era el camino critico, 0,092 ns).
+    // CMD_START y vdp_reg[52] se escriben en el mismo flanco (t9990_port.sv) y el siguiente acceso del
+    // Z80 llega cientos de ciclos despues, asi que un ciclo mas tarde REG.* sigue igual: el comando
+    // hace lo mismo, empezando 9 ns despues.
+    logic start_q;
+    logic start_stop_q;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            start_q      <= 0;
+            start_stop_q <= 0;
+        end
+        else begin
+            start_q      <= START;
+            start_stop_q <= START && REG.OP == T9990_REG::CMD_STOP;
+        end
+    end
+
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
             P2_CPU_TO_VDP.REQ <= 0;
@@ -371,7 +403,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         //
         // STOP 書き込み時処理
         //
-        else if(START && REG.OP == T9990_REG::CMD_STOP) begin
+        else if(start_stop_q) begin
             state <= STATE_STOP;
             P2_CPU_TO_VDP.REQ <= 0;
             P2_VDP_TO_CPU.REQ <= 0;
@@ -396,15 +428,15 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_IDLE) begin
             STATUS.CE_intr <= 0;
 
-            if(START) begin
+            if(start_q) begin
                 FIFO_CLEAR <= 1;
 
                 STATUS.CE <= 1;
 
                 src_enable <= 1;
 
-                work.char.decode_data <= 0;
-                work.char.decode_count <= 0;
+                work.chr.decode_data <= 0;
+                work.chr.decode_count <= 0;
 
                 // SRC_NX, SRC_NY, DST_NX, DST_NY
                 if(REG.OP == T9990_REG::CMD_BMLL) begin
@@ -553,7 +585,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
             ENQUEUE_COUNT <= SRC_OUT_COUNT;
 
             // キャラクタデータが残ってるならデコード
-            if(src_is_rom && work.char.decode_count != 0) begin
+            if(src_is_rom && work.chr.decode_count != 0) begin
                 state <= STATE_SRC_DECODE;
             end
 
@@ -586,8 +618,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
 
                 // ROM
                 else if(src_is_rom) begin
-                    work.char.decode_data <= 0;
-                    work.char.decode_count <= 6'd32;
+                    work.chr.decode_data <= 0;
+                    work.chr.decode_count <= 6'd32;
                     state <= STATE_SRC_IN;  // ToDo: 漢字 ROM から読み出す
                 end
 
@@ -686,12 +718,12 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         //
         else if(state == STATE_SRC_READ_VRAM_CONV_8C) begin
             case (SRC_X[1:0])
-                2'd0:   work.char.decode_data <= ENQUEUE_DATA;
-                2'd1:   work.char.decode_data <= {ENQUEUE_DATA[23:0],  8'b0};
-                2'd2:   work.char.decode_data <= {ENQUEUE_DATA[15:0], 16'b0};
-                2'd3:   work.char.decode_data <= {ENQUEUE_DATA[ 7:0], 24'b0};
+                2'd0:   work.chr.decode_data <= ENQUEUE_DATA;
+                2'd1:   work.chr.decode_data <= {ENQUEUE_DATA[23:0],  8'b0};
+                2'd2:   work.chr.decode_data <= {ENQUEUE_DATA[15:0], 16'b0};
+                2'd3:   work.chr.decode_data <= {ENQUEUE_DATA[ 7:0], 24'b0};
             endcase
-            work.char.decode_count <= {SRC_OUT_COUNT[2:0], 3'b000};
+            work.chr.decode_count <= {SRC_OUT_COUNT[2:0], 3'b000};
             state <= STATE_SRC_DECODE;
         end
 
@@ -712,8 +744,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_SRC_READ_CPU_WAIT_BUSY) begin
             if(!P2_CPU_TO_VDP.ACK) begin
                 if(src_is_char) begin
-                    work.char.decode_data <= {P2_CPU_TO_VDP.DATA, 24'b0};
-                    work.char.decode_count <= 6'd8;
+                    work.chr.decode_data <= {P2_CPU_TO_VDP.DATA, 24'b0};
+                    work.chr.decode_count <= 6'd8;
                     state <= STATE_SRC_DECODE;
                 end
                 else if(SRC_CLRM == T9990_REG::CLRM_16BPP) begin
@@ -756,57 +788,57 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         // キャラクタデータをデコード
         //
         else if(state == STATE_SRC_DECODE) begin
-            work.char.decode_count <= work.char.decode_count - 1'd1;
+            work.chr.decode_count <= work.chr.decode_count - 1'd1;
 
             if(DST_CLRM == T9990_REG::CLRM_2BPP) begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15:14] : REG.BC[15:14],
-                                    work.char.decode_data[30] ? REG.FC[13:12] : REG.BC[13:12],
-                                    work.char.decode_data[29] ? REG.FC[11:10] : REG.BC[11:10],
-                                    work.char.decode_data[28] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
-                                    work.char.decode_data[27] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
-                                    work.char.decode_data[26] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
-                                    work.char.decode_data[25] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
-                                    work.char.decode_data[24] ? REG.FC[ 1: 0] : REG.BC[ 1: 0],
-                                    work.char.decode_data[23] ? REG.FC[15:14] : REG.BC[15:14],
-                                    work.char.decode_data[22] ? REG.FC[13:12] : REG.BC[13:12],
-                                    work.char.decode_data[21] ? REG.FC[11:10] : REG.BC[11:10],
-                                    work.char.decode_data[20] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
-                                    work.char.decode_data[19] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
-                                    work.char.decode_data[18] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
-                                    work.char.decode_data[17] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
-                                    work.char.decode_data[16] ? REG.FC[ 1: 0] : REG.BC[ 1: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15:14] : REG.BC[15:14],
+                                    work.chr.decode_data[30] ? REG.FC[13:12] : REG.BC[13:12],
+                                    work.chr.decode_data[29] ? REG.FC[11:10] : REG.BC[11:10],
+                                    work.chr.decode_data[28] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
+                                    work.chr.decode_data[27] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
+                                    work.chr.decode_data[26] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
+                                    work.chr.decode_data[25] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
+                                    work.chr.decode_data[24] ? REG.FC[ 1: 0] : REG.BC[ 1: 0],
+                                    work.chr.decode_data[23] ? REG.FC[15:14] : REG.BC[15:14],
+                                    work.chr.decode_data[22] ? REG.FC[13:12] : REG.BC[13:12],
+                                    work.chr.decode_data[21] ? REG.FC[11:10] : REG.BC[11:10],
+                                    work.chr.decode_data[20] ? REG.FC[ 9: 8] : REG.BC[ 9: 8],
+                                    work.chr.decode_data[19] ? REG.FC[ 7: 6] : REG.BC[ 7: 6],
+                                    work.chr.decode_data[18] ? REG.FC[ 5: 4] : REG.BC[ 5: 4],
+                                    work.chr.decode_data[17] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
+                                    work.chr.decode_data[16] ? REG.FC[ 1: 0] : REG.BC[ 1: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[15:0], work.char.decode_data[31:16]};
+                work.chr.decode_data <= {work.chr.decode_data[15:0], work.chr.decode_data[31:16]};
             end
             else if(DST_CLRM == T9990_REG::CLRM_4BPP) begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15:12] : REG.BC[15:12],
-                                    work.char.decode_data[30] ? REG.FC[11: 8] : REG.BC[11: 8],
-                                    work.char.decode_data[29] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
-                                    work.char.decode_data[28] ? REG.FC[ 3: 0] : REG.BC[ 3: 0],
-                                    work.char.decode_data[27] ? REG.FC[15:12] : REG.BC[15:12],
-                                    work.char.decode_data[26] ? REG.FC[11: 8] : REG.BC[11: 8],
-                                    work.char.decode_data[25] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
-                                    work.char.decode_data[24] ? REG.FC[ 3: 0] : REG.BC[ 3: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15:12] : REG.BC[15:12],
+                                    work.chr.decode_data[30] ? REG.FC[11: 8] : REG.BC[11: 8],
+                                    work.chr.decode_data[29] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
+                                    work.chr.decode_data[28] ? REG.FC[ 3: 0] : REG.BC[ 3: 0],
+                                    work.chr.decode_data[27] ? REG.FC[15:12] : REG.BC[15:12],
+                                    work.chr.decode_data[26] ? REG.FC[11: 8] : REG.BC[11: 8],
+                                    work.chr.decode_data[25] ? REG.FC[ 7: 4] : REG.BC[ 7: 4],
+                                    work.chr.decode_data[24] ? REG.FC[ 3: 0] : REG.BC[ 3: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[23:0], work.char.decode_data[31:24]};
+                work.chr.decode_data <= {work.chr.decode_data[23:0], work.chr.decode_data[31:24]};
             end
             else if(DST_CLRM == T9990_REG::CLRM_8BPP) begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15: 8] : REG.BC[15: 8],
-                                    work.char.decode_data[30] ? REG.FC[ 7: 0] : REG.BC[ 7: 0],
-                                    work.char.decode_data[29] ? REG.FC[15: 8] : REG.BC[15: 8],
-                                    work.char.decode_data[28] ? REG.FC[ 7: 0] : REG.BC[ 7: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15: 8] : REG.BC[15: 8],
+                                    work.chr.decode_data[30] ? REG.FC[ 7: 0] : REG.BC[ 7: 0],
+                                    work.chr.decode_data[29] ? REG.FC[15: 8] : REG.BC[15: 8],
+                                    work.chr.decode_data[28] ? REG.FC[ 7: 0] : REG.BC[ 7: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[27:0], work.char.decode_data[31:28]};
+                work.chr.decode_data <= {work.chr.decode_data[27:0], work.chr.decode_data[31:28]};
             end
             else begin
                 ENQUEUE_DATA <= {
-                                    work.char.decode_data[31] ? REG.FC[15: 0] : REG.BC[15: 0],
-                                    work.char.decode_data[30] ? REG.FC[15: 0] : REG.BC[15: 0]
+                                    work.chr.decode_data[31] ? REG.FC[15: 0] : REG.BC[15: 0],
+                                    work.chr.decode_data[30] ? REG.FC[15: 0] : REG.BC[15: 0]
                                 };
-                work.char.decode_data <= {work.char.decode_data[29:0], work.char.decode_data[31:30]};
+                work.chr.decode_data <= {work.chr.decode_data[29:0], work.chr.decode_data[31:30]};
             end
 
             case (DST_CLRM)
@@ -1063,11 +1095,11 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                 P2_VDP_TO_CPU.REQ <= 1;
                 STATUS.TR <= 1;
                 if(DST_CLRM == T9990_REG::CLRM_16BPP) begin
-                    P2_VDP_TO_CPU.DATA <= WRT_DATA[23:16];
+                    P2_VDP_TO_CPU.DATA <= cpu_lane_lo;
                     state <= STATE_DST_WRITE_CPU_H_WAIT_ACK;
                 end
                 else begin
-                    P2_VDP_TO_CPU.DATA <= WRT_DATA[31:24];
+                    P2_VDP_TO_CPU.DATA <= cpu_lane;
                     state <= STATE_DST_WRITE_CPU_WAIT_ACK;
                 end
             end
@@ -1103,7 +1135,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_DST_WRITE_CPU_H_WAIT_BUSY) begin
             if(!P2_VDP_TO_CPU.ACK) begin
                 P2_VDP_TO_CPU.REQ <= 1;
-                P2_VDP_TO_CPU.DATA <= WRT_DATA[31:24];
+                P2_VDP_TO_CPU.DATA <= cpu_lane_hi;
                 STATUS.TR <= 1;
                 state <= STATE_DST_WRITE_CPU_WAIT_ACK;
             end

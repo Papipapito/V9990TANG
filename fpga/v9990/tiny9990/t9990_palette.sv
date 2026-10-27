@@ -36,7 +36,9 @@
 /***************************************************************
  * パレットモジュール
  ***************************************************************/
-module T9990_PALETTE (
+module T9990_PALETTE #(
+    parameter               ENABLE_CURSOR_EOR = 1   // V9990TANG: cursor con la semantica de openMSX (EOR y color)
+) (
     input wire              RESET_n,
     input wire              CLK,
     input wire              DCLK_EN,
@@ -46,7 +48,12 @@ module T9990_PALETTE (
     input wire              START,
     input wire [5:0]        PA,
     input wire [0:0]        PRI,
-    output reg [15:0]       OUT
+    output reg [15:0]       OUT,
+
+    input wire              DIRECT,     // V9990TANG: bitmap de color directo (BD8/BD16/YJK/YUV/YAE): ver abajo
+    input wire              CUR_IN,     // V9990TANG: el punto es del cursor (opaco), alineado con PA/PRI; solo con DIRECT
+    input wire              EOR_IN,     // V9990TANG: EOR del cursor, alineado con PA/PRI
+    output reg              EOR_OUT     // V9990TANG: EOR alineado con el color de OUT
 );
     reg [5:0] p_addr;
     reg [15:0] p_data;
@@ -73,10 +80,39 @@ module T9990_PALETTE (
     );
 
     // 遅延バッファ
-    logic [$bits(PRI)+$bits(PA)-1:0] buffer[0:4-1];
+    // V9990TANG: cada entrada lleva ademas {EOR, CUR} del punto (ceros con ENABLE_CURSOR_EOR = 0)
+    logic [2+$bits(PRI)+$bits(PA)-1:0] buffer[0:4-1];
     logic [1:0] w_index;
     logic [1:0] pa_index;
     logic [1:0] pri_index;
+
+    /***************************************************************
+     * V9990TANG: color del cursor alineado con su transparencia
+     *
+     * El color sale con 2 puntos de retardo (buffer 1 + p_addr -> P_DATA, que
+     * la DPB da en el ciclo siguiente, + OUT) y la transparencia (OUT[15]) con
+     * 3: en OUT van la transparencia del punto k y el color del punto k + 1.
+     * Con una sola capa (P1/P2, BPx) eso solo adelanta toda la imagen un punto,
+     * pero cuando OUT[15] elige entre la paleta y el bitmap directo (BD8/BD16/
+     * YJK/YUV: el cursor) el ultimo punto opaco de cada tramo del cursor salia
+     * con el color del punto siguiente (el fondo, BDC) en vez del del cursor.
+     * En los puntos del cursor (CUR, por el mismo anillo que PRI) se toma el
+     * color del punto anterior, el suyo; el resto sale como en el hito 1.
+     * CUR solo se marca en los modos de color directo (DIRECT): en BP2/BP4/BP6
+     * el cursor y el bitmap van juntos en la misma capa, los dos con el color
+     * k + 1, y alinear solo los puntos del cursor duplicaria su primer punto y
+     * se comeria el punto del bitmap que le sigue.
+     *
+     * EOR_OUT va con el color que sale en OUT: el del punto k (la entrada del
+     * anillo de la transparencia) con DIRECT, donde el selector usa esa
+     * transparencia y el color del cursor ya va alineado, y el del punto k + 1
+     * (la entrada siguiente) en los modos de paleta, donde la imagen es el color.
+     ***************************************************************/
+    logic [15:0] p_data_q;
+    wire  [2+$bits(PRI)+$bits(PA)-1:0] pri_entry = buffer[pri_index];
+    wire  [2+$bits(PRI)+$bits(PA)-1:0] col_entry = buffer[pri_index + 1'd1];  // la del color de OUT (k + 1)
+    wire         cur_d = (ENABLE_CURSOR_EOR != 0) && pri_entry[$bits(PRI)+$bits(PA)];
+    wire  [15:0] p_color = cur_d ? p_data_q : p_data;
 
     // color decode に合わせて遅延をいれる
     always_ff @(posedge CLK or negedge RESET_n) begin
@@ -86,15 +122,27 @@ module T9990_PALETTE (
             pri_index <= 4-3;     // 3dotclk の遅れ
         end
         else if(DCLK_EN) begin
-            OUT[14:0] <= p_data[14:0];
-            OUT[15] <= (buffer[pri_index][$bits(PA)]) ? 1 : p_data[15];
+            OUT[14:0] <= p_color[14:0];
+            OUT[15] <= (pri_entry[$bits(PA)]) ? 1 : p_color[15];
             pri_index <= pri_index + 1'd1;
 
             p_addr <= buffer[pa_index][$bits(PA)-1:0];
             pa_index <= pa_index + 1'd1;
 
-            buffer[w_index] <= { PRI, PA };
+            buffer[w_index] <= { (ENABLE_CURSOR_EOR != 0) && EOR_IN, (ENABLE_CURSOR_EOR != 0) && CUR_IN, PRI, PA };
             w_index <= w_index + 1'd1;
+        end
+    end
+
+    // V9990TANG: EOR del cursor, leido del anillo: alineado con el color de OUT
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            p_data_q <= 0;
+            EOR_OUT <= 0;
+        end
+        else if(DCLK_EN) begin
+            p_data_q <= p_data;
+            EOR_OUT <= (ENABLE_CURSOR_EOR != 0) && (DIRECT ? pri_entry[$bits(PRI)+$bits(PA)+1] : col_entry[$bits(PRI)+$bits(PA)+1]);
         end
     end
 endmodule
@@ -143,7 +191,7 @@ module T9990_PALETTE_REG (
     reg [4:0] r_data_g;
     reg [4:0] r_data_b;
     assign R_DATA = (ptr == T9990_REG::PLTP_R) ? r_data_r :
-                    (ptr == T9990_REG::PLTP_R) ? {1'b0, r_data_g} : {1'b0,r_data_b};
+                    (ptr == T9990_REG::PLTP_G) ? {1'b0, r_data_g} : {1'b0,r_data_b};    // MSXimus Z 18/10/2026: era PLTP_R dos veces (leer G por P#1 devolvia B)
 
     always_ff @(posedge CLK) begin
         if(!RESET_n) begin
