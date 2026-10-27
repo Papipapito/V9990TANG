@@ -42,6 +42,7 @@ interface MEGAROM_IF #(parameter ADDR_BIT_WIDTH=24, BANK_COUNT = 4);
     logic                       is_16k_bank;                    // banksize 0:8KB / 1:16KB
     logic                       CS1_Mask;                       // 0:PAGE1 を使用する / 1:PAGE1 を使用しない
     logic                       CS2_Mask;                       // 0:PAGE2 を使用する / 1:PAGE2 を使用しない
+    logic                       Plain;                          // V9990TANG: 1 = ROM plana en 0000h-BFFFh (PLAIN0)
 
     logic [15:0]                BankRegAddrMask;
     logic [15:0]                BankRegAddr[0:BANK_COUNT-1];
@@ -52,7 +53,7 @@ interface MEGAROM_IF #(parameter ADDR_BIT_WIDTH=24, BANK_COUNT = 4);
 
     // ホスト側ポート
     modport HOST(
-                    output MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask,
+                    output MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask, Plain,
 
                     output BankRegAddrMask, BankRegAddr, BankRegMask, BankRegInit,
                     input  BankReg, BankRegRaw
@@ -60,7 +61,7 @@ interface MEGAROM_IF #(parameter ADDR_BIT_WIDTH=24, BANK_COUNT = 4);
 
     // メガロムコントローラ側ポート
     modport DEVICE (
-                    input  MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask,
+                    input  MemoryTopAddr, WriteProtect, is_16k_bank, CS1_Mask, CS2_Mask, Plain,
 
                     input  BankRegAddrMask, BankRegAddr, BankRegMask, BankRegInit,
                     inout  BankReg, BankRegRaw
@@ -70,9 +71,24 @@ endinterface
 /***************************************************************
  * メガロムコントローラ
  ***************************************************************/
+//
+// V9990TANG:
+//  - Megarom.Plain (modo PLAIN0, ver megarom_configure.sv): responde en
+//    0000h-BFFFh con offset = direccion, sin bancos, sin escritura y sin
+//    mascaras CS. Todo HOST de MEGAROM_IF tiene que conducir Plain (0 si no
+//    usa el modo).
+//  - ENABLE_MEM_WAIT = 1 (solo con USE_FF = 1): /WAIT en las lecturas de la
+//    ventana (hito 8b). Bus.WAIT_n baja en el flanco siguiente al primer
+//    ciclo en que se ve la lectura (rd_mem_n = 0 en el camino retrasado:
+//    SLTSL, MERQ, RD y direccion de este puerto) y vuelve a 1 en el MISMO
+//    flanco en que Bus.DOUT carga el byte de la SDRAM: el que el UMA deja en
+//    Ram.DOUT al subir Ram.ACK_n despues de haberlo bajado para esta lectura.
+//    Contrato con el pre-WAIT del bus y ciclos medidos en docs/notas/megaram.md.
+//
 module MEGAROM_CONTROLLER #(
     parameter               COUNT = 1,
-    parameter               USE_FF = 0
+    parameter               USE_FF = 0,
+    parameter               ENABLE_MEM_WAIT = 0
 ) (
     input   wire            RESET_n,
     input   wire            CLK,
@@ -177,6 +193,8 @@ module MEGAROM_CONTROLLER #(
         end
     endgenerate
 
+    logic mem_wait_req;     // V9990TANG: /WAIT de lectura de memoria (abajo)
+
     if(USE_FF) begin
         always @(posedge CLK or negedge RESET_n) begin
             if(!RESET_n) begin
@@ -189,13 +207,13 @@ module MEGAROM_CONTROLLER #(
             end
             else begin
                 Bus.INT_n          <= tmp_int_n[0];
-                Bus.WAIT_n         <= tmp_wait_n[0];
+                Bus.WAIT_n         <= tmp_wait_n[0] && !mem_wait_req;
             end
         end
     end
     else begin
         assign Bus.INT_n          = tmp_int_n[0];
-        assign Bus.WAIT_n         = tmp_wait_n[0];
+        assign Bus.WAIT_n         = tmp_wait_n[0] && !mem_wait_req;
     end
 
     /***************************************************************
@@ -204,6 +222,10 @@ module MEGAROM_CONTROLLER #(
     wire cs1_n  =  Bus.ADDR[15] || ~Bus.ADDR[14] || Megarom.CS1_Mask;
     wire cs2_n  = ~Bus.ADDR[15] ||  Bus.ADDR[14] || Megarom.CS2_Mask;
     wire cs12_n = (cs1_n && cs2_n);
+
+    // V9990TANG: PLAIN0 responde en 0000h-BFFFh (las mascaras CS no cuentan)
+    wire cs_plain_n = (Bus.ADDR[15:14] == 2'b11);
+    wire cs_mem_n   = Megarom.Plain ? cs_plain_n : cs12_n;
 
     /***************************************************************
      * バンク毎のライトプロテクト
@@ -214,9 +236,69 @@ module MEGAROM_CONTROLLER #(
      * memory read / write strobe
      ***************************************************************/
     wire wr_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.WR_n;
-    wire rd_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.RD_n;
-    wire wr_mem_n  = cs12_n || wr_n || Megarom.WriteProtect || bank_write_protect;
-    wire rd_mem_n  = cs12_n || rd_n;
+    // V9990TANG: con !RFSH_n un ciclo de refresco no cuenta como lectura. En el
+    // camino retrasado el RD_n del M1 sigue bajo unos ciclos (linea de 9) cuando
+    // MERQ_n ya ha vuelto a bajar con la direccion de refresco (I:R); MERQ_n y
+    // RFSH_n se muestrean juntos (grupo 2 del mux), asi que el refresco se
+    // descarta entero y no lanza una lectura de la SDRAM ni un /WAIT espurios.
+    wire rd_n = Bus.SLTSL_n || Bus.MERQ_n || Bus.RD_n || !Bus.RFSH_n;
+    wire wr_mem_n  = cs_mem_n || wr_n || Megarom.WriteProtect || bank_write_protect || Megarom.Plain;
+    wire rd_mem_n  = cs_mem_n || rd_n;
+
+    /***************************************************************
+     * V9990TANG: /WAIT en las lecturas de memoria (ENABLE_MEM_WAIT)
+     *  MW_IDLE    : sin lectura en curso
+     *  MW_ACK_LOW : lectura vista; espera a que el UMA baje Ram.ACK_n
+     *  MW_ACK_HIGH: espera a que Ram.ACK_n vuelva a 1 (Ram.DOUT valido)
+     *  MW_READY   : dato entregado; WAIT suelto hasta el fin de la lectura
+     * Ram.ACK_n es el del canal 0 del UMA, compartido con la escritura y el
+     * refresco de este mismo puerto. Un ACK_n ya bajo al empezar (refresco o
+     * escritura anterior aun en curso) no adelanta la liberacion: el UMA lo
+     * baja otra vez en el flanco siguiente a Ram.OE_n = 0 (det_oe tiene
+     * prioridad sobre el fin del acceso anterior) y no lo sube mientras quede
+     * la lectura pendiente (save_oe).
+     ***************************************************************/
+    typedef enum logic [1:0] {
+        MW_IDLE,
+        MW_ACK_LOW,
+        MW_ACK_HIGH,
+        MW_READY
+    } mem_wait_state_t;
+    mem_wait_state_t mw_state;
+    logic prev_rd_mem_n;
+
+    if(ENABLE_MEM_WAIT && USE_FF) begin
+        always_ff @(posedge CLK or negedge RESET_n) begin
+            if(!RESET_n) begin
+                prev_rd_mem_n <= 1;
+                mw_state <= MW_IDLE;
+            end
+            else if(!Bus.RESET_n) begin
+                prev_rd_mem_n <= 1;
+                mw_state <= MW_IDLE;
+            end
+            else begin
+                prev_rd_mem_n <= rd_mem_n;
+                if(rd_mem_n) mw_state <= MW_IDLE;
+                else case (mw_state)
+                    MW_IDLE:        if(prev_rd_mem_n) mw_state <= MW_ACK_LOW;
+                    MW_ACK_LOW:     if(!Ram.ACK_n)    mw_state <= MW_ACK_HIGH;
+                    MW_ACK_HIGH:    if(Ram.ACK_n)     mw_state <= MW_READY;
+                    default:        ;
+                endcase
+            end
+        end
+
+        assign mem_wait_req = !rd_mem_n && (
+                                  (mw_state == MW_IDLE && prev_rd_mem_n) ||
+                                  (mw_state == MW_ACK_LOW) ||
+                                  (mw_state == MW_ACK_HIGH && !Ram.ACK_n) );
+    end
+    else begin
+        assign prev_rd_mem_n = 1'b1;
+        assign mw_state = MW_IDLE;
+        assign mem_wait_req = 1'b0;
+    end
 
     /***************************************************************
      * ライト検出
@@ -244,7 +326,7 @@ module MEGAROM_CONTROLLER #(
                     Megarom.BankReg[bank_num] <= Megarom.BankRegInit[bank_num];
                     Megarom.BankRegRaw[bank_num] <= Megarom.BankRegInit[bank_num];
                 end
-                else if(det_wr && ((Bus.ADDR & Megarom.BankRegAddrMask) == Megarom.BankRegAddr[bank_num]) && BankEnable[bank_num]) begin
+                else if(det_wr && ((Bus.ADDR & Megarom.BankRegAddrMask) == Megarom.BankRegAddr[bank_num]) && BankEnable[bank_num] && !Megarom.Plain) begin
                     Megarom.BankReg[bank_num] <= Bus.DIN & Megarom.BankRegMask;
                     Megarom.BankRegRaw[bank_num] <= Bus.DIN;
                 end
@@ -259,7 +341,8 @@ module MEGAROM_CONTROLLER #(
     wire [ 7:0] bank_8;
     wire [23:0] addr_16 = Megarom.MemoryTopAddr + { 2'h0, bank_16, Bus.ADDR[13:0] };
     wire [23:0] addr_8  = Megarom.MemoryTopAddr + { 3'h0, bank_8 , Bus.ADDR[12:0] };
-    wire [23:0] addr = Megarom.is_16k_bank ? addr_16 : addr_8;
+    wire [23:0] addr_plain = Megarom.MemoryTopAddr + { 8'h00, Bus.ADDR[15:0] };   // V9990TANG: PLAIN0
+    wire [23:0] addr = Megarom.Plain ? addr_plain : Megarom.is_16k_bank ? addr_16 : addr_8;
 
     if(Megarom.BANK_COUNT >= 4) begin
         assign bank_16 = Megarom.BankReg[Bus.ADDR[15]];

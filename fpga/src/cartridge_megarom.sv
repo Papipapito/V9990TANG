@@ -36,7 +36,16 @@
 /***************************************************************
  * MEGA ROM カードリッジ
  ***************************************************************/
+//
+// V9990TANG: con el modo PLAIN0 activo (Megarom.Plain) el SCC no contesta y
+// su registro de modo (BFFEh/BFFFh) no se escribe: la ROM plana ocupa
+// 0000h-BFFFh entera (docs/notas/megaram.md).
+// ENABLE_MEM_WAIT (por defecto CONFIG::ENABLE_MEM_WAIT: toda configuracion
+// que compile este fichero tiene que definirlo) activa el /WAIT de las
+// lecturas de memoria de megarom_controller.sv.
+//
 module CARTRIDGE_MEGAROM #(
+    parameter           ENABLE_MEM_WAIT             = CONFIG::ENABLE_MEM_WAIT,
     parameter [23:0]    FLASH_FS_ADDR               = 0,
     parameter [23:0]    FLASH_FS_SIZE               = 0,
     parameter [23:0]    FLASH_MEGAROM_ADDR          = 0,
@@ -147,7 +156,8 @@ module CARTRIDGE_MEGAROM #(
 
     MEGAROM_CONTROLLER #(
         .COUNT(BUS_COUNT),
-        .USE_FF(1)
+        .USE_FF(1),
+        .ENABLE_MEM_WAIT(ENABLE_MEM_WAIT)
     ) u_rom (
         .RESET_n,
         .CLK,
@@ -158,6 +168,20 @@ module CARTRIDGE_MEGAROM #(
         .Ram,
         .ExtBus
     );
+
+`ifndef SYNTHESIS
+    // synthesis translate_off
+    // V9990TANG: el /WAIT de memoria supone que el UMA ve el OE_n del
+    // controlador en el ciclo siguiente (EXPANSION_RAM sin flops). Con
+    // RAM_IF_EXPANSION_USES_FF = 1 el ACK_n de un acceso anterior del canal
+    // podria subir antes de que el UMA vea la lectura, y el WAIT se soltaria
+    // con el dato viejo (docs/notas/megaram.md, apartado 4).
+    initial begin
+        if(ENABLE_MEM_WAIT && CONFIG::RAM_IF_EXPANSION_USES_FF)
+            $error("CARTRIDGE_MEGAROM: ENABLE_MEM_WAIT = 1 pide RAM_IF_EXPANSION_USES_FF = 0");
+    end
+    // synthesis translate_on
+`endif
 
     /***************************************************************
      * SCC
@@ -189,7 +213,7 @@ module CARTRIDGE_MEGAROM #(
                     WriteProtect_SCC[2] <= 0;
                     WriteProtect_SCC[3] <= 0;
                 end
-                else if(ExtBus[BUS_SCC].ADDR[15:1] == 15'b1011_1111_1111_111 && !ExtBus[BUS_SCC].SLTSL_n && !ExtBus[BUS_SCC].WR_n) begin
+                else if(ExtBus[BUS_SCC].ADDR[15:1] == 15'b1011_1111_1111_111 && !ExtBus[BUS_SCC].SLTSL_n && !ExtBus[BUS_SCC].WR_n && !Megarom.Plain) begin
                     // SCC/SCC-I の切り替え
                     scc_mode_scci <= ExtBus[BUS_SCC].DIN[5];
                     // バンクレジスタ更新許可フラグ
@@ -250,7 +274,7 @@ module CARTRIDGE_MEGAROM #(
             always_ff @(posedge ExtBus[BUS_SCC].CLK_21M) begin
                 rst_n <= RESET_n && ExtBus[BUS_SCC].RESET_n;
                 clk_en <= !ExtBus[BUS_SCC].CLK_EN_21M;              // CLK_EN も1クロック遅らせる
-                cs_n <= ExtBus[BUS_SCC].SLTSL_n || !SCC_ENA;
+                cs_n <= ExtBus[BUS_SCC].SLTSL_n || !SCC_ENA || Megarom.Plain;   // V9990TANG: PLAIN0 (cuasi-estatico)
                 rd_n <= ExtBus[BUS_SCC].RD_n;
                 wr_n <= ExtBus[BUS_SCC].WR_n;
                 // WR_n, RD_n の立ち下がりでアドレス更新
@@ -306,7 +330,7 @@ module CARTRIDGE_MEGAROM #(
                 .CLK_EN     (ExtBus[BUS_SCC].CLK_EN),
                 .MODE_SCC_I (scc_mode_scci),
                 .ADDR       (ExtBus[BUS_SCC].ADDR[7:0]),
-                .CS_n       (scc_cs_n || ExtBus[BUS_SCC].SLTSL_n || ExtBus[BUS_SCC].MERQ_n || !SCC_ENA || scc_bank_n),
+                .CS_n       (scc_cs_n || ExtBus[BUS_SCC].SLTSL_n || ExtBus[BUS_SCC].MERQ_n || !SCC_ENA || scc_bank_n || Megarom.Plain),
                 .RD_n       (ExtBus[BUS_SCC].RD_n),
                 .WR_n       (ExtBus[BUS_SCC].WR_n),
                 .DIN        (ExtBus[BUS_SCC].DIN),
