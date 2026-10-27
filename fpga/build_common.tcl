@@ -11,6 +11,14 @@
 #  impl/pnr/<CFG>_<VARIANT>.log. Las cuatro escriben en el mismo impl/: una
 #  build cada vez, y archivar (tools/archive_build.py) antes de la siguiente.
 #
+#  Opcional, antes de cargarlo (lo usan los check_*.tcl de las areas, que
+#  desde la fusion toman de aqui la lista de ficheros):
+#    BUILD_OPTS  pares "-opcion valor" de set_option (sintesis y P&R)
+#    OUT_NAME    nombre base de la salida (por defecto <CFG>_<VARIANT>)
+#    RUN_STEPS   pasos de gw_sh (por defecto {syn pnr}; {syn} = solo sintesis)
+#    FILE_SUBST  lista "fichero_de_la_lista copia" para compilar una copia
+#                parcheada en lugar de un fichero (la copia tiene que existir)
+#
 #  gw_sh (Gowin 1.9.12.03) no abre ficheros con rutas de mas de 260
 #  caracteres: el repositorio tiene que estar en una ruta corta.
 # ============================================================================
@@ -40,8 +48,6 @@ lappend FILES src/board/rev1/board_rev1_tmds.sv
 lappend FILES src/board/wt200b/board_wt200b_clock.sv
 lappend FILES src/board/wt200b/board_wt200b_config_${VARIANT}.sv
 lappend FILES src/board/wt200b/board_wt200b_guard.sv
-# provisional hasta la fusion con hito/bus (ver el top)
-lappend FILES src/board/wt200b/board_wt200b_bus_guard.sv
 lappend FILES src/board/rev1/dvi_tx/dvi_tx.v
 # ----- sistema -----
 lappend FILES src/system/system_reset.sv
@@ -87,7 +93,7 @@ foreach f {t9990 t9990_bitmap t9990_blit t9990_blit_addr t9990_blit_bitmask
            t9990_shift_buffer t9990_sprite t9990_timing} {
     lappend FILES v9990/tiny9990/$f.sv
 }
-# ----- video: upscan a 720x480 (855x524) -----
+# ----- video: upscan a 720x480 (855x524) y 720x576 (855x626, PAL) -----
 lappend FILES src/peripheral/video/video.sv
 lappend FILES src/peripheral/video/video_upscan.sv
 # ----- top -----
@@ -96,8 +102,20 @@ lappend FILES src/tnCart_board_wt200b_top.sv
 lappend FILES src/board/wt200b/board_wt200b.cst
 lappend FILES constraints/${NAME}.sdc
 
-# Antes de la fusion con hito/megaram faltan megarom_clear.sv y
-# config/v9990_megaram.sv: la build se para aqui con la lista de lo que falta.
+# Copias parcheadas en lugar de ficheros de la lista (FILE_SUBST)
+if {[info exists FILE_SUBST]} {
+    foreach {orig copia} $FILE_SUBST {
+        set i [lsearch -exact $FILES $orig]
+        if {$i < 0} {
+            puts "ERROR: FILE_SUBST: '$orig' no esta en la lista de $NAME"
+            exit 1
+        }
+        set FILES [lreplace $FILES $i $i $copia]
+    }
+}
+
+# Si falta un fichero (una rama sin fusionar), la build se para aqui con la
+# lista de lo que falta.
 set MISSING {}
 foreach f $FILES {
     if {![file exists $f]} { lappend MISSING $f }
@@ -129,7 +147,8 @@ foreach f $FILES { add_file $f }
 # I2S y del bus de la WonderTANG
 set_option -use_mspi_as_gpio 1 -use_sspi_as_gpio 1
 set_option -top_module TNCART_BOARD_WT200B_TOP -verilog_std sysv2017
-set_option -output_base_name $NAME
+if {![info exists OUT_NAME]} { set OUT_NAME $NAME }
+set_option -output_base_name $OUT_NAME
 # Opciones de sintesis y de P&R: las del hito 1 (map 1, place 2, route 1)
 # salvo que el build_<cfg>_<variante>.tcl fije BUILD_OPTS antes de cargar
 # este fichero (pares "-opcion valor" de set_option). Sintesis y P&R son
@@ -153,5 +172,5 @@ set_option -gen_text_timing_rpt 1
 # real no llega antes que el -offset del .sdc (ver docs/ARCHITECTURE.md)
 set_option -gen_sdf 1
 
-run syn
-run pnr
+if {![info exists RUN_STEPS]} { set RUN_STEPS {syn pnr} }
+foreach step $RUN_STEPS { run $step }
