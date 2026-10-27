@@ -417,14 +417,24 @@ module tb_top;
     int c_h = 0, c_hmin = 0, c_hmax = 0, c_lines = 0, c_delines = 0, c_de = 0, c_demin = 0, c_demax = 0;
     int c_red = 0, c_grn = 0, c_blu = 0;
     bit pv_vs = 1'b0, pv_hs = 1'b0, v_started = 1'b0;
+    // +VDBG: los colores mas frecuentes dentro de DE en cada cuadro
+    bit vdbg = 1'b0;
+    initial vdbg = $test$plusargs("VDBG");
+    int cmap [int];
     always @(posedge vclk) begin
+        bit hs_rise;
+        hs_rise = v_hs && !pv_hs;
         if (v_de) begin
             c_de++;
             if (v_r == 8'hFF && v_g == 8'h00 && v_b == 8'h00) c_red++;
             if (v_r == 8'h00 && v_g == 8'hFF && v_b == 8'h00) c_grn++;
             if (v_r == 8'h00 && v_g == 8'h00 && v_b == 8'hFF) c_blu++;
+            if (vdbg) begin
+                if (cmap.exists({v_r, v_g, v_b})) cmap[{v_r, v_g, v_b}]++;
+                else cmap[{v_r, v_g, v_b}] = 1;
+            end
         end
-        if (v_hs && !pv_hs) begin
+        if (hs_rise) begin
             if (c_lines > 0) begin
                 if (c_lines == 1 || c_h < c_hmin) c_hmin = c_h;
                 if (c_lines == 1 || c_h > c_hmax) c_hmax = c_h;
@@ -440,16 +450,27 @@ module tb_top;
         end
         c_h++;
         if (v_vs && !pv_vs) begin
+            // VS y HS suben en el mismo flanco: esa linea ya es del cuadro nuevo
             if (v_started && fr_n < NFR) begin
-                fr_hmin[fr_n] = c_hmin; fr_hmax[fr_n] = c_hmax; fr_lines[fr_n] = c_lines;
+                fr_hmin[fr_n] = c_hmin; fr_hmax[fr_n] = c_hmax; fr_lines[fr_n] = c_lines - (hs_rise ? 1 : 0);
                 fr_delines[fr_n] = c_delines; fr_demin[fr_n] = c_demin; fr_demax[fr_n] = c_demax;
                 fr_red[fr_n] = c_red; fr_grn[fr_n] = c_grn; fr_blu[fr_n] = c_blu; fr_t[fr_n] = $realtime;
             end
+            if (vdbg && v_started) begin
+                int k, best, bc;
+                $write("  [VDBG] cuadro %0d, colores en DE:", fr_n);
+                for (int r = 0; r < 6 && cmap.size() > 0; r++) begin
+                    best = -1; bc = -1;
+                    foreach (cmap[c]) if (cmap[c] > bc) begin bc = cmap[c]; best = c; end
+                    $write(" %06h x%0d", best, bc);
+                    cmap.delete(best);
+                end
+                $display("");
+                cmap.delete();
+            end
             if (v_started) fr_n++;
             v_started = 1'b1;
-            c_lines = 0; c_delines = 0; c_red = 0; c_grn = 0; c_blu = 0;
-            // la linea del VS cuenta desde su HS (los dos suben en el mismo flanco)
-            if (v_hs && !pv_hs) c_lines = 1;
+            c_lines = hs_rise ? 1 : 0; c_delines = 0; c_red = 0; c_grn = 0; c_blu = 0;
         end
         pv_vs = v_vs;
         pv_hs = v_hs;
@@ -870,6 +891,7 @@ module tb_top;
         check(per > lo && per < hi, $sformatf("/INT %s: periodo %0.3f ms, esperado de %0.1f a %0.1f", what, per / 1.0e6, lo / 1.0e6, hi / 1.0e6));
     endfunction
 
+    int red_ntsc = 0;
     function automatic void chkpt(input int id, input string what);
         int bad, k;
         bad = 0;
@@ -891,19 +913,26 @@ module tb_top;
                 check(n_int >= 1, "/INT: ninguna atendida");
             end
             CK_NTSC: begin
+                // B1 de 256 x 212 -> 640 x 424 puntos de salida (2,5 x 2): el
+                // rectangulo verde de 64 x 32 da 160 x 64 = 10 240 puntos, el fondo
+                // azul 640 x 424 - 10 240 = 261 120, y el borde rojo (paleta 5) el
+                // resto de las 480 lineas de DE salvo las columnas fuera de la zona
+                // de borde del V9990 (negras)
                 k = f0 + 2;
                 chk_frame(k, 524, 480, "NTSC");
-                check(fr_grn[k] > 8000 && fr_grn[k] < 12500, $sformatf("NTSC: %0d puntos verdes (rectangulo), esperados ~10 240", fr_grn[k]));
-                check(fr_blu[k] > 230000, $sformatf("NTSC: %0d puntos azules (imagen), esperados ~260 000", fr_blu[k]));
-                check(fr_red[k] > 50000, $sformatf("NTSC: %0d puntos rojos (borde de la paleta 5), esperados ~74 000", fr_red[k]));
+                check(fr_grn[k] == 10240, $sformatf("NTSC: %0d puntos verdes (rectangulo), esperados 10 240", fr_grn[k]));
+                check(fr_blu[k] == 261120, $sformatf("NTSC: %0d puntos azules (imagen), esperados 261 120", fr_blu[k]));
+                check(fr_red[k] > 55000 && fr_red[k] < 75000, $sformatf("NTSC: %0d puntos rojos (borde de la paleta 5), esperados ~62 000", fr_red[k]));
+                red_ntsc = fr_red[k];
                 chk_int_period(16.0e6, 17.4e6, "NTSC");
             end
             CK_PAL: begin
+                // la misma imagen en 576 lineas de DE: el borde crece
                 k = f0 + 2;
                 chk_frame(k, 626, 576, "PAL");
-                check(fr_grn[k] > 8000 && fr_grn[k] < 12500, $sformatf("PAL: %0d puntos verdes, esperados ~10 240", fr_grn[k]));
-                check(fr_blu[k] > 230000, $sformatf("PAL: %0d puntos azules, esperados ~260 000", fr_blu[k]));
-                check(fr_red[k] > 120000, $sformatf("PAL: %0d puntos rojos (borde), esperados ~143 000", fr_red[k]));
+                check(fr_grn[k] == 10240, $sformatf("PAL: %0d puntos verdes, esperados 10 240", fr_grn[k]));
+                check(fr_blu[k] == 261120, $sformatf("PAL: %0d puntos azules, esperados 261 120", fr_blu[k]));
+                check(fr_red[k] > red_ntsc + 50000, $sformatf("PAL: %0d puntos rojos (borde), %0d en NTSC: el borde no crece", fr_red[k], red_ntsc));
                 chk_int_period(19.2e6, 20.6e6, "PAL");
             end
             CK_SCCI:
@@ -1054,7 +1083,17 @@ module tb_top;
                     if (o.op == OP_RESETWAIT) t_rw_m1 = $realtime;
                     pc = 16'hC000;
                 end
-                OP_CHK: chkpt(o.v, o.what);
+                OP_CHK: begin
+                    // que acabe el ultimo ciclo del Z80 y, si es una escritura,
+                    // que llegue a la SDRAM (las tareas del Z80 vuelven antes
+                    // de soltar sus strobes)
+                    if (o.v != CK_PRINT && o.v != CK_SAVEF) begin
+                        at(zt);
+                        #(2000.0);
+                        zt_now();
+                    end
+                    chkpt(o.v, o.what);
+                end
                 default: ;
             endcase
         end
@@ -1160,9 +1199,9 @@ module tb_top;
             // ---------------- E: LMMV ----------------
             p_chk(CK_PRINT, "E LMMV del blitter");
             p_out(P(7), 8'h00);             // MCS = 0
-            p_wreg(6'd6, 8'h82);            // B1, 256 puntos, BD8
+            p_wreg(6'd6, 8'h82);            // B1, 256 puntos, 8 bits por punto
             p_wreg(6'd7, 8'h00);            // NTSC
-            p_wreg(6'd13, 8'h00);
+            p_wreg(6'd13, 8'h40);           // PLTM = 01: BD8 (color directo GRB 332; con 00 seria BP6, de paleta)
             p_wreg(6'd15, 8'h05);           // borde: paleta 5
             for (int r = 17; r <= 20; r++) p_wreg(6'(r), 8'h00);
             p_in(P(5), 8'h00, 8'h01, "P#5: CE a 0 antes del LMMV");
