@@ -3,43 +3,56 @@
 > **Español.** V9990TANG es un cartucho V9990 (GFX9000) para MSX sobre la
 > **WonderTANG 2.02b** (Tang Nano 20K). Usa el core tiny9990 de buppu3 dentro de
 > la carcasa wt200b de tnCartWonder: bus del slot multiplexado, VRAM en la SDRAM
-> de la Tang y salida HDMI (DVI) a 720x480.
+> de la Tang y salida HDMI (DVI) a 720x480 o 720x576.
 >
 > **English.** V9990TANG is a V9990 (GFX9000) cartridge for MSX on the
 > **WonderTANG 2.02b** (Tang Nano 20K). It runs buppu3's tiny9990 core inside the
 > tnCartWonder wt200b shell: multiplexed slot bus, VRAM in the Tang's SDRAM and
-> HDMI (DVI) output at 720x480.
+> HDMI (DVI) output at 720x480 or 720x576.
 
 ## Estado
 
-**En desarrollo, sin publicar y sin probar en placa.** Este repositorio está en el
-hito 1 del plan: la carcasa wt200b de tnCartWonder y el core tiny9990 de tnCart
-**sin parches**, con la
-configuración solo-V9990, un `.sdc` propio y un script de build que reproduce la
-build de referencia medida en el estudio con el timing cerrado. No hay todavía
-ningún bitstream para usar: los cambios de fidelidad, el refresco propio de la
-SDRAM, el pre-WAIT del bus, la variante con el reloj del slot y la MegaRAM llegan
-en los hitos siguientes. Ver [`docs/changelog.md`](docs/changelog.md).
+**En desarrollo, sin publicar y sin probar en placa.** La rama `hito/fusion`
+reúne las seis áreas del plan sobre el hito 1 (ver
+[`docs/changelog.md`](docs/changelog.md) y
+[`docs/notas/fusion.md`](docs/notas/fusion.md)): carcasa sin bootloader ni
+flash, con POR y guardia de lock; core tiny9990 con los parches de fidelidad y
+el cuadro PAL; refresco propio de la SDRAM; bus con escaneo adaptativo y
+pre-WAIT; salida 720x480 y 720x576; y la MegaRAM SCC-I de 4 MB con `tncrom` r3.
+Hay cuatro bitstreams, dos configuraciones (`v9990`, solo el V9990, y
+`v9990_megaram`, con la MegaRAM) con dos variantes de reloj cada una (`xtal`,
+del cristal de la Tang, y `sync`, del reloj del slot). Los cuatro pasan la
+puerta y los bancos de simulación, incluido el de placa entera, pero **ninguno
+se ha cargado todavía en una placa**. Qué `.fs` usar y qué esperar, en
+[`docs/WONDERTANG.md`](docs/WONDERTANG.md). `main` sigue en el hito 1.
 
 ## Compilar
 
-Hace falta el IDE de Gowin (probado con la 1.9.12.03). Desde `fpga/`:
+Hace falta el IDE de Gowin (probado con la 1.9.12.03). Desde `fpga/`, una de:
 
 ```
 gw_sh build_v9990_xtal.tcl
+gw_sh build_v9990_sync.tcl
+gw_sh build_v9990_megaram_xtal.tcl
+gw_sh build_v9990_megaram_sync.tcl
 ```
 
-El bitstream sale en `fpga/impl/pnr/v9990_xtal.fs`, con su informe de recursos
-(`.rpt.txt`) y de timing (`.tr`) al lado. `gw_sh` no abre ficheros con rutas de
-más de 260 caracteres: clona el repositorio en una ruta corta. La puerta que
-tiene que pasar cada build (`tools/check_build.py`) está en
-[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+Cada una saca `fpga/impl/pnr/<configuración>_<variante>.fs`, con su informe de
+recursos (`.rpt.txt`) y de timing (`.tr`) al lado. Las opciones de P&R de cada
+variante están en su `build_*.tcl` y valen para este RTL: si cambia el RTL hay
+que volver a barrerlas (ver [`docs/notas/fusion.md`](docs/notas/fusion.md)).
+`gw_sh` no abre ficheros con rutas de más de 260 caracteres: clona el
+repositorio en una ruta corta. La puerta que tiene que pasar cada build
+(`tools/check_build.py`) y la orden de cada variante están en
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md). `TNCROM.COM`, el cargador de
+ROMs de la MegaRAM, se rehace con `bash tools/tncrom/build.sh` (SDCC).
 
 ## Documentación
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): bloques, relojes, cruces de reloj y `.sdc`.
-- [`docs/WONDERTANG.md`](docs/WONDERTANG.md): la placa, pines, puente J3 y grabación.
-- [`docs/VERIFICATION.md`](docs/VERIFICATION.md): puerta de cada build, números medidos y matriz de monitores.
+- [`docs/WONDERTANG.md`](docs/WONDERTANG.md): qué `.fs` usar, la placa, pines, puente J3, carga de ROMs, LED y grabación.
+- [`docs/VERIFICATION.md`](docs/VERIFICATION.md): puerta de cada build, números medidos, bancos y matriz de monitores.
+- [`docs/notas/`](docs/notas/): una nota por área (`sdram`, `integ`, `core`, `video`, `bus`, `megaram`) y la de la fusión.
 - [`UPSTREAM.md`](UPSTREAM.md): de dónde sale cada fichero, y dónde está el
   estudio del port que fija el plan de hitos.
 
