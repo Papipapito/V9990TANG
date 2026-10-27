@@ -1,5 +1,5 @@
-v9990_sync.fs, build del Tue Oct 27 08:16:05 2026
-CheckSum: 0x1697
-md5 del fichero: 6a45d5cd90c460c76fd503ab9fa13084
-md5 sin las lineas de cabecera (//): b99c780f397346957cf846c67a57dc33
-comparado con v9990_sync.fs (build del Tue Oct 27 08:04:48 2026, CheckSum 0x1697): cuerpo IDENTICO
+v9990_sync.fs, build del Tue Oct 27 21:49:09 2026
+CheckSum: 0x7B75
+md5 del fichero: c4b9955608801c482babda20f563a02a
+md5 sin las lineas de cabecera (//): 0017f68e5c6d46f4ccd8fbc38bfdbf62
+comparado con v9990_sync.fs (build del Tue Oct 27 21:00:59 2026, CheckSum 0x18D3): cuerpo DISTINTO (md5 c8568efa0d8b8d6bb8fb25eff9b02e65)
