@@ -372,12 +372,13 @@ module tb_top;
     bit boot_hold_seen = 1'b0;
     always @(posedge clk27) if (boot_hold && cart_wait_n) boot_hold_seen = 1'b1;
 
-    // SDRAM: errores del modelo con el controlador en reset (SDRAM_CMD no tiene
-    // valor de reset en sdram.sv: los pines llevan 0000 = MODE REGISTER SET con
-    // A = 0 mientras el reloj corre antes de BASE_READY; riesgo conocido,
-    // docs/notas/sdram.md) y despues; captura de las lecturas dentro de la
-    // ventana de dato valido del modelo (como tb/sdram/tb_uma_sdram.sv:
-    // STATE_FETCH_RDATA_1/2 = 38/39) y bus de datos sin dos conductores
+    // SDRAM: errores del modelo con el controlador en reset y despues (hasta
+    // el arreglo de sdram.sv de este banco, SDRAM_CMD no tenia valor de reset:
+    // los pines llevaban 0000 = MODE REGISTER SET con A = 0 en cada flanco
+    // mientras el reloj corre antes de BASE_READY, 262 406 flancos en el
+    // arranque); captura de las lecturas dentro de la ventana de dato valido
+    // del modelo (como tb/sdram/tb_uma_sdram.sv: STATE_FETCH_RDATA_1/2 =
+    // 38/39) y bus de datos sin dos conductores
     int n_sd_err_rst = 0;
     // (la cuenta se toma dos ciclos despues de BASE_READY: el flanco del reloj
     // de la SDRAM que cae medio ciclo despues aun ve el 0000 del reset)
@@ -386,6 +387,17 @@ module tb_top;
         n_sd_err_rst = u_mem.n_err;
     end
     int n_sd_win = 0, n_sd_cont = 0;
+    // comandos en los pines de la SDRAM con su controlador en reset (cada
+    // flanco del reloj de la SDRAM con RESET_n de sdram.sv a 0 y CS_n a 0 tiene
+    // que ser NOP: CS_n = 0, RAS_n = CAS_n = WE_n = 1)
+    int n_sd_rst_cmd = 0;
+    reg [3:0] sd_rst_cmd_first = 4'hF;
+    always @(posedge sd_clk) begin
+        if (!dut.u_sdram.RESET_n && !sd_cs_n && {sd_ras_n, sd_cas_n, sd_we_n} != 3'b111) begin
+            if (n_sd_rst_cmd == 0) sd_rst_cmd_first = {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n};
+            n_sd_rst_cmd++;
+        end
+    end
     always @(posedge dut.CLK_MEM) begin
         if (dut.u_sdram.cmd_is_read && dut.u_sdram.state == 7'd38 && u_mem.dq_mode != 2'd2 ||
             dut.u_sdram.cmd_is_read && dut.u_sdram.state == 7'd39 &&
@@ -892,6 +904,18 @@ module tb_top;
     endfunction
 
     int red_ntsc = 0;
+    function automatic void chk_img(input int k, input string what);
+        if (CONFIG::UPSCAN_BLEND != 0) begin
+            check(fr_grn[k] == 159 * 64, $sformatf("%s: %0d puntos verdes (rectangulo), esperados 10 176", what, fr_grn[k]));
+            check(fr_blu[k] == 640 * 424 - 160 * 64 - 424 - 64, $sformatf("%s: %0d puntos azules (imagen), esperados 260 632", what, fr_blu[k]));
+        end
+        else begin
+            // BLEND = 0 (punto mas cercano): sin mezclas; sin comprobar en esta
+            // version del banco, con un margen
+            check(fr_grn[k] >= 159 * 64 && fr_grn[k] <= 161 * 64, $sformatf("%s: %0d puntos verdes, esperados ~10 240", what, fr_grn[k]));
+            check(fr_blu[k] >= 260000 && fr_blu[k] <= 261500, $sformatf("%s: %0d puntos azules, esperados ~261 120", what, fr_blu[k]));
+        end
+    endfunction
     function automatic void chkpt(input int id, input string what);
         int bad, k;
         bad = 0;
@@ -914,14 +938,16 @@ module tb_top;
             end
             CK_NTSC: begin
                 // B1 de 256 x 212 -> 640 x 424 puntos de salida (2,5 x 2): el
-                // rectangulo verde de 64 x 32 da 160 x 64 = 10 240 puntos, el fondo
-                // azul 640 x 424 - 10 240 = 261 120, y el borde rojo (paleta 5) el
-                // resto de las 480 lineas de DE salvo las columnas fuera de la zona
-                // de borde del V9990 (negras)
+                // rectangulo verde de 64 x 32 ocupa 160 x 64 y el fondo azul el
+                // resto de los 640 x 424; con BLEND = 1 la columna de salida en la
+                // que empieza cada color mezcla los dos (una por linea a la
+                // izquierda de la imagen, 424, y del rectangulo, 64): verde puro
+                // 159 x 64 = 10 176, azul puro 261 120 - 424 - 64 = 260 632. El
+                // borde rojo (paleta 5) es el resto de las 480 lineas de DE salvo
+                // las columnas fuera de la zona de borde del V9990 (negras)
                 k = f0 + 2;
                 chk_frame(k, 524, 480, "NTSC");
-                check(fr_grn[k] == 10240, $sformatf("NTSC: %0d puntos verdes (rectangulo), esperados 10 240", fr_grn[k]));
-                check(fr_blu[k] == 261120, $sformatf("NTSC: %0d puntos azules (imagen), esperados 261 120", fr_blu[k]));
+                chk_img(k, "NTSC");
                 check(fr_red[k] > 55000 && fr_red[k] < 75000, $sformatf("NTSC: %0d puntos rojos (borde de la paleta 5), esperados ~62 000", fr_red[k]));
                 red_ntsc = fr_red[k];
                 chk_int_period(16.0e6, 17.4e6, "NTSC");
@@ -930,8 +956,7 @@ module tb_top;
                 // la misma imagen en 576 lineas de DE: el borde crece
                 k = f0 + 2;
                 chk_frame(k, 626, 576, "PAL");
-                check(fr_grn[k] == 10240, $sformatf("PAL: %0d puntos verdes, esperados 10 240", fr_grn[k]));
-                check(fr_blu[k] == 261120, $sformatf("PAL: %0d puntos azules, esperados 261 120", fr_blu[k]));
+                chk_img(k, "PAL");
                 check(fr_red[k] > red_ntsc + 50000, $sformatf("PAL: %0d puntos rojos (borde), %0d en NTSC: el borde no crece", fr_red[k], red_ntsc));
                 chk_int_period(19.2e6, 20.6e6, "PAL");
             end
@@ -1355,8 +1380,8 @@ module tb_top;
         check(u_mem.n_err == n_sd_err_rst, $sformatf("%0d errores del modelo de la SDRAM con el controlador fuera de reset", u_mem.n_err - n_sd_err_rst));
         check(n_sd_win == 0, $sformatf("%0d capturas de la SDRAM fuera de la ventana del dato", n_sd_win));
         check(n_sd_cont == 0, $sformatf("%0d ciclos con la SDRAM y el controlador conduciendo DQ a la vez", n_sd_cont));
-        if (n_sd_err_rst > 0)
-            $display("  SDRAM: %0d avisos del modelo antes de BASE_READY (MRS con A = 0 en cada flanco: SDRAM_CMD sin valor de reset, riesgo conocido de docs/notas/sdram.md)", n_sd_err_rst);
+        check(n_sd_rst_cmd == 0, $sformatf("SDRAM: %0d flancos con un comando que no es NOP (el primero %b) con el controlador en reset; %0d errores del modelo antes de BASE_READY",
+                                           n_sd_rst_cmd, sd_rst_cmd_first, n_sd_err_rst));
         check(n_wto == 0 && !wto, "WAIT_TIMEOUT");
         check(n_conflict == 0, $sformatf("%0d choques en D0-D7", n_conflict));
         check(n_bad_drive == 0, $sformatf("%0d conducciones de D0-D7 sin lectura legitima", n_bad_drive));

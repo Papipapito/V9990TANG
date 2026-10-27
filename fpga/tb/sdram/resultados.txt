@@ -1,5 +1,5 @@
-# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-27 19:06
-# arbol: ca21555 tb_megaram: turbo7 con el bus de hito/bus y con el UMA de main   referencia hito 1: 20936e6   2000 us por caso
+# Banco UMA + sdram.sv (fpga/tb/sdram/run.sh), 2026-10-27 20:54
+# arbol: 9f4c2b1 + NOP en el reset de SDRAM_CMD (sdram.sv, commit siguiente)   referencia hito 1: 20936e6   2000 us por caso
 # Verilator 5.020 2024-01-01 rev (Debian 5.020-1)
 ## 108000 kHz
 idle_standby_108000        new    +MHZ=108000 +CH0=0 +V99=0                    gap 7.445 us (804)     init 2 | INT=269 CH0=0 CH1=0 ESC=0 | ch1 1000..0 perd 0 err 0 | 

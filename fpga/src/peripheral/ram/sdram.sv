@@ -245,6 +245,13 @@ module SDRAM #(
     begin
         if(!RESET_n)
         begin
+            // V9990TANG: NOP en los pines mientras dura el reset. Sin valor de
+            // reset, SDRAM_CMD arrancaba a 0000 (MODE REGISTER SET con A = 0,
+            // latencia CAS reservada) y la SDRAM lo recibia en cada flanco de
+            // su reloj desde que corre el rPLL hasta BASE_READY (2,43 ms), y
+            // tras una perdida de enganche repetia el ultimo comando
+            // (fpga/tb/top: 262 406 flancos). docs/notas/sdram.md, riesgos.
+            SDRAM_CMD <= CMD_NOP;
             cmd_is_read <= 0;
             cmd_is_write <= 0;
             cmd_is_refresh <= 0;
