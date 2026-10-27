@@ -1,0 +1,5 @@
+v9990_xtal.fs, build del Tue Oct 27 20:55:37 2026
+CheckSum: 0xFFB7
+md5 del fichero: 99fe6f137b44dba7c2a7b1cf210975ca
+md5 sin las lineas de cabecera (//): 3572fde913f1302bd8df3f50b6f2ba02
+comparado con v9990_xtal.fs (build del Tue Oct 27 08:10:14 2026, CheckSum 0x54DE): cuerpo DISTINTO (md5 89f0c2afe43aff91ced24fac156da580)

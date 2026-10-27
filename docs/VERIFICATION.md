@@ -123,6 +123,184 @@ salida de la puerta.
   referencia: `PR1014`, `CLK_27M_d` llega a un CLKDIV por enrutado genérico (solo
   afecta al jitter de `CLK_DAC`).
 
+## Banco de placa entera (`fpga/tb/top`)
+
+Simulación del top completo, `TNCART_BOARD_WT200B_TOP`, con la lista de
+ficheros de `fpga/build_common.tcl` de cada configuración y variante: lo que
+compila Gowin, salvo las restricciones. Verilator 5.020 con `--timing`, en
+WSL. Cada área tiene su banco (core, sdram, bus, megaram, video, integ); este
+las junta y les pone delante la placa y un MSX.
+
+```
+fpga/tb/top/run.sh                      # las cuatro variantes: full, io y nomsx
+fpga/tb/top/run.sh v9990_megaram_sync   # una variante
+RUNS="full" REUSE=1 fpga/tb/top/run.sh  # sin recompilar, un escenario
+```
+
+Se lanza desde Git Bash o desde WSL. Compila en `~/.tb_top_obj/<variante>`
+(cada variante en 1-2 minutos) y deja los logs en `fpga/tb/top/build/`, que
+no entra en git. Sale con 0 si todo pasa. El escenario `full` simula 128-132
+ms en 20-25 minutos; los otros dos son más cortos.
+
+**Qué hay alrededor del top** (nada de esto toca el RTL):
+
+- **Relojes.** El cristal de 27 MHz y el CLOCK del slot a 3,579545 MHz. Los
+  modelos de comportamiento de `gowin_models.sv` sustituyen a las primitivas
+  de Gowin que Verilator no admite:
+  - `rPLL`: enganchado en fase. Cada `IDIV_SEL + 1` flancos de entrada saca
+    `FBDIV_SEL + 1` periodos. `CLKOUTP` es el mismo tren desplazado
+    `PSDA_SEL`/16; con `"1000"`, el reloj de la SDRAM a 180 grados. `LOCK`
+    sube tras 64 tramos estables y cae si la entrada se para. En `sync` la
+    entrada es el CLOCK del slot.
+  - `CLKDIV`: cuenta medios periodos, así que también divide por 3,5.
+  - `MULT18X18`: el atenuador del sonido.
+  - `DPB`: los modelos de los bancos de área, juntos en uno.
+
+  El `DVI_TX` cifrado lo sustituye `tb/video/sim/dvi_tx_stub.sv`, y el banco
+  mira lo que `BOARD_REV1_TMDS_OUT` le entrega.
+- **Sintaxis.** `filelist.py` lee la lista de `build_common.tcl` y pone primero
+  los paquetes. Copia cuatro ficheros con arreglos que Gowin no necesita y
+  Verilator sí: un comentario en prosa que empieza por «Verilator» en
+  `main.sv`, los `$bits(interfaz.Signal)` y `Uma.COUNT` que salen en
+  constantes (cambiados por el valor que tienen en este diseño) y los
+  `connect_dummy()` de `ExpBus[n]` dentro de un `generate`. Si el RTL cambia y
+  una sustitución deja de casar, el banco no compila.
+- **SDRAM.** El modelo de `tb/sdram` (`sdram_model_bl.v`), conectado a los
+  pines `O_sdram_*` e `IO_sdram_dq`, con el reloj que saca el top.
+- **Slot y MSX.** La placa y el Z80 de `tb/bus/tb_bus.sv`:
+  - los tres 74LVC245 del multiplexor con sus retardos;
+  - el transceptor de datos;
+  - `/WAIT` e `/INT` por un NPN de 50/300 ns;
+  - un Z80A con sus retardos máximos, que ejecuta instrucciones enteras:
+    `OUT (n),A`, `IN A,(n)`, `LD A,(nn)` y `LD (nn),A` con su M1 y sus
+    operandos, `HALT`, el reconocimiento de interrupción en IM 1 y su ISR;
+  - el `/RESET` del MSX y el `/SLTSL` decodificado de `/MREQ`, refresco
+    incluido;
+  - la memoria del MSX, que contesta en las páginas que no son del cartucho.
+
+**Escenarios.**
+
+| Escenario | Z80 | Qué hace |
+|---|---|---|
+| `full` | 3,58 MHz | Las fases A a H y R, abajo |
+| `io` | 5,37 MHz | Lo mismo sin los cuadros de vídeo: una sola `/INT` y un LMMV más corto. Las lecturas de la megaROM se cuentan pero no hacen fallar el banco |
+| `nomsx` | — | Sin MSX: sin reloj del slot ni `/RESET` durante 12 ms |
+
+Fases de `full`:
+
+- **A. Arranque.** La FPGA arranca configurada y el MSX se enciende a los 0,1
+  ms con `/RESET` bajo 1 ms. Se comprueban, en orden: el POR, el rPLL, la
+  SDRAM, `RESET_n`, `SYS_READY`, `BUS_OK` y `DRIVE_EN`. El primer M1 del Z80
+  se queda en `/WAIT` por `BOOT_HOLD` hasta que el sistema está listo. El LED
+  pasa por los códigos 0, 1 y 5 y luego no se apaga. En MegaRAM, los 32 KB
+  borrados a FFh en la SDRAM, sin pasarse.
+- **B. Puertos.** P#5 en reposo, P#8-P#15 a FFh, un puerto ajeno (70h) en el
+  que nadie conduce, y R#16 escrito y leído.
+- **C. VRAM por P#0.** 64 bytes escritos y leídos, también comprobados en la
+  SDRAM.
+- **D. Paleta por P#1.** Ocho entradas con R, G y B distintos, escritas y
+  leídas.
+- **E. LMMV.** El fondo entero y un rectángulo de 64 x 32, esperando a que CE
+  baje en P#5. El resultado se lee por P#0 y se comprueba en la SDRAM.
+- **F. /INT del V9990.** VBlank activado con R#9; el Z80 la atiende desde un
+  bucle de HALT, con INTA, `IN A,(66h)` y `OUT (66h),A`. El periodo tiene que
+  ser el de un cuadro del V9990, y `/INT` tiene que soltarse al borrar VI.
+- **G. Vídeo.** B1 BD8 con el borde de la paleta 5. NTSC: 855 x 524 con DE de
+  720 x 480. Con R#7 PAL: 855 x 626 con DE de 720 x 576. Se cuentan los
+  puntos de la imagen y del borde.
+- **H. MegaRAM** (solo en `v9990_megaram`):
+  - SCC-I RAM al arrancar: bancos de 8 KB, escrituras y lecturas.
+  - La secuencia de `tncrom`: la llave cerrada y abierta, 3Eh, ASCII16 sin
+    protección con bancos por 8000h (00h, 01h, 7Fh, 80h, FFh) comprobados en
+    la SDRAM, el atributo final protegido, la lectura de vuelta por 4000h y
+    8000h, y que con protección no se escribe.
+  - PLAIN0: M1 y lecturas en 0000h-BFFFh, refrescos con I = 00h, escrituras
+    ignoradas (la llave también), y que el `/RESET` lo borra.
+  - El `/WAIT` de memoria: el histograma de TW por lectura.
+- **R. /RESET del MSX** en medio de una lectura de P#0 con `/WAIT` subido. El
+  Z80 no se queda colgado, la guardia se suelta, y el V9990 vuelve a
+  contestar (P#5 y la VRAM por P#0).
+
+**Comprobaciones activas en todos los escenarios:**
+
+- El FPGA no conduce D0-D7 sin una lectura legítima, la INTA incluida.
+  Tampoco 30 ns después de subir `/RD`, ni a la vez que el Z80 o la memoria
+  del MSX.
+- `WAIT_TIMEOUT` a 0.
+- Cero ranuras de VRAM perdidas (la aserción de `t9990_ram.sv`).
+- SDRAM:
+  - cero errores del modelo;
+  - cero capturas de lectura fuera de la ventana de dato válido;
+  - nunca dos conductores en DQ;
+  - solo NOP en los pines con el controlador en reset.
+- El Z80 nunca retenido más de 3000 TW fuera del arranque.
+
+**Resultados** (27/10/2026, árbol `389ce97`). Pasan los 12 casos, las cuatro
+variantes por los tres escenarios. Lo que miden, en todas las variantes salvo
+donde se dice:
+
+| | |
+|---|---|
+| Arranque | `PLL_OK` a 3,64 ms (`sync`: 3,66), `BUS_OK` y `DRIVE_EN` a 6,07 ms (6,10). El primer M1 acaba a 6,07 ms tras unos 17 800 TW de `BOOT_HOLD`. LED: 0, 1 y 5 |
+| E/S al V9990 | ~1 600 por escenario. TW máximo: 3 a 3,58 MHz y 6 a 5,37 MHz. Cero fallos a las dos velocidades |
+| Vídeo NTSC | 524 líneas de 855 puntos y DE en 480 líneas de 720. Imagen: 10 176 puntos verdes (159 x 64) y 260 632 azules |
+| Vídeo PAL | 626 líneas de 855 puntos y DE en 576 líneas de 720. La misma imagen y unos 65 000 puntos más de borde |
+| `/INT` | Periodo de 16,594 ms (NTSC) y 19,824 ms (PAL). En `sync`, 16,688 y 19,937 ms, porque `CLK_BASE` es 107,386 MHz |
+| MegaRAM a 3,58 MHz | 63 lecturas del slot, todas con 2-3 TW; 0 mal leídas |
+| MegaRAM a 5,37 MHz | Entre 16 y 29 de las 63 lecturas mal leídas, sin contar como fallo. Es lo que ya decía `docs/notas/megaram.md`: a 5,37 MHz ningún pre-WAIT llega a tiempo |
+| `/RESET` del MSX con `/WAIT` | El `/WAIT` del V9990 cae en el acto y `BOOT_HOLD` lo cubre. Al soltar el `/RESET`, el primer M1 acaba enseguida (`BUS_OK` no vuelve a esperar su ventana) y el V9990 contesta |
+| `nomsx` | LED en el código 2 (`xtal`) o 0 (`sync`). `BUS_OK` y `DRIVE_EN` a 0, y nada conducido |
+| Ranuras de VRAM perdidas, `WAIT_TIMEOUT`, choques en D0-D7 | 0 |
+
+**Lo que encontró y se arregló:**
+
+- **`sdram.sv`** (`389ce97`): `SDRAM_CMD` no tenía valor de reset. Mientras
+  el reloj corre antes de `BASE_READY`, la SDRAM recibía `0000` (MODE
+  REGISTER SET con A = 0 y una latencia CAS reservada) en cada flanco: 262 406
+  flancos en el arranque. Tras una pérdida de enganche, además, repetía el
+  último comando. Ahora el controlador pone NOP en el reset.
+  - La prueba es la comprobación «solo NOP con el controlador en reset»:
+    falla con el RTL de antes (log en
+    `fpga/tb/top/build/control_sdram_cmd_sin_reset.log`, fuera de git) y pasa
+    con el arreglo. `tb/sdram/run.sh` da las mismas cifras.
+  - Las cuatro variantes se han vuelto a compilar con las opciones de P&R de
+    la fusión y pasan la puerta frente a las builds de la fusión. Las cifras
+    están en la tabla de abajo; la evidencia, en `fpga/reports/sdram_nop/`.
+
+Builds con el arreglo (Gowin 1.9.12.03, árbol `389ce97`; puerta con
+referencia en la build de la fusión de cada variante, `--tol 0.01`,
+repetida sobre lo archivado):
+
+| Variante | Opciones | Logic | CLS | BSRAM | Fmax `CLK_BASE` (fusión) | Setup / hold | Violados | Puerta | `.fs` (md5 del cuerpo, CheckSum) |
+|---|---|---|---|---|---|---|---|---|---|
+| `v9990_xtal` | place 2, route 2 | 13 824 | 8 493 (+0,22 %) | 24 | 113,534 MHz (119,478) | +0,451 / +0,074 ns | 0 | **PASA** | `3572fde9`, `0xFFB7` |
+| `v9990_sync` | place 2, route 2 | 13 794 | 8 465 (+0,06 %) | 24 | 113,628 MHz (114,373) | +0,511 / +0,074 ns | 0 | **PASA** | `c8568efa`, `0x18D3` |
+| `v9990_megaram_xtal` | place 0, route 2 | 15 147 | 9 050 (+0,04 %) | 29 | 125,429 MHz (122,956) | +1,119 / +0,074 ns | 0 | **PASA** | `0db63ce0`, `0x80B4` |
+| `v9990_megaram_sync` | place 2, route 1 | 15 260 | 8 971 (+0,00 %) | 29 | 114,815 MHz (120,188) | +0,603 / +0,074 ns | 0 | **PASA** | `20eeddde`, `0xEBEE` |
+
+En las cuatro: grupos de reloj `Actived`, 0 endpoints violados en setup,
+hold, recovery y removal, 8/8 PRIMARY, 2/2 rPLL, CLS por debajo del aviso.
+Los avisos de síntesis y de P&R son los mismos códigos, con las mismas
+cuentas, que en las builds de la fusión; los de síntesis y P&R de
+`v9990_megaram_sync` se han comparado línea a línea y son iguales. Los `.fs`
+están en `fpga/impl/sdram_nop/`, que no entra en git. Con este cambio la
+`Fmax` de `v9990_xtal` baja 6 MHz por la colocación, que se mueve entera.
+Sigue por encima de los 109 MHz, pero cualquier cambio más del RTL obliga a
+barrer otra vez.
+
+**Lo que este banco no cubre**:
+
+- Los retardos reales de los pines (en `sdram_model` la ventana de dato es
+  fija), el serializador TMDS y la señal HDMI.
+- El Z80 con retardos mínimos.
+- 7,16 MHz.
+- Una pérdida de enganche con el sistema en marcha. La cubre el banco de
+  integ, pero sin SDRAM ni core.
+- `BLEND = 0`: las cuentas de puntos con `BLEND = 0` no se han comprobado.
+- `nomsx` llega a 12 ms, sin alcanzar el tope de 50 ms de `BOOT_HOLD`.
+
+Las cifras son de un modelo, no de la placa.
+
 ## Pruebas en placa del hito 1
 
 Sin hacer. Lo que hay que comprobar con el `.fs` del hito 1, en este orden:

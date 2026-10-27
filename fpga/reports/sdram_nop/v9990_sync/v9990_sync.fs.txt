@@ -1,0 +1,5 @@
+v9990_sync.fs, build del Tue Oct 27 21:00:59 2026
+CheckSum: 0x18D3
+md5 del fichero: 9fc9b5ae2a29f4686b90f4e40310e0f1
+md5 sin las lineas de cabecera (//): c8568efa0d8b8d6bb8fb25eff9b02e65
+comparado con v9990_sync.fs (build del Tue Oct 27 08:16:05 2026, CheckSum 0x1697): cuerpo DISTINTO (md5 b99c780f397346957cf846c67a57dc33)

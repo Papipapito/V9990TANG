@@ -169,3 +169,22 @@ nuevos), `docs/WONDERTANG.md` (turbo con el pre-WAIT del hito 5) y
 `docs/notas/sdram.md` (el contrato `ACK_n`/`DOUT` del canal 0, que la megaROM
 con `ENABLE_MEM_WAIT` sí usa). Las notas de área conservan sus cifras de antes
 de la fusión; las de esta nota son las del árbol fusionado.
+
+## 7. Banco de placa entera y arreglo de `sdram.sv`
+
+Después de la fusión, `fpga/tb/top` simula el top completo de las cuatro
+variantes con la lista de `build_common.tcl`. Alrededor van el cristal, el
+CLOCK del slot, la SDRAM modelada, el multiplexor y un Z80 a nivel de pines.
+Cubre el arranque, P#0, P#1, el LMMV, `/INT`, el vídeo NTSC y PAL, la MegaRAM
+con `tncrom` y PLAIN0, y un `/RESET` con `/WAIT`, a 3,58 MHz y una pasada a
+5,37 MHz. Qué modela, qué mide y qué no cubre está en
+[VERIFICATION.md](../VERIFICATION.md#banco-de-placa-entera-fpgatbtop).
+
+Encontró un fallo de RTL. `SDRAM_CMD` de `sdram.sv` no tenía valor de reset,
+así que la SDRAM recibía MODE REGISTER SET con A = 0 en cada flanco antes de
+`BASE_READY`. Era el riesgo apuntado en [sdram.md](sdram.md). Ahora pone NOP
+en el reset (`389ce97`), y las cuatro variantes se han vuelto a compilar y
+pasan la puerta. Sus `.fs` (`fpga/impl/sdram_nop/`, evidencia en
+`fpga/reports/sdram_nop/`) sustituyen a los de la sección 4. Las 12
+ejecuciones del banco pasan sobre el árbol arreglado, y el banco de
+`tb/sdram` da las mismas cifras. Nada de esto se ha probado en la placa.

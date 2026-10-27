@@ -1,0 +1,5 @@
+v9990_megaram_sync.fs, build del Tue Oct 27 21:18:02 2026
+CheckSum: 0xEBEE
+md5 del fichero: f7c6f4f0af3bbab08744e9bdeced5768
+md5 sin las lineas de cabecera (//): 20eeddde6212a751b71b11fe7b7b4878
+comparado con v9990_megaram_sync.fs (build del Tue Oct 27 17:48:32 2026, CheckSum 0xCC8E): cuerpo DISTINTO (md5 20efb63070fd82d8f9122c6f6b17983f)
