@@ -41,7 +41,7 @@ SEED="${SEED:-1}"
 N="${N:-120}"
 CASES="${*:-0:60:0 1:60:0 0:70:0 1:70:0 0:60:1}"
 
-SRC="$FPGA/src/board/board_id.sv $FPGA/src/board/wt200b/board_wt200b_config.sv $FPGA/config/v9990.sv \
+SRC="$FPGA/src/board/board_id.sv $FPGA/src/board/wt200b/board_wt200b_config_xtal.sv $FPGA/config/v9990.sv \
  $FPGA/src/peripheral/msx/bus.sv $FPGA/src/peripheral/ram/ram.sv $FPGA/src/peripheral/ram/uma.sv \
  $FPGA/src/peripheral/video/video.sv"
 # los paquetes del core (T9990_RESO, T9990_REG, T9990_MEM_CONNECT) antes que sus usuarios

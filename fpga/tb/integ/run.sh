@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # run.sh -- V9990TANG: bancos de la integracion (Verilator 5.020 con --timing).
-#   tb_integ_pins:  polaridad de los pines del slot con BOARD_WT200B_BUS_GUARD
-#                   delante del BOARD_REV1_BUS de main
+#   tb_integ_pins:  polaridad de los pines del slot con las guardias de lock
+#                   (DRIVE_EN, BOOT_HOLD), BUS_OK y el timeout del /WAIT del
+#                   BOARD_REV1_BUS de hito/bus (desde la fusion; antes,
+#                   BOARD_WT200B_BUS_GUARD delante del bus de main)
 #   tb_integ_guard: POR, gestor del rPLL base, detector de perdida de
 #                   enganche, guardia de lock y LED, en las dos variantes
 #                   (-GSYNC=0 / -GSYNC=1), un escenario por ejecucion
@@ -14,7 +16,7 @@ cd "$(dirname "$0")"
 SRC=(../../src/board/wt200b/board_wt200b_guard.sv ../../src/system/system_reset.sv ../../src/peripheral/led.sv tb_integ_guard.sv)
 SRC_PINS=(../../src/board/board_id.sv ../../src/board/wt200b/board_wt200b_config_xtal.sv ../../config/v9990.sv
           ../../src/peripheral/msx/bus.sv ../../src/board/rev1/board_rev1_bus.sv
-          ../../src/board/wt200b/board_wt200b_bus_guard.sv tb_integ_pins.sv)
+          tb_integ_pins.sv)
 mkdir -p build
 rc=0
 

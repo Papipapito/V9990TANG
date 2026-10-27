@@ -22,7 +22,7 @@ FPGA="$HERE/../.."
 OUT="$HERE/out"
 mkdir -p "$OUT"
 DIORQS="${DIORQS:-0 10 20}"
-SRC_F="$FPGA/src/board/board_id.sv $FPGA/src/board/wt200b/board_wt200b_config.sv $FPGA/config/v9990.sv \
+SRC_F="$FPGA/src/board/board_id.sv $FPGA/src/board/wt200b/board_wt200b_config_xtal.sv $FPGA/config/v9990.sv \
  $FPGA/src/peripheral/msx/bus.sv ${BUS_SV:-$FPGA/src/board/rev1/board_rev1_bus.sv} $HERE/tb_m1spur.sv"
 status=0
 for SRC in 0 1; do

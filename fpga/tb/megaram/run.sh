@@ -30,26 +30,32 @@
 #                        bus de main, que a esa velocidad entrega lecturas con la
 #                        direccion anterior (se cuentan aparte)
 #   inj_main   medida    INJ=1 (refresco de otro cliente del canal 0 alrededor de
-#                        cada lectura) con el UMA de tnCart (el de este arbol):
+#                        cada lectura) con el UMA de tnCart (el de la rama main):
 #                        control del defecto de ese UMA (DOUT copiado tras un
 #                        RFSH); cuenta aparte las lecturas que rompen el contrato
 #                        (7 de 31 el 26/10/2026). En la configuracion megaram, con
 #                        ese UMA, nadie mas refresca el canal 0 (docs/notas/megaram.md)
-#   wait_hito4 ESTRICTA  como wait, con el uma.sv de la rama hito/sdram (refresco
+#   wait_hito4 ESTRICTA  como wait, con el uma.sv de hito/sdram (refresco
 #                        interno activo, DOUT solo tras un R/W)
 #   inj_hito4  ESTRICTA  INJ=1 con el uma.sv de hito/sdram
+# Desde la fusion de las areas (hito/fusion) el uma.sv de este arbol ES el de
+# hito/sdram: las *_hito4 lo toman del arbol (salvo $UMA_SV) y wait/inj_hito4
+# coinciden con wait e inj_main sobre el; inj_main, el control del defecto,
+# toma el uma.sv de main ($UMA_MAIN_SV o git show $UMA_MAIN_REF, por defecto
+# main).
 #   tncrom     ESTRICTA  como wait, pero en lugar del programa del banco
 #                        reproduce las trazas del tncrom real (compilado para el
 #                        host y corrido contra un modelo en C del cartucho por
 #                        tools/tncrom/test/run.sh, que se lanza aqui): cada
 #                        lectura tiene que dar en el RTL lo que dio el modelo
 #                        (out_tncrom_<traza>.log; necesita gcc)
-# Las *_hito4 usan el uma.sv de $UMA_SV si esta definido; si no, lo sacan de la
-# rama $UMA_REF (por defecto hito/sdram) con git show. El git de WSL no lee los
+# Las *_hito4 usan el uma.sv de $UMA_SV si esta definido; si no, el del arbol.
+# inj_main usa el de $UMA_MAIN_SV si esta definido; si no, lo saca de la rama
+# $UMA_MAIN_REF (por defecto main) con git show. El git de WSL no lee los
 # worktrees creados desde Windows: entonces hay que sacarlo antes, p. ej.
-#   git show hito/sdram:fpga/src/peripheral/ram/uma.sv > /c/tmp/uma_hito4.sv
-#   wsl -e bash -lc "cd ... && UMA_SV=/mnt/c/tmp/uma_hito4.sv ./run.sh inj_hito4"
-# Si no hay ninguno de los dos se saltan con un aviso (y no cuentan).
+#   git show main:fpga/src/peripheral/ram/uma.sv > /c/tmp/uma_main.sv
+#   wsl -e bash -lc "cd ... && UMA_MAIN_SV=/mnt/c/tmp/uma_main.sv ./run.sh inj_main"
+# Si no hay ninguno de los dos, inj_main se salta con un aviso (y no cuenta).
 # Los supuestos de pines del Z80 (D_ADDR, D_CTRL, D_WAIT, D_DATA, ver la
 # cabecera de tb_megaram.sv) son por defecto los del banco del area bus;
 # EXTRA_G="-GD_CTRL=9 ..." se anade a los parametros de todas las variantes
@@ -69,7 +75,7 @@ mkdir -p "$OUT"
 FILES=(
     $CFG/v9990_megaram.sv
     $SRC/board/board_id.sv
-    $SRC/board/wt200b/board_wt200b_config.sv
+    $SRC/board/wt200b/board_wt200b_config_xtal.sv
     $SRC/peripheral/msx/bus.sv
     $SRC/peripheral/ram/ram.sv
     @UMA@
@@ -107,7 +113,7 @@ declare -A PARAMS=(
     [inj_hito4]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GINJ=1 -GSTRICT=1"
     [tncrom]="-GMEM_WAIT=1 -GPREWAIT=1 -GTURBO=0 -GSTRICT=1 -GTRACE=1"
 )
-UMA_REF=${UMA_REF:-hito/sdram}
+UMA_MAIN_REF=${UMA_MAIN_REF:-main}
 
 VARIANTS=("$@")
 [ ${#VARIANTS[@]} -eq 0 ] && VARIANTS=(wait tncrom noprewait noprewait_opt wait_rd9 wait_rd10 nowait turbo5 turbo5i turbo7 inj_main wait_hito4 inj_hito4)
@@ -118,15 +124,20 @@ for v in "${VARIANTS[@]}"; do
     if [ -z "$p" ]; then echo "variante desconocida: $v"; exit 2; fi
     p="$p ${EXTRA_G:-}"
     uma=$SRC/peripheral/ram/uma.sv
-    if [[ "$v" == *_hito4 ]]; then
-        if [ -n "${UMA_SV:-}" ] && [ -f "$UMA_SV" ]; then
-            cp "$UMA_SV" "$OUT/uma_hito4.sv"; from="$UMA_SV"
-        elif git -C "$HERE" show "$UMA_REF:fpga/src/peripheral/ram/uma.sv" > "$OUT/uma_hito4.sv" 2>/dev/null; then
-            from="$UMA_REF $(git -C "$HERE" rev-parse --short "$UMA_REF")"
+    if [[ "$v" == *_hito4 ]] && [ -n "${UMA_SV:-}" ] && [ -f "$UMA_SV" ]; then
+        cp "$UMA_SV" "$OUT/uma_hito4.sv"; uma=$OUT/uma_hito4.sv
+        echo "=== $v ($p, uma.sv de $UMA_SV, md5 $(md5sum < "$uma" | cut -c1-8))"
+    elif [[ "$v" == *_hito4 ]]; then
+        echo "=== $v ($p, uma.sv del arbol, md5 $(md5sum < "$uma" | cut -c1-8))"
+    elif [ "$v" = inj_main ]; then
+        if [ -n "${UMA_MAIN_SV:-}" ] && [ -f "$UMA_MAIN_SV" ]; then
+            cp "$UMA_MAIN_SV" "$OUT/uma_main.sv"; from="$UMA_MAIN_SV"
+        elif git -C "$HERE" show "$UMA_MAIN_REF:fpga/src/peripheral/ram/uma.sv" > "$OUT/uma_main.sv" 2>/dev/null; then
+            from="$UMA_MAIN_REF $(git -C "$HERE" rev-parse --short "$UMA_MAIN_REF")"
         else
-            echo "=== $v: no hay UMA_SV ni $UMA_REF, se salta"; continue
+            echo "=== $v: no hay UMA_MAIN_SV ni $UMA_MAIN_REF, se salta"; continue
         fi
-        uma=$OUT/uma_hito4.sv
+        uma=$OUT/uma_main.sv
         echo "=== $v ($p, uma.sv de $from, md5 $(md5sum < "$uma" | cut -c1-8))"
     else
         echo "=== $v ($p)"

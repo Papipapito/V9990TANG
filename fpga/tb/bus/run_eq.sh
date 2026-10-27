@@ -31,7 +31,7 @@ fi
 FPGA="$HERE/../.."
 SEEDS="${SEEDS:-1 2 3}"
 MS="${MS:-6}"
-SRC="$FPGA/src/board/board_id.sv $FPGA/src/board/wt200b/board_wt200b_config.sv $FPGA/config/v9990.sv \
+SRC="$FPGA/src/board/board_id.sv $FPGA/src/board/wt200b/board_wt200b_config_xtal.sv $FPGA/config/v9990.sv \
  $FPGA/src/peripheral/msx/bus.sv $FPGA/src/board/rev1/board_rev1_bus.sv $OUT/board_rev1_bus_main.sv $HERE/tb_scan_eq.sv"
 status=0
 for MODE in 0 1 2; do
