@@ -4,7 +4,10 @@ V9990TANG es, en el hito 1, la carcasa wt200b de tnCartWonder con el core tiny99
 de tnCart **sin cambios de RTL**: lo único propio son la configuración
 (`fpga/config/v9990.sv`), el `.sdc` (`fpga/constraints/v9990_xtal.sdc`), el
 script de build y la puerta (`tools/check_build.py`). Esta página describe ese punto de partida; cada hito siguiente
-apunta aquí lo que cambia.
+apunta aquí lo que cambia. **Lo que cambia con la fusión de las áreas (hitos 2
+a 8) está al final, en [Desde la fusión de las
+áreas](#desde-la-fusión-de-las-áreas)**; las secciones de en medio siguen
+siendo las del hito 1.
 
 ## Bloques
 
@@ -224,3 +227,103 @@ Para los hitos siguientes; ninguno se toca en el hito 1, que no cambia el RTL.
 - **8/8 PRIMARY es blando**: `CART_CLOCK_d` ocupa una global aunque solo es dato.
   Si un hito necesita una red de reloj, probar a quitar el `create_clock` de
   `CLK_3_58M` y revisar la sección de relojes del `.rpt.txt`.
+
+## Desde la fusión de las áreas
+
+Rama `hito/fusion`: las seis áreas fusionadas sobre el hito 1, con sus contratos
+conectados ([notas/fusion.md](notas/fusion.md)). Cada fila remite a la nota del
+área, que tiene el detalle y las fuentes. **Nada de esto se ha probado en placa.**
+
+### Bloques que cambian
+
+| Bloque | Fichero | Qué cambia | Nota |
+|---|---|---|---|
+| Relojes | `board_wt200b_clock.sv`, `board_wt200b_config_{xtal,sync}.sv` | dos variantes: `xtal` (`CLK_BASE` = 27 x4 = 108,000 MHz del cristal) y `sync` (`CLK_BASE` = reloj del slot x30 = 107,386 MHz; sin MSX encendido no hay `CLK_BASE` ni HDMI); siguen 8/8 PRIMARY y 2/2 rPLL | [integ](notas/integ.md) |
+| Guardia | `board_wt200b_guard.sv` (`CLK_27M`) | POR del rPLL base, gestor del rPLL (reintentos, sin lock pegajoso), detector de pérdida de enganche y, en `sync`, medidor de la frecuencia del slot; saca `PLL_OK`, `DRIVE_EN_27` (se pueden conducir los pines del slot) y `BOOT_HOLD_27` (/WAIT de arranque, con tope de 50 ms) | [integ](notas/integ.md) |
+| Reset | `system/system_reset.sv` | `reset_n` de `CLK_BASE` con `PLL_OK` sincronizado (`BASE_READY`, también reset de la SDRAM) y el `READY` de la SDRAM; `SYSTEM_RESET_HOLD` retiene `SYS_RESET_n` hasta el fin del borrado de la megaROM | [integ](notas/integ.md) |
+| Bootloader | — | fuera (y con él la flash, sus SPI y la TF): `SYS_RESET_n` ya no sigue al /RESET del MSX; cada cartucho mira `Bus.RESET_n` | [integ](notas/integ.md) |
+| Bus | `board_rev1_bus.sv` | escaneo adaptativo del multiplexor (salto al grupo de control con /RD o /WR), `Bus.ADDR` quieta durante el ciclo, pre-WAIT en P#0/P#1 (y, en MegaRAM, en las lecturas de memoria: `PREWAIT_MEM_EN`), timeout *fail-open* del /WAIT de 2^12 ciclos (37,9 µs) con `WAIT_TIMEOUT` pegajoso al LED, guardia de bus vivo (`BUS_OK`: reloj del slot vivo y /RESET suelto) y las guardias de la placa en los pines: /WAIT = `BOOT_HOLD` o (`BUS_OK` y `DRIVE_EN` y espera y no timeout); datos e /INT solo con `BUS_OK` y `DRIVE_EN` | [bus](notas/bus.md) |
+| Slot | `main.sv` | en `v9990` el V9990 va directo al bus, sin `EXPANSION_SLOT` (como un GFX9000); en `v9990_megaram`, slot expandido con la megaROM en la subranura 0 y el V9990 como puerto solo de E/S | [integ](notas/integ.md) |
+| V9990 | `cartridge_v9990.sv`, `v9990/tiny9990/*.sv` | rearme de 3 muestras del ciclo de E/S; core con los parches del hito 2, P#8-P#15 a FFh, cuadro PAL de 313 líneas con R#7 bit 3 (salida `PAL`, a `Video.PAL` en `posedge Video.DCLK`), cursor EOR de openMSX y ajuste de R#16, los tres con parámetro (`CONFIG::V9990_ENABLE_*`) | [core](notas/core.md), [bus](notas/bus.md) |
+| UMA | `uma.sv` | refresco interno en el canal 0 (abajo); `DOUT` solo tras un R/W | [sdram](notas/sdram.md) |
+| SDRAM | `sdram.sv` | dos AUTO REFRESH en la inicialización (JEDEC) | [sdram](notas/sdram.md) |
+| Upscan | `video_upscan.sv` | 720x480 (NTSC) o 720x576 (PAL: `IN.PAL` por dos flops, tomado al acabar el VSYNC de entrada); `BLEND` = 1 la mezcla de tnCart, 0 el punto más cercano (`CONFIG::UPSCAN_BLEND`) | [video](notas/video.md) |
+| DVI | `board_rev1_tmds.sv` | ventana de DE según `PAL`: 855x524 (720x480, líneas 35-514) a 60,27 Hz en `xtal` y 59,92 en `sync`, o 855x626 (720x576, líneas 42-617) a 50,45 / 50,16 Hz; NTSC idéntico bit a bit al hito 1 | [video](notas/video.md) |
+| MegaROM | `cartridge_megarom.sv`, `megarom_{configure,controller,clear}.sv`, `scc.sv` | solo `v9990_megaram`: arranca como Konami SCC-I RAM con su SCC, ventana de 4 MB en `00_0000h`, modo PLAIN0, /WAIT en sus lecturas (`ENABLE_MEM_WAIT`), borrado de 32 KB a FFh al arrancar (`MEGAROM_CLEAR`, en el canal 0) | [megaram](notas/megaram.md) |
+| LED | `led.sv` (`STATUS_LED`, `CLK_27M`) | error de reloj (parpadeo rápido) / `xtal` sin reloj del slot (destello corto) / arrancando, también con `BUS_OK` a 0 (lento) / listo con `WAIT_TIMEOUT` (doble destello) / listo tras reenganchar (cuatro destellos) / listo (fijo) | [integ](notas/integ.md), [fusion](notas/fusion.md) |
+
+### Refresco de la SDRAM
+
+Sustituye a "Refresco: por debajo de la especificación en el hito 1" (arriba).
+El UMA genera su propio AUTO REFRESH en el canal 0: un temporizador de 780
+ciclos que, si el canal 0 está ocupado, escala a 1560 (contados desde el último
+refresco); el intervalo máximo entre refrescos es de 1580 ciclos, 14,63 µs a
+108 MHz y 14,71 µs a 107,386 (la SDRAM pide 15,6 µs: 4096 en 64 ms). La
+cadencia no cambia (`DIV = 30`, ranura de 10 ciclos, acceso de 9). **Desviación
+consciente del chip real**: según el manual del V9990 (p. 80, R#6) en standby no
+hay refresco de VRAM; aquí la VRAM se conserva en todos los modos, como en
+openMSX (el AUTO REFRESH no distingue regiones, y en la misma SDRAM viven la
+megaROM y, en otras configuraciones, Nextor).
+
+### Contrato del UMA para el canal 0
+
+El /WAIT de memoria de la megaROM (`ENABLE_MEM_WAIT = 1`) se suelta con el
+`ACK_n` del canal 0, así que estas tres reglas son interfaz del UMA, y quien
+toque `uma.sv` tiene que conservarlas (si no, el /WAIT se soltará con el dato
+malo; lo vigila `fpga/tb/megaram/run.sh`, variantes `wait`, `inj_hito4` e
+`inj_main`):
+
+1. `ACK_n` baja después de que el UMA vea `OE_n` = 0 y no sube mientras quede
+   pendiente la lectura de ese cliente;
+2. `ACK_n` sube **una sola vez** por lectura y **en el mismo flanco** en que
+   `Secondary[0].DOUT` carga el dato de esa lectura, nunca antes;
+3. `Secondary[0].DOUT` solo cambia al acabar un R/W del canal 0, nunca tras un
+   RFSH (el UMA de tnCart lo copiaba en cada fin de acceso).
+
+Un R/W aplazado una ranura por la escalación del refresco, o por un RFSH que
+llega junto a un R/W, alarga el `ACK_n` 20 ciclos: es compatible (el /WAIT dura
+20 ciclos más).
+
+### Mapa de la SDRAM
+
+| Configuración | `00_0000h` | `40_0000h` | `70_0000h`-`77_FFFFh` | `78_0000h` |
+|---|---|---|---|---|
+| `v9990` | mapper (sin uso) | megaROM (sin uso) | Nextor, FM-BIOS y PAC (sin uso) | **VRAM, 512 KB** |
+| `v9990_megaram` | **megaROM, 4 MB** (32 KB borrados a FFh al arrancar) | mapper (sin uso) | Nextor, FM-BIOS y PAC (sin uso) | **VRAM, 512 KB** |
+
+Sin bootloader nadie escribe las zonas sin uso.
+
+### Registros nuevos de la megaROM (`v9990_megaram`)
+
+Con la llave cerrada y `ENABLE`: `1Fh` bit 0 = modo PLAIN0 (ROM plana en
+`0000h-BFFFh`; el /RESET del MSX borra el bit y `ENABLE`), y `3Eh` = `00h`
+quiere decir 4 MB (256 bancos de 16 KB). Máximos por tipo: 4 MB con bancos de 16
+KB y 2 MB con bancos de 8 KB (`-T KONAMI` para los Konami SCC de 1-2 MB). Las
+ROM planas se cargan con `tncrom -T PLAIN0 -R` (`tools/tncrom`, r3, que las
+rellena a 48 KB con FFh). Another World V9990 pide un turbo R. Detalle en
+[megaram.md](notas/megaram.md), apartados 2, 4 y 6.
+
+### Cruces de reloj nuevos
+
+Ningún reloj nuevo (8/8 PRIMARY). Los cruces que añaden las áreas van todos por
+los `set_clock_groups` que ya había:
+
+| Cruce | Señales | Mecanismo | Consecuencia si falla |
+|---|---|---|---|
+| `CLK_BASE` → `CLK_TMDS_P` | `Video.PAL` | dos flops y toma al acabar el VSYNC de entrada (`VIDEO_UPSCAN`); `BOARD_REV1_TMDS_OUT` lo vuelve a tomar en la línea 20 de salida | un cuadro con la ventana de DE del otro sistema |
+| `CLK_27M` → `CLK_BASE` | `DRIVE_EN_27`, `BOOT_HOLD_27` | en los pines del slot, combinacionales; para el contador del timeout, dos FF de `CLK_BASE` (`u_bus/drive_en_s`, `boot_hold_s`) | el timeout empieza a contar un ciclo antes o después |
+| `CLK_BASE` → `CLK_27M` | `SYS_RESET_n && BUS_OK`, `WAIT_TIMEOUT` | dos FF en la guardia (`u_guard/ready_ff`, `wto_ff`) | un ciclo de 27 MHz más en `DRIVE_EN`/`BOOT_HOLD` o en el LED |
+| `CLK_27M` → `CLK_BASE` | `PLL_OK` | `u_rst/base_ff`, afirmación asíncrona y suelta síncrona | ninguna (es un reset) |
+
+Los márgenes del buffer de líneas del upscan, que en el hito 1 eran calculados,
+ya están simulados (`fpga/tb/video`): 1021-1038 ciclos de 27 MHz con FIELD = 0 y
+166-183 con FIELD = 1, iguales en PAL y en NTSC. El segundo driver de `R_ADDR`
+en B4 lo resuelve Gowin como si esa línea no existiera (netlist simulado en
+`fpga/tb/video/gowin_netlist`): con `BLEND = 1` el chip nunca enseña el punto
+16k+1 de B4. El `create_generated_clock` de `DCLK` no cambia
+(`cartridge_v9990.sv` conserva la OR de `dclk_en_ff`).
+
+Siguen abiertos de la lista de riesgos del hito 1: el *glitch* posible de la OR
+de `Video.DCLK` y la carrera de R/G/B (la vigila la puerta en cada build), el
+reset sin sincronizador hacia `CLK_TMDS_P` (pide separar los resets del upscan)
+y las E/S de la SDRAM y del slot sin `set_input_delay`/`set_output_delay`.

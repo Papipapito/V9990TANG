@@ -95,5 +95,10 @@ Cuando haya bitstream:
   cadena pin → filtro → escáner de 9 estados → slot expandido →
   `cartridge_v9990` → core → `Bus.WAIT_n` son unos 15 ciclos de 108 MHz (139 ns),
   más 20-50 ns del transistor de la placa. El Z80A deja 274 ns a 3,58 MHz y 134 a
-  5,37: cabe a 3,58 MHz y no en turbo. No pruebes el hito 1 en modos turbo; el
-  pre-WAIT es el hito 5.
+  5,37: cabe a 3,58 MHz y no en turbo. No pruebes el hito 1 en modos turbo.
+  Desde la fusión de las áreas el bus lleva el escaneo adaptativo y el pre-WAIT
+  del hito 5 (`docs/notas/bus.md`): en el banco, con cifras de Z80A estimadas,
+  el `/WAIT` llega al slot como mucho 120 ns después del `/RD`/`/WR` del Z80
+  (70 en el pin), así que **cabe también a 5,37 MHz**; a 7,16 MHz fallan las
+  lecturas de P#0 y los presupuestos de `/WAIT`. Sin medir en placa (osciloscopio
+  en `/RD`, `/WAIT` y `CART_MUX_CS_n`), ni con Z80B/H ni R800 reales.
