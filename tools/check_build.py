@@ -30,6 +30,14 @@
 #       --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 \
 #       --log fpga/impl/gwsynthesis/v9990_xtal.log --log fpga/impl/pnr/v9990_xtal.log \
 #       --sdc fpga/constraints/v9990_xtal.sdc
+# Una build sin referencia del mismo arbol (la primera de una configuracion o
+# variante, o la de un hito que cambia los recursos a proposito) no puede
+# pasar el punto 4 frente a una referencia: --sin-ref "motivo" lo dice de
+# forma explicita (sin el, y sin --ref-*, la puerta sale INCOMPLETA). Con
+# --sin-ref el tope --max-bsram es obligatorio (con referencia, las BSRAM se
+# controlan por la tolerancia). --compara LOGICA,CLS,BSRAM anota la diferencia
+# con otra build (solo informativo). El resto de puntos sigue siendo
+# obligatorio.
 
 import argparse
 import collections
@@ -38,8 +46,11 @@ import os
 import re
 import sys
 
-# excepciones del .sdc que pueden nombrar DCLK o CLK_BASE (ver el .sdc)
-ALLOWED_EXCEPTIONS = {'set_false_path -from [get_regs {reset_n_s0}] -to [get_clocks {DCLK}]'}
+# excepciones del .sdc que pueden nombrar DCLK o CLK_BASE (ver el .sdc): el
+# false path del reset de la carcasa hacia DCLK; reset_n_s0 es el nombre del
+# hito 1 (en el top) y u_rst/reset_n_s0 el de los hitos 3 y 6 (SYSTEM_RESET)
+ALLOWED_EXCEPTIONS = {'set_false_path -from [get_regs {reset_n_s0}] -to [get_clocks {DCLK}]',
+                      'set_false_path -from [get_regs {u_rst/reset_n_s0}] -to [get_clocks {DCLK}]'}
 EXCEPTION_TYPES = ('TC_FALSE_PATH', 'TC_MULTICYCLE_PATH', 'TC_MAX_DELAY', 'TC_MIN_DELAY',
                    'TC_CLOCK_UNCERTAINTY', 'TC_CLOCK_LATENCY', 'TC_DISABLE_TIMING')
 
@@ -197,6 +208,7 @@ def main():
     ap.add_argument('--max-cls', type=int, help='tope de CLS (falla si se pasa)')
     ap.add_argument('--warn-cls', type=int, help='aviso de CLS (no falla)')
     ap.add_argument('--max-primary', type=int, default=8)
+    ap.add_argument('--max-bsram', type=int, help='tope de BSRAM (falla si se pasa; obligatorio con --sin-ref)')
     ap.add_argument('--rpll', type=int, help='numero exacto de rPLL esperado')
     ap.add_argument('--fmax', action='append', default=[], help='RELOJ=MHz minimo (repetible)')
     ap.add_argument('--log', action='append', default=[], help='log de gw_sh (repetible)')
@@ -206,6 +218,10 @@ def main():
                     help='confirmacion opcional del -offset de DCLK (se lee del .sdc)')
     ap.add_argument('--parcial', action='store_true',
                     help='analisis que no es la build de un hito: los puntos sin datos no la hacen incompleta')
+    ap.add_argument('--sin-ref', metavar='MOTIVO',
+                    help='build sin referencia de recursos: el punto 4 frente a la referencia no se aplica (y lo dice)')
+    ap.add_argument('--compara', metavar='LOGICA,CLS,BSRAM',
+                    help='otra build con la que anotar la diferencia de recursos (informativo)')
     a = ap.parse_args()
 
     rpt = read(a.base + '.rpt.txt')
@@ -237,19 +253,34 @@ def main():
         not_checked('6 misma build', f'sin fecha legible en el .rpt.txt ({t_rpt}) o en el .tr ({t_tr})')
 
     # ---- 4. recursos ----
-    for name, ref in (('Logic', a.ref_logic), ('CLS', a.ref_cls), ('BSRAM', a.ref_bsram)):
+    other = None
+    if a.compara:
+        try:
+            other = [int(x) for x in a.compara.split(',')]
+            assert len(other) == 3
+        except (ValueError, AssertionError):
+            raise SystemExit('--compara: LOGICA,CLS,BSRAM (tres enteros)')
+    if a.sin_ref and (a.ref_logic or a.ref_cls or a.ref_bsram):
+        raise SystemExit('--sin-ref y --ref-* no van juntos')
+    if a.sin_ref:
+        lines.append(f'SIN REF  recursos sin referencia: {a.sin_ref}')
+    for i, (name, ref) in enumerate((('Logic', a.ref_logic), ('CLS', a.ref_cls), ('BSRAM', a.ref_bsram))):
         r = resource(rpt, name)
         if r is None:
             check(False, f'{name}: no encontrado en el .rpt.txt')
             continue
         used, total = r
         txt = f'{name}: {used}/{total} ({100.0 * used / total:.1f} %)'
+        if other:
+            txt += f', frente a {other[i]}: {used - other[i]:+d} ({100.0 * (used - other[i]) / other[i]:+.2f} %)'
         if ref:
             dev = (used - ref) / ref
             check(abs(dev) <= a.tol, f'{txt}, referencia {ref}, desviacion {100 * dev:+.2f} % (tolerancia {100 * a.tol:.1f} %)')
+        elif a.sin_ref:
+            info(txt)
         else:
             info(txt)
-            not_checked('4 recursos', f'falta --ref-{name.lower()}')
+            not_checked('4 recursos', f'falta --ref-{name.lower()} (o --sin-ref "motivo")')
     reg = resource(rpt, 'Register')
     if reg:
         info(f'Register: {reg[0]}/{reg[1]}')
@@ -260,6 +291,11 @@ def main():
         not_checked('4 recursos', 'falta --max-cls')
     if a.warn_cls and cls is not None:
         info(f'AVISO: CLS {cls[0]} >= {a.warn_cls}' if cls[0] >= a.warn_cls else f'CLS por debajo del aviso ({a.warn_cls})')
+    bsram = resource(rpt, 'BSRAM')
+    if a.max_bsram:
+        check(bsram is not None and bsram[0] <= a.max_bsram, f'BSRAM <= {a.max_bsram}')
+    elif a.sin_ref:
+        not_checked('4 recursos', 'falta --max-bsram (sin referencia, las BSRAM no se controlan de otra forma)')
     prim = resource(rpt, 'PRIMARY')
     check(prim is not None and prim[0] <= a.max_primary,
           f'PRIMARY: {prim[0] if prim else "?"}/{prim[1] if prim else "?"} (maximo {a.max_primary})')

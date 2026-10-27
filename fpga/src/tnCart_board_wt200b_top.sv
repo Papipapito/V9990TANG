@@ -34,6 +34,24 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
+//
+// V9990TANG (hitos 3 y 6 del estudio). Frente al top de tnCartWonder d3a54f1:
+//  - fuera la flash (FLASH_SPI y su SPI), el SPI de la TF y el LED de tnCart:
+//    sus pines quedan en reposo (abajo, "Pines sin uso")
+//  - BOARD_WT200B_GUARD (CLK_27M): POR, gestor del rPLL base (sin RESET_n
+//    constante ni lock pegajoso), detector de perdida de enganche y guardia
+//    de lock (DRIVE_EN_27, BOOT_HOLD_27)
+//  - SYSTEM_RESET (CLK_BASE): PLL_OK sincronizado (BASE_READY, que tambien
+//    resetea la SDRAM: antes era el LOCK crudo) y reset_n
+//  - BOARD_WT200B_BUS_GUARD: el gateo de DRIVE_EN_27 y BOOT_HOLD_27 sobre
+//    las salidas al slot, provisional hasta la fusion con hito/bus
+//  - STATUS_LED (CLK_27M): error de reloj / arrancando / listo, con
+//    WAIT_TIMEOUT pegajoso
+//  - el reset del DAC I2S pasa por dos FF en CLK_DAC
+//  - xtal o sync: lo decide el board_wt200b_config_*.sv que compile cada
+//    build_*.tcl (CONFIG_BOARD::SYNC_CPU_CLK)
+//
+
 `default_nettype none
 
 module TNCART_BOARD_WT200B_TOP (
@@ -80,14 +98,14 @@ module TNCART_BOARD_WT200B_TOP (
     output wire    [2:0]    tmds_data_p,
     output wire    [2:0]    tmds_data_n,
 
-    // SPI FLASH
+    // SPI FLASH (sin uso en V9990TANG: en reposo)
     output  wire            mspi_cs,
     output  wire            mspi_sclk,
     input   wire            mspi_miso,
     output  wire            mspi_mosi,
     output  wire            mspi_hold,
 
-    // TF
+    // TF (sin uso en V9990TANG: en reposo)
     output  wire            TF_SCLK,    // SCLK
     output  wire            TF_CMD,     // MOSI
     input   wire            TF_DAT0,    // MISO
@@ -107,81 +125,103 @@ module TNCART_BOARD_WT200B_TOP (
      * CLOCK
      ***************************************************************/
     logic CLK_BASE/* synthesis syn_keep=1 */;
-    logic CLK_BASE_READY;
+    logic CLK_BASE_LOCK;
     logic CLK_MEM;
     logic CLK_MEM_P;
-    logic CLK_MEM_READY;
     logic CLK_TMDS_S/* synthesis syn_keep=1 */;
     logic CLK_TMDS_P/* synthesis syn_keep=1 */;
     logic CLK_TMDS_READY;
     logic CLK_21M/* synthesis syn_keep=1 */;
     logic CLK_DAC/* synthesis syn_keep=1 */;
+    logic pll_reset;
+    logic base_ready;
     BOARD_WT200B_CLOCK u_clk (
-        .RESET_n        (1'b1),
+        .PLL_RESET      (pll_reset),
+        .BASE_READY     (base_ready),
         .CLK_IN         (CONFIG_BOARD::SYNC_CPU_CLK ? CART_CLOCK : CLK_27M),
         .CLK_27M,
         .CLK_BASE,
-        .CLK_BASE_READY,
+        .CLK_21M,
+        .CLK_DAC,
+        .CLK_BASE_LOCK,
         .CLK_MEM,
         .CLK_MEM_P,
-        .CLK_MEM_READY,
         .CLK_TMDS_S,
         .CLK_TMDS_P,
-        .CLK_TMDS_READY,
-        .CLK_21M,
-        .CLK_DAC
+        .CLK_TMDS_READY
+    );
+
+    /***************************************************************
+     * V9990TANG: POR, gestor del rPLL base y guardia de lock (CLK_27M)
+     ***************************************************************/
+    logic pll_ok;
+    logic drive_en_27;
+    logic boot_hold_27;
+    logic sys_ready;            // SYS_RESET_n de MAIN (CLK_BASE)
+    logic sys_ready_27;
+    logic slot_present;
+    logic relocked;
+    logic wait_timeout_27;
+
+    // >>> FUSION hito/bus: WAIT_TIMEOUT es el error pegajoso del timeout de
+    // /WAIT que saca BOARD_REV1_BUS en CLK_BASE (puerto WAIT_TIMEOUT de
+    // hito/bus). Hasta la fusion no hay fuente: 0. En la fusion, esta linea
+    // pasa a "logic wait_timeout;" y u_bus la conecta. Ademas u_bus saca
+    // BUS_OK (reloj del slot vivo, 2,43 ms despues de RESET_n, y /RESET del
+    // slot suelto), sin el cual no conduce nada: u_guard pasa a recibir
+    // .SYS_READY(sys_ready && bus_ok), para que BOOT_HOLD cubra tambien esa
+    // ventana (docs/notas/integ.md, seccion 8).
+    wire wait_timeout = 1'b0;
+    // <<< FUSION hito/bus
+
+    BOARD_WT200B_GUARD #(
+        .SYNC           (CONFIG_BOARD::SYNC_CPU_CLK)
+    ) u_guard (
+        .CLK_27M,
+        .PLL_LOCK       (CLK_BASE_LOCK),
+        .SLOT_CLK       (CART_CLOCK),
+        .SYS_READY      (sys_ready),
+        .WAIT_TIMEOUT   (wait_timeout),
+        .PLL_RESET      (pll_reset),
+        .PLL_OK         (pll_ok),
+        .DRIVE_EN_27    (drive_en_27),
+        .BOOT_HOLD_27   (boot_hold_27),
+        .POR_DONE       (),
+        .SLOT_OK        (),
+        .SLOT_PRESENT   (slot_present),
+        .SYS_READY_27   (sys_ready_27),
+        .HOLD_EXPIRED   (),
+        .RELOCKED       (relocked),
+        .WAIT_TIMEOUT_27(wait_timeout_27)
     );
 
     /***************************************************************
      * UART
      ***************************************************************/
-    if(CONFIG_BOARD::ENABLE_UART_MODULE) begin
-        UART_RX_IF RXD();
-        UART_RX #(
-            .CLKFREQ            (108_000_000)
-        ) u_rxd (
-            .RESET_n,
-            .CLK,
-            .RXD                (UART_RX),
-            .Uart_rx_interface  (RXD)
-        );
-
-        UART_TX_IF TXD();
-        UART_TX #(
-            .CLKFREQ            (108_000_000)
-        ) u_txd (
-            .RESET_n,
-            .CLK,
-            .TXD                (UART_TX),
-            .Uart_tx_interface  (TXD)
-        );
-
-        assign RXD.READ = 0;
-        assign RXD.CLEAR = 0;
-        assign TXD.DATA = 0;
-        assign TXD.STROBE = 0;
-    end
-    else begin
-        assign UART_TX = 1;
-    end
+    // V9990TANG: sin modulo UART (CONFIG_BOARD::ENABLE_UART_MODULE = 0 y
+    // uart.sv fuera del repositorio); UART_TX en reposo, UART_RX sin carga
+    assign UART_TX = 1'b1;
 
     /***************************************************************
      * MSX バス
      ***************************************************************/
     wire RESET_n;
     wire CLK = CLK_BASE;
-    BUS_IF Bus();
 
-    // リセット信号処理
-    reg reset_n = 0;
-    assign RESET_n = reset_n;
-    always_ff @(posedge CLK_BASE or negedge CLK_BASE_READY or negedge sdram_ready) begin
-        if(!CLK_BASE_READY) reset_n <= 0;       // PLL 準備中ならリセット
-        else if(!sdram_ready) reset_n <= 0;     // SDRAM 準備中ならリセット
-        else reset_n <= 1;
-    end
+    // リセット信号処理 (V9990TANG: system/system_reset.sv)
+    logic sdram_ready;
+    SYSTEM_RESET u_rst (
+        .CLK            (CLK_BASE),
+        .PLL_OK         (pll_ok),
+        .SDRAM_READY    (sdram_ready),
+        .BASE_READY     (base_ready),
+        .RESET_n
+    );
 
     // バス信号処理
+    //  BusPin: el lado de los pines (BOARD_REV1_BUS); Bus: el de los cartuchos
+    BUS_IF BusPin();
+    BUS_IF Bus();
     BOARD_REV1_BUS u_bus (
         .RESET_n,
         .CLK,
@@ -197,14 +237,35 @@ module TNCART_BOARD_WT200B_TOP (
         .CART_MUX_CS_n,
         .CART_DATA_SIG,
         .CART_DATA_DIR,
-        .Bus
+        .Bus            (BusPin)
     );
+
+    // >>> FUSION hito/bus: guardia de lock sobre las salidas al slot.
+    // Cuando BOARD_REV1_BUS tenga las entradas DRIVE_EN y BOOT_HOLD (con el
+    // gateo en los pines y su bus_ok) y la salida WAIT_TIMEOUT, este bloque
+    // se sustituye por .DRIVE_EN(drive_en_27), .BOOT_HOLD(boot_hold_27) y
+    // .WAIT_TIMEOUT(wait_timeout) en u_bus y .Bus(Bus) en lugar de
+    // .Bus(BusPin); BusPin, u_bus_guard y board_wt200b_bus_guard.sv (y su
+    // linea en build_common.tcl) desaparecen. Hasta entonces el gateo
+    // equivalente lo hace BOARD_WT200B_BUS_GUARD sobre las cuatro salidas que
+    // BOARD_REV1_BUS lleva a los pines de forma combinacional (ver el modulo):
+    //   /WAIT = BOOT_HOLD || (DRIVE_EN && wait)  (CART_WAIT_n = 1 activa el
+    //           transistor que baja el /WAIT del slot)
+    //   /INT  = DRIVE_EN && int                  (CART_INT_n = 0 en reposo, 2.00b)
+    //   datos = solo con DRIVE_EN                (si no, CART_DATA_DIR = 1,
+    //           CART_BUSDIR_n = 1 y CART_DATA_SIG en alta impedancia)
+    BOARD_WT200B_BUS_GUARD u_bus_guard (
+        .DRIVE_EN       (drive_en_27),
+        .BOOT_HOLD      (boot_hold_27),
+        .Pin            (BusPin),
+        .Cart           (Bus)
+    );
+    // <<< FUSION hito/bus
 
     /***************************************************************
      * SDRAM
      ***************************************************************/
     RAM_IF Ram();
-    logic sdram_ready;
     SDRAM #(
         .SDRAM_A_WIDTH      (11),
         .SDRAM_BA_WIDTH     (2),
@@ -214,7 +275,7 @@ module TNCART_BOARD_WT200B_TOP (
     ) u_sdram (
         .CLK                (CLK_MEM),
         .CLK_PS             (CLK_MEM_P),
-        .RESET_n            (CLK_MEM_READY),
+        .RESET_n            (base_ready),       // V9990TANG: antes el LOCK crudo del rPLL
 
         .READY              (sdram_ready),
 
@@ -270,68 +331,37 @@ module TNCART_BOARD_WT200B_TOP (
     end
 
     /***************************************************************
-     * TF
+     * V9990TANG: pines sin uso, en reposo
      ***************************************************************/
-    SPI_IF TF();
-    SPI #(
-        .CLK_DIV        (CONFIG_BOARD::TF_CLK_DIV)
-    ) u_tf_spi (
-        .CLK,
-        .RESET_n,
-        .SCLK           (TF_SCLK),
-        .MOSI           (TF_CMD),
-        .MISO           (TF_DAT0),
-        .CS_n           (TF_DAT3),
-        .SPI_Interface  (TF)
-    );
-
-    // 未使用ピンの処理
+    // Flash SPI de la Tang (mspi_*, la del bitstream; -use_mspi_as_gpio):
+    // /CS alto (deseleccionada), /HOLD alto (inactivo), SCLK y MOSI a 0.
+    assign mspi_cs   = 1'b1;
+    assign mspi_sclk = 1'b0;
+    assign mspi_mosi = 1'b0;
+    assign mspi_hold = 1'b1;
+    // TF: CS_n (DAT3) alto, SCLK a 0, CMD (MOSI) a 1 (reposo del bus SPI de
+    // la SD); DAT1 y DAT2 en alta impedancia con el pull-up del .cst.
+    // TF_DAT0 y mspi_miso son entradas sin carga.
+    assign TF_DAT3 = 1'b1;
+    assign TF_SCLK = 1'b0;
+    assign TF_CMD  = 1'b1;
     assign TF_DAT1 = 1'bZ;
     assign TF_DAT2 = 1'bZ;
 
     /***************************************************************
-     * FLASH
+     * LED (V9990TANG: estado, en CLK_27M)
      ***************************************************************/
-    FLASH_IF Flash();
-    FLASH_SPI u_flash (
-        .RESET_n,
-        .CLK,
-        .SPI                (Flash_SPI),
-        .Flash              (Flash)
-    );
-
-    SPI_IF #(
-        .MOSI_BIT_WIDTH(Flash.ADDR_WIDTH+8)
-    ) Flash_SPI();
-    SPI #(
-        .CLK_DIV            (CONFIG_BOARD::FLASH_CLK_DIV)
-    ) u_flash_spi (
-        .RESET_n,
-        .CLK,
-        .SCLK               (mspi_sclk),
-        .MOSI               (mspi_mosi),
-        .MISO               (mspi_miso),
-        .CS_n               (mspi_cs),
-        .SPI_Interface      (Flash_SPI)
-    );
-
-    // 未使用ピンの処理
-    assign mspi_hold = 1;
-
-    /***************************************************************
-     * LED
-     ***************************************************************/
-    LED_IF LedNextor();
-    LED_IF LedBoot();
-    LED #(
-        .DELAY          (108_000_000 / 2),
-        .BLINK          (108_000_000 / 20)
+    STATUS_LED #(
+        .SYNC           (CONFIG_BOARD::SYNC_CPU_CLK)
     ) u_led (
-        .CLK,
-        .RESET_n,
-        .LedPort        (LED),
-        .LedNextor,
-        .LedBoot
+        .CLK            (CLK_27M),
+        .PLL_OK         (pll_ok),
+        .SYS_READY      (sys_ready_27),
+        .SLOT_PRESENT   (slot_present),
+        .WAIT_TIMEOUT   (wait_timeout_27),
+        .RELOCKED       (relocked),
+        .LED            (LED),
+        .CODE           ()
     );
 
     /***************************************************************
@@ -347,11 +377,20 @@ module TNCART_BOARD_WT200B_TOP (
      * The DAC clock works at 32 x 48KHz.
      */
 
+    // V9990TANG: el reset del I2S, sincronizado a CLK_DAC (afirmacion
+    // asincrona, suelta sincrona); antes RESET_n de CLK_BASE directo
+    reg [1:0] dac_reset_ff = 2'b00;
+    always_ff @(posedge CLK_DAC or negedge RESET_n) begin
+        if(!RESET_n) dac_reset_ff <= 2'b00;
+        else         dac_reset_ff <= { dac_reset_ff[0], 1'b1 };
+    end
+    wire dac_reset_n = dac_reset_ff[1];
+
     // Despite the name, this is both the internal/external sound out
     SOUND_IF #(.BIT_WIDTH(CONFIG_BOARD::DAC_BIT_WIDTH)) SoundExternal[0:0]();
     DAC_16BIT u_dac_ext (
         .CLK_DAC,
-        .RESET_n,
+        .RESET_n        (dac_reset_n),
         .IN             (SoundExternal[0]),
         .DAC_BCLK,
         .DAC_LRCLK,
@@ -401,13 +440,10 @@ module TNCART_BOARD_WT200B_TOP (
         .Ram            (UmaRam[0]),
         .VideoRam       (UmaRam[1]),
         .UmaClock       (Uma),
-        .TF,
-        .LedNextor,
-        .Flash,
-        .LedBoot,
         .Video,
         .SoundInternal,
-        .SoundExternal
+        .SoundExternal,
+        .SYS_READY      (sys_ready)
     );
 
 endmodule

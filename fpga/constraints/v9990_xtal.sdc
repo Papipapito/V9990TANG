@@ -20,6 +20,20 @@
 // Cada nombre de -group tiene que existir en esta configuracion. Despues de
 // cada build, todas las ordenes tienen que salir "Actived" en el .tr
 // (tools/check_build.py lo comprueba).
+//
+// Hito 3 (recorte de la carcasa y POR) y 6 (guardia de lock): fuera el
+// bootloader, la flash y los SPI, que no tenian reloj propio (iban en
+// CLK_BASE): no desaparece ningun reloj y los grupos son los mismos. Entran
+// dominios nuevos de 27 MHz (BOARD_WT200B_GUARD y STATUS_LED, en CLK_27M) y
+// dos flops en CLK_DAC (reset del I2S); todos en el grupo de 27 MHz.
+// Sincronizadores de los cruces nuevos (los corta el set_clock_groups):
+//   CLK_BASE -> CLK_27M  u_guard/ready_ff (SYS_RESET_n), u_guard/wto_ff (WAIT_TIMEOUT)
+//   rPLL     -> CLK_27M  u_guard/lock_ff (LOCK)
+//   pin      -> CLK_27M  u_guard/sclk_ff (CART_CLOCK, solo dato en xtal)
+//   CLK_27M  -> CLK_BASE u_rst/base_ff (PLL_OK: afirmacion asincrona, suelta sincrona)
+//   CLK_BASE -> CLK_DAC  dac_reset_ff (RESET_n: afirmacion asincrona, suelta sincrona)
+// DRIVE_EN_27 y BOOT_HOLD_27 (u_guard) solo van a pines, de forma
+// combinacional: no tienen flop de destino.
 //*****************************************************************************
 
 //------------------------
@@ -82,18 +96,21 @@ create_generated_clock -name CLK_DAC -source [get_ports {CLK_27M}] -master_clock
 // fase distinta en cada arranque: el CLKDIV /5 sale de reset con el LOCK del
 // segundo rPLL). Cruzan el buffer de lineas del upscan, in_reso (cuasiestatico),
 // in_vs_n (un flop efectivo), FIELD, INTERLACE y el reset.
-// {CLK_27M CLK_5_4M CLK_DAC}: solo cruza el reset hacia el I2S.
-// {CLK_3_58M}: solo como dato en el bus.
+// {CLK_27M CLK_5_4M CLK_DAC}: el POR, el gestor del rPLL, la guardia de lock
+// y el LED (CLK_27M) y el I2S (CLK_DAC); cruzan con CLK_BASE por los
+// sincronizadores de la cabecera.
+// {CLK_3_58M}: solo como dato, en el PIN_FILTER del bus y en u_guard/sclk_ff.
 set_clock_groups -asynchronous -group [get_clocks {CLK_3_58M}] -group [get_clocks {CLK_BASE CLK_MEM_P DCLK}] -group [get_clocks {CLK_TMDS_S CLK_TMDS_P}] -group [get_clocks {CLK_27M CLK_5_4M CLK_DAC}]
 
 //------------------------
 // Excepciones
 //------------------------
-// reset_n (CLK_BASE) llega como CLEAR asincrono al lado de entrada del upscan
-// (dominio DCLK) y como dato al CE de sus W_DATA. Cuando reset_n se suelta,
-// DCLK esta parado: el V9990 sigue en reset por SYS_RESET_n (main.sv), que
-// retiene el bootloader, y con el core en reset DCLK_EN vale 0.
-set_false_path -from [get_regs {reset_n_s0}] -to [get_clocks {DCLK}]
+// reset_n (CLK_BASE, en u_rst: system/system_reset.sv) llega como CLEAR
+// asincrono al lado de entrada del upscan (dominio DCLK) y como dato al CE de
+// sus W_DATA. Cuando reset_n se suelta, DCLK esta parado: SYS_RESET_n
+// (SYSTEM_RESET_HOLD, main.sv) se suelta como pronto un ciclo despues, asi que
+// en ese flanco el V9990 sigue en reset, y con el core en reset DCLK_EN vale 0.
+set_false_path -from [get_regs {u_rst/reset_n_s0}] -to [get_clocks {DCLK}]
 
 //------------------------
 // Informes
