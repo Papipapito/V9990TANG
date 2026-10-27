@@ -68,14 +68,19 @@
 //    caso minimo; el top entero no pasa por Verilator por las referencias con
 //    punto en constantes de tnCart, p. ej. $bits(SoundExternal[0].Signal))
 //
-// Hueco para la fusion con hito/megaram: MEGAROM_CLEAR (megarom_clear.sv:
-// RESET_n, CLK, RAM_IF.HOST Ram, output DONE) va tras HAVE_MEGAROM_CLEAR,
-// conectado a ExpRam[RAM_BOOTLOADER], el mismo canal que usaba el borrado del
-// bootloader. Sin la macro, la configuracion MegaRAM no elabora (un modulo
-// MEGAROM_CLEAR_FALTA_HASTA_LA_FUSION que no existe). En la fusion:
-// descomentar la linea siguiente.
+// MEGAROM_CLEAR (hito/megaram, megarom_clear.sv: RESET_n, CLK, RAM_IF.HOST
+// Ram, output DONE) va tras HAVE_MEGAROM_CLEAR, conectado a
+// ExpRam[RAM_BOOTLOADER] (canal 0 del UMA, base 0), el mismo canal que usaba
+// el borrado del bootloader. Desde la fusion de las areas la macro esta
+// activa: DONE retiene SYS_RESET_n (y con el SYS_READY hacia la guardia del
+// top, asi que BOOT_HOLD cubre el borrado, unos 7 ms frente al tope de 50) y
+// va a la entrada WAIT_n de EXPANSION_SLOT. Tras una perdida de enganche
+// los 32 KB se vuelven a borrar. Necesita SYNC_CPU_UMA = 0 (las dos
+// variantes). Sin la macro, la configuracion MegaRAM no elabora (un modulo
+// MEGAROM_CLEAR_FALTA_HASTA_LA_FUSION que no existe) y build_common.tcl se
+// para antes.
 //
-// `define HAVE_MEGAROM_CLEAR
+`define HAVE_MEGAROM_CLEAR
 //
 
 `default_nettype none
