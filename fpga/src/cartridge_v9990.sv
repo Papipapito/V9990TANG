@@ -155,9 +155,18 @@ module CARTRIDGE_V9990 #(
     logic vs;
     logic dclk_en;
     logic [2:0] reso;
+    logic pal;
     logic [18:0] addr;
     assign Ram.ADDR = {5'b00000, addr};
-    T9990 u_vdp (
+    // V9990TANG (fusion): los parametros del core los fija cada configuracion
+    // (fpga/config/<cfg>.sv; ENABLE_R16 y ENABLE_CURSOR_EOR son palancas de
+    // la puerta de la MegaRAM). PAL vale 1 mientras el cuadro en curso es el
+    // de 313 lineas y cambia en el mismo flanco de CLK en que sube VS.
+    T9990 #(
+        .ENABLE_PAL         (CONFIG::V9990_ENABLE_PAL),
+        .ENABLE_CURSOR_EOR  (CONFIG::V9990_ENABLE_CURSOR_EOR),
+        .ENABLE_R16         (CONFIG::V9990_ENABLE_R16)
+    ) u_vdp (
         .RESET_n(RESET_n && Bus.RESET_n),
         .CLK,
         .CLK_21M_EN(UmaClock.CLK21M_EN),
@@ -195,7 +204,8 @@ module CARTRIDGE_V9990 #(
         .RESO(reso),
         .HSCN(Video.HSCAN),
         .IL(Video.INTERLACE),
-        .EO(Video.FIELD)
+        .EO(Video.FIELD),
+        .PAL(pal)
     );
 
     /***************************************************************
@@ -213,12 +223,18 @@ module CARTRIDGE_V9990 #(
     assign Video.HS_n = video_hs_n;
     assign Video.VS_n = video_vs_n;
     assign Video.RESOLUTION = video_reso;
+    // V9990TANG (fusion): Video.PAL se captura con VS (hito/core contrato 1,
+    // hito/video): el upscan lo necesita con el valor del cuadro N al acabar
+    // el VSYNC de entrada del cuadro N, y el T9990 lo cambia en el mismo
+    // flanco que VS, asi que llega a la vez que Video.VS_n baja
+    assign Video.PAL = video_pal;
 
     reg [7:0] video_r;
     reg [7:0] video_g;
     reg [7:0] video_b;
     reg       video_hs_n;
     reg       video_vs_n;
+    reg       video_pal;
     VIDEO::RESOLUTION_t video_reso;
 
     always_ff @(posedge Video.DCLK) begin
@@ -227,6 +243,7 @@ module CARTRIDGE_V9990 #(
         video_b    <= {b,b[4:2]};
         video_hs_n <= !hs;
         video_vs_n <= !vs;
+        video_pal  <= pal;
         video_reso <= (reso == T9990_RESO::B1) ? VIDEO::RESOLUTION_B1 :
                       (reso == T9990_RESO::B2) ? VIDEO::RESOLUTION_B2 :
                       (reso == T9990_RESO::B3) ? VIDEO::RESOLUTION_B3 :
