@@ -44,6 +44,17 @@
 //            ms de BUS_OK y un /RESET del MSX de 1 ms con el sistema listo,
 //            sin huecos salvo el de 3-4 ciclos de 27 MHz al pulsar el /RESET
 //            (con el Z80 en reset; en los demas escenarios BUS_OK = 1 siempre)
+//   usb      modelo de BUS_OK por ventanas (>= 64 cambios del reloj del slot
+//            en cada ventana de 2^18 ciclos, como BOARD_REV1_BUS): con el
+//            sistema listo el MSX se apaga 60 ms (el reloj del slot se para;
+//            la Tang sigue alimentada por USB) y se vuelve a encender. Al
+//            volver, BOOT_HOLD tiene que retener al MSX sin huecos hasta que
+//            BUS_OK da por vivo el reloj del slot (xtal: hasta 2,43 ms con el
+//            rPLL siempre enganchado; el banco enciende el MSX al empezar una
+//            ventana, el peor caso; antes el tope ya se habia agotado con el
+//            MSX apagado y el Z80 corria con el cartucho mudo)
+// SYS_READY de la guardia, como en el top: SYS_RESET_n && BUS_OK registrado
+// en un flop de CLK_BASE (sys_bus_ready).
 // En todos: /WAIT retenido (BOOT_HOLD) desde el fin de la configuracion (xtal)
 // o desde el primer flanco del reloj del slot (sync) hasta que el sistema
 // queda listo, sin huecos y como mucho 50 ms; DRIVE_EN nunca sin PLL_OK ni con
@@ -160,6 +171,7 @@ module tb_integ_guard #(
     logic sys_reset_n;
     logic wait_timeout = 1'b0;
     wire  bus_ok;                       // BUS_OK de BOARD_REV1_BUS (modelo mas abajo)
+    logic sys_bus_ready;                // SYS_READY de la guardia: flop de CLK_BASE, como en el top
 
     BOARD_WT200B_GUARD #(
         .SYNC           (SYNC)
@@ -167,7 +179,7 @@ module tb_integ_guard #(
         .CLK_27M        (clk27),
         .PLL_LOCK       (pll_lock),
         .SLOT_CLK       (slot_clk ^ slot_spur),
-        .SYS_READY      (sys_reset_n && bus_ok),
+        .SYS_READY      (sys_bus_ready),
         .WAIT_TIMEOUT   (wait_timeout),
         .PLL_RESET      (pll_reset),
         .PLL_OK         (pll_ok),
@@ -187,20 +199,42 @@ module tb_integ_guard #(
     // BUS_OK de BOARD_REV1_BUS (escenario busok): flop de CLK_BASE que sube
     // al acabar la primera ventana de 2^18 ciclos tras RESET_n con el reloj
     // del slot vivo y cae con el /RESET del slot; fuera de busok, 1
+    // Con bo_win (escenario usb), por ventanas como BOARD_REV1_BUS: al
+    // final de cada ventana de 2^18 ciclos, vivo si hubo >= 64 cambios del
+    // reloj del slot en ella (cae y vuelve 2,43-4,86 ms despues del reloj)
     bit   busok_model = 1'b0;
+    bit   bo_win      = 1'b0;
     bit   msx_reset   = 1'b0;           // /RESET del MSX pulsado
     int   bo_cnt      = 0;
+    int   bo_edges    = 0;
+    logic bo_sclk_q   = 1'b0;
     logic bo_alive    = 1'b0;
     logic bo_q        = 1'b0;
     always @(posedge clk_base or negedge reset_n) begin
         if(!reset_n) begin
-            bo_cnt   <= 0;
-            bo_alive <= 1'b0;
-            bo_q     <= 1'b0;
+            bo_cnt    <= 0;
+            bo_edges  <= 0;
+            bo_sclk_q <= 1'b0;
+            bo_alive  <= 1'b0;
+            bo_q      <= 1'b0;
         end
         else begin
-            if(bo_cnt != (1 << 18)) bo_cnt <= bo_cnt + 1;
-            else                    bo_alive <= slot_on;
+            bo_sclk_q <= slot_clk;
+            if(bo_win) begin
+                if(bo_cnt == (1 << 18) - 1) begin
+                    bo_cnt   <= 0;
+                    bo_alive <= (bo_edges >= 64);
+                    bo_edges <= 0;
+                end
+                else begin
+                    bo_cnt <= bo_cnt + 1;
+                    if(slot_clk != bo_sclk_q && bo_edges < 64) bo_edges <= bo_edges + 1;
+                end
+            end
+            else begin
+                if(bo_cnt != (1 << 18)) bo_cnt <= bo_cnt + 1;
+                else                    bo_alive <= slot_on;
+            end
             bo_q <= bo_alive && !msx_reset;
         end
     end
@@ -212,6 +246,10 @@ module tb_integ_guard #(
         .BASE_READY     (base_ready),
         .RESET_n        (reset_n)
     );
+    always @(posedge clk_base or negedge reset_n) begin
+        if(!reset_n) sys_bus_ready <= 1'b0;
+        else         sys_bus_ready <= sys_reset_n && bus_ok;
+    end
 
     // READY de sdram.sv: unos 33 ciclos despues de su reset (aqui 40)
     int  sd_cnt = 0;
@@ -441,6 +479,10 @@ module tb_integ_guard #(
         else if(scen == "busok") begin
             busok_model = 1'b1;
         end
+        else if(scen == "usb") begin
+            busok_model = 1'b1;
+            bo_win      = 1'b1;
+        end
         else if(scen == "mega") begin
             mega = 1'b1;
             clear_cycles = (SYNC != 0) ? 214_772 : 216_000;   // 2 ms de borrado
@@ -508,7 +550,7 @@ module tb_integ_guard #(
             // engancha a los 3 ms de soltar el reset (POR 1,21 ms; en sync
             // la ventana de medida del reloj del slot cabe dentro del POR) y
             // PLL_OK llega tras 2,43 ms de LOCK seguido
-            wait_ready((scen == "mega" || scen == "busok") ? 11_000.0 : (scen == "glitch" ? 12_000.0 : 9_000.0), t_ready);
+            wait_ready((scen == "mega" || busok_model) ? 11_000.0 : (scen == "glitch" ? 12_000.0 : 9_000.0), t_ready);
 
             if(scen == "tope") begin
                 check(pll_ok && boot_hold && !drive_en && !sys_reset_n,
@@ -532,7 +574,7 @@ module tb_integ_guard #(
                 if(scen == "mega")
                     check((t_ready - t_pllok / 1000.0) > 1_900.0 && (t_ready - t_pllok / 1000.0) < 2_200.0,
                           $sformatf("mega: de PLL_OK a listo, el borrado de la megaROM: %0.3f ms", (t_ready - t_pllok / 1000.0) / 1000.0));
-                else if(scen == "busok")
+                else if(busok_model)
                     check((t_ready - t_pllok / 1000.0) > 2_420.0 && (t_ready - t_pllok / 1000.0) < 2_500.0,
                           $sformatf("busok: de PLL_OK a listo, la ventana de BUS_OK (2^18 ciclos de CLK_BASE): %0.3f ms", (t_ready - t_pllok / 1000.0) / 1000.0));
                 else
@@ -542,13 +584,13 @@ module tb_integ_guard #(
                     string extra;
                     extra = "";
                     if(scen == "mega") extra = " + borrado de 2 ms";
-                    if(scen == "busok") extra = " + 2,43 ms de BUS_OK";
+                    if(busok_model) extra = " + 2,43 ms de BUS_OK";
                     if(scen == "glitch")
                         check(t_glitch_end > 0.0 && (t_ready - t_glitch_end) > 2_420.0 && (t_ready - t_glitch_end) < 2_500.0 && pll_ok_rises == 1,
                               $sformatf("glitch: PLL_OK %0.3f ms despues del ultimo hueco de LOCK (esperado 2,43) y una sola subida de PLL_OK (%0d)",
                                         (t_ready - t_glitch_end) / 1000.0, pll_ok_rises));
                     else
-                        check(t_ready > ((scen == "busok") ? 8_980.0 : 6_550.0) && t_ready < ((scen == "mega" || scen == "busok") ? 9_200.0 : 6_900.0) && pll_ok_rises == 1,
+                        check(t_ready > (busok_model ? 8_980.0 : 6_550.0) && t_ready < ((scen == "mega" || busok_model) ? 9_200.0 : 6_900.0) && pll_ok_rises == 1,
                               $sformatf("arranque: POR 1,21 ms + LOCK de 3 ms + 2,43 ms estable%s: %0.3f ms (subidas de PLL_OK: %0d)", extra, t_ready / 1000.0, pll_ok_rises));
                 end
                 v99_wait = 1'b0;
@@ -589,6 +631,53 @@ module tb_integ_guard #(
                     v99_wait = 1'b0;
                     check_led(5, "listo");
                     check_invariants("busok");
+                end
+
+                if(scen == "usb") begin
+                    // MSX apagado 60 ms con la Tang alimentada por USB y
+                    // encendido otra vez
+                    real t_hold0;
+                    int  rises0;
+                    v99_wait = 1'b0;
+                    slot_on = 1'b0;
+                    wait_us(6_000.0);
+                    check(!bus_ok && !drive_en && !sys_ready_27,
+                          $sformatf("usb, MSX apagado 6 ms: BUS_OK %0d, DRIVE_EN %0d, SYS_READY_27 %0d (esperado 0 0 0)", bus_ok, drive_en, sys_ready_27));
+                    if(SYNC == 0)
+                        check(pll_ok && pll_ok_rises == 1 && sys_reset_n,
+                              "usb, xtal, MSX apagado: el rPLL (cristal) sigue enganchado y el sistema sin reset");
+                    check_led((SYNC == 0) ? 2 : 0, "MSX apagado");
+                    wait_us(54_000.0);
+                    check(!boot_hold && !drive_en,
+                          $sformatf("usb, 60 ms con el MSX apagado: BOOT_HOLD %0d y DRIVE_EN %0d (esperado 0 0)", boot_hold, drive_en));
+                    if(SYNC == 0)
+                        check(hold_expired && hold_rises == 2 && hold_len > 49_990_000.0 && hold_len < 50_010_000.0,
+                              $sformatf("usb, xtal, MSX apagado: el BOOT_HOLD sin BUS_OK agota su tope (%0.4f ms, subidas %0d)", hold_len / 1.0e6, hold_rises));
+                    rises0 = hold_rises;
+                    // xtal: el MSX se enciende justo al empezar una ventana de
+                    // BUS_OK, el peor caso (2^18 ciclos hasta darlo por vivo)
+                    if(SYNC == 0) wait(bo_cnt == 1);
+                    t_back = $realtime / 1000.0;
+                    slot_on = 1'b1;
+                    wait_us(2.0);
+                    t_hold0 = hold_rise / 1000.0 - t_back;
+                    check(boot_hold && hold_rises == rises0 + 1 && t_hold0 >= 0.0 && t_hold0 < 1.0,
+                          $sformatf("usb, el MSX se enciende: BOOT_HOLD %0d, a los %0.3f us del primer flanco del reloj del slot (limite 1 us; subidas %0d, esperadas %0d)",
+                                    boot_hold, t_hold0, hold_rises, rises0 + 1));
+                    v99_wait = 1'b1;
+                    wait_ready(15_000.0, t_ready);
+                    check(drive_en && sys_reset_n && !boot_hold && hold_rises == rises0 + 1,
+                          $sformatf("usb, el MSX encendido otra vez: listo a los %0.3f ms del encendido, sin BOOT_HOLD (subidas %0d, esperadas %0d)",
+                                    (t_ready - t_back) / 1000.0, hold_rises, rises0 + 1));
+                    check(((hold_rise + hold_len) / 1000.0 - t_ready) > -0.1 && ((hold_rise + hold_len) / 1000.0 - t_ready) < 0.1,
+                          $sformatf("usb: BOOT_HOLD sin cortes desde el encendido del MSX hasta DRIVE_EN (%0.3f ms, esperado %0.3f)",
+                                    hold_len / 1.0e6, (t_ready - t_back) / 1000.0));
+                    if(SYNC == 0)
+                        check((t_ready - t_back) > 2_420.0 && (t_ready - t_back) < 2_500.0 && pll_ok_rises == 1,
+                              $sformatf("usb, xtal: del encendido a listo, una ventana entera de BUS_OK (2^18 ciclos, 2,43 ms): %0.3f ms, sin perder el enganche", (t_ready - t_back) / 1000.0));
+                    v99_wait = 1'b0;
+                    check_led((SYNC == 0) ? 5 : 4, "listo tras encender el MSX");
+                    check_invariants("usb");
                 end
 
                 if(scen == "perdida") begin

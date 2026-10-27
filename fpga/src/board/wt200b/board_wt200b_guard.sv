@@ -68,9 +68,13 @@
 //      como con el bootloader de tnCart, cuyo reset retenia /WAIT desde la
 //      configuracion. En sync, si el reloj del slot desaparece (MSX apagado
 //      con la Tang alimentada por USB), el siguiente arranque vuelve a ser en
-//      frio. Tras perder el enganche con el sistema ya listo: desde que vuelve
-//      PLL_OK. El tope se rearma cuando el sistema queda listo y, en sync,
-//      cuando desaparece el reloj del slot.
+//      frio. En xtal, si el reloj del slot vuelve tras faltar (MSX
+//      apagado y encendido con la Tang alimentada por USB), el tope se
+//      rearma en ese momento: BOOT_HOLD retiene al MSX hasta que BUS_OK da
+//      por vivo el reloj del slot (hasta 2,43 ms). Tras perder el enganche
+//      con el sistema ya listo: desde que vuelve PLL_OK. El tope se rearma
+//      cuando el sistema queda listo; en sync, cuando desaparece el reloj
+//      del slot; en xtal, cuando vuelve.
 //    Sin enganche, DRIVE_EN_27 = 0 siempre y BOOT_HOLD_27 = 0 salvo en el
 //    arranque en frio, como mucho 50 ms: el cartucho queda mudo y el MSX
 //    arranca. Las dos son flops; cuando el sistema queda listo, DRIVE_EN_27
@@ -82,7 +86,7 @@
 // set_clock_groups entre el grupo de 27 MHz y el de CLK_BASE):
 //   lock_ff   <- PLL_LOCK (salida asincrona del rPLL)
 //   sclk_ff   <- SLOT_CLK (pin CART_CLOCK, 3,58 MHz)
-//   ready_ff  <- SYS_READY (SYS_RESET_n, CLK_BASE)
+//   ready_ff  <- SYS_READY (flop de CLK_BASE: SYS_RESET_n && BUS_OK)
 //   wto_ff    <- WAIT_TIMEOUT (CLK_BASE)
 // Hacia CLK_BASE sale PLL_OK, que SYSTEM_RESET sincroniza (afirmacion
 // asincrona, suelta sincrona). PLL_RESET va directo al RESET del rPLL.
@@ -110,7 +114,7 @@ module BOARD_WT200B_GUARD #(
 
     input  wire     PLL_LOCK,       // LOCK del rPLL base, crudo (asincrono)
     input  wire     SLOT_CLK,       // pin CART_CLOCK, crudo (asincrono)
-    input  wire     SYS_READY,      // sistema listo: SYS_RESET_n de MAIN (CLK_BASE)
+    input  wire     SYS_READY,      // sistema listo: flop de CLK_BASE (SYS_RESET_n de MAIN && BUS_OK)
     input  wire     WAIT_TIMEOUT,   // error pegajoso del bus: timeout de /WAIT (CLK_BASE)
 
     output wire     PLL_RESET,      // al RESET del rPLL base
@@ -379,6 +383,13 @@ module BOARD_WT200B_GUARD #(
     wire msx_on  = (SYNC != 0) ? SLOT_PRESENT : 1'b1;
     wire msx_off = (SYNC != 0) && !SLOT_PRESENT;
     wire booting = !ready_d && (pll_ok || (cold && msx_on));
+    // xtal: el reloj del slot vuelve tras faltar (MSX encendido otra vez con
+    // la Tang alimentada por USB). En xtal el rPLL no depende de el, asi que
+    // PLL_OK sigue a 1, el sistema espera a BUS_OK y el tope (agotado con el
+    // MSX apagado) se rearma aqui para retener al MSX esa ventana
+    reg  slot_present_d = 1'b0;
+    always_ff @(posedge CLK_27M) slot_present_d <= SLOT_PRESENT;
+    wire slot_back = (SYNC == 0) && SLOT_PRESENT && !slot_present_d;
 
     reg drive_en     = 1'b0;
     reg boot_hold    = 1'b0;
@@ -401,6 +412,11 @@ module BOARD_WT200B_GUARD #(
             // sync sin reloj del slot: el proximo arranque es en frio, con
             // su tope entero
             cold         <= 1'b1;
+            hold_cnt     <= '0;
+            hold_expired <= 1'b0;
+        end
+        else if(slot_back) begin
+            // xtal, vuelve el reloj del slot: tope entero desde ahora
             hold_cnt     <= '0;
             hold_expired <= 1'b0;
         end

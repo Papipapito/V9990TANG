@@ -163,6 +163,7 @@ module TNCART_BOARD_WT200B_TOP (
     logic drive_en_27;
     logic boot_hold_27;
     logic sys_ready;            // SYS_RESET_n de MAIN (CLK_BASE)
+    logic sys_bus_ready;        // sys_ready && bus_ok, registrado en CLK_BASE
     logic sys_ready_27;
     logic slot_present;
     logic relocked;
@@ -178,7 +179,9 @@ module TNCART_BOARD_WT200B_TOP (
     // 2,43 ms con el cartucho mudo; docs/notas/integ.md, seccion 8) y el LED
     // ve BUS_OK a 0 como "arrancando" (con el /RESET del MSX pulsado, o con
     // el reloj del slot parado; en xtal, sin reloj del slot, sale antes el
-    // codigo 2 de STATUS_LED).
+    // codigo 2 de STATUS_LED). La AND se registra en CLK_BASE
+    // (sys_bus_ready, abajo) antes de cruzar a CLK_27M: ready_ff sincroniza
+    // un flop, no la AND combinacional de dos flops (un ciclo mas de 108 MHz).
     logic wait_timeout;
     logic bus_ok;
 
@@ -188,7 +191,7 @@ module TNCART_BOARD_WT200B_TOP (
         .CLK_27M,
         .PLL_LOCK       (CLK_BASE_LOCK),
         .SLOT_CLK       (CART_CLOCK),
-        .SYS_READY      (sys_ready && bus_ok),
+        .SYS_READY      (sys_bus_ready),
         .WAIT_TIMEOUT   (wait_timeout),
         .PLL_RESET      (pll_reset),
         .PLL_OK         (pll_ok),
@@ -225,6 +228,13 @@ module TNCART_BOARD_WT200B_TOP (
         .BASE_READY     (base_ready),
         .RESET_n
     );
+
+    // SYS_READY de la guardia: SYS_RESET_n && BUS_OK en un flop de CLK_BASE
+    // (los dos bajan en el acto con RESET_n, que resetea el flop tambien)
+    always_ff @(posedge CLK_BASE or negedge RESET_n) begin
+        if(!RESET_n) sys_bus_ready <= 1'b0;
+        else         sys_bus_ready <= sys_ready && bus_ok;
+    end
 
     // バス信号処理
     //  Las guardias van dentro de BOARD_REV1_BUS, en los pines y de forma

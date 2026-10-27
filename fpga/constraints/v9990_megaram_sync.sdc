@@ -40,7 +40,7 @@
 // Dominios de 27 MHz (BOARD_WT200B_GUARD, STATUS_LED: CLK_27M) y el reset del
 // I2S (CLK_DAC), en el grupo de 27 MHz. Sincronizadores de los cruces (los
 // corta el set_clock_groups):
-//   CLK_BASE -> CLK_27M  u_guard/ready_ff (SYS_RESET_n), u_guard/wto_ff (WAIT_TIMEOUT)
+//   CLK_BASE -> CLK_27M  u_guard/ready_ff (SYS_RESET_n && BUS_OK, flop sys_bus_ready), u_guard/wto_ff (WAIT_TIMEOUT)
 //   rPLL     -> CLK_27M  u_guard/lock_ff (LOCK)
 //   pin      -> CLK_27M  u_guard/sclk_ff (CART_CLOCK: presencia y frecuencia del reloj del slot)
 //   CLK_27M  -> CLK_BASE u_rst/base_ff (PLL_OK: afirmacion asincrona, suelta sincrona)
