@@ -35,11 +35,14 @@
 // Comprobaciones siempre activas: el FPGA no conduce D0-D7 sin una lectura
 // legitima, ni 30 ns despues de subir /RD, ni a la vez que el Z80 o la
 // memoria del MSX; WAIT_TIMEOUT a 0; cero ranuras de VRAM perdidas (asercion
-// de t9990_ram.sv); cero errores del modelo de la SDRAM; el Z80 nunca
-// retenido mas de 3000 TW fuera del arranque.
+// de t9990_ram.sv); cero errores del modelo de la SDRAM, cero capturas de
+// lectura fuera de su ventana de dato valido, nunca DQ con dos conductores y
+// solo NOP en sus pines con el controlador en reset; el Z80 nunca retenido
+// mas de 3000 TW fuera del arranque.
 //
-// Fases (+SCEN=full, por defecto; +SCEN=io sin video ni PAL, para la pasada a
-// 5,37 MHz; +SCEN=nomsx, xtal o sync sin MSX: solo LED y pines en reposo):
+// Fases (+SCEN=full, por defecto; cualquier otro nombre, p. ej. +SCEN=io, sin
+// los cuadros de video ni PAL y con una sola /INT: la pasada a 5,37 MHz;
+// +SCEN=nomsx, xtal o sync sin MSX: solo LED y pines en reposo):
 //   A arranque: POR, rPLL, SDRAM, BUS_OK, guardia (BOOT_HOLD retiene el primer
 //     ciclo del Z80 hasta que el sistema esta listo), LED (codigos 0 -> 1 ->
 //     5); en MegaRAM, el borrado de 32 KB

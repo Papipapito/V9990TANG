@@ -528,6 +528,13 @@ a correr todo. **El RTL es el de los commits `737b755`, `19653d3`, `adfabdc`,
   apuntado sin tocarlo, porque este hito pedía no cambiar nada más de
   `sdram.sv`. El arreglo sería poner NOP en el reset de `SDRAM_CMD` y,
   opcionalmente, un contador de 200 µs antes de `STATE_INIT_PRE`.
+  **Arreglado después de la fusión** (`389ce97`): el banco de placa entera
+  (`fpga/tb/top`, con el reloj de la SDRAM corriendo desde que arranca el
+  rPLL, como en la placa) contó 262 406 flancos con `0000` en los pines antes
+  de `BASE_READY`; con `SDRAM_CMD <= CMD_NOP` en el reset, 0. No añade la
+  espera de 200 µs: entre el arranque del rPLL y `BASE_READY` ya pasan los
+  2,43 ms de `LOCK_STABLE` de la guardia. Ver
+  [VERIFICATION.md](../VERIFICATION.md#banco-de-placa-entera-fpgatbtop).
 - **ACK más largo en el canal 0** con escalación, o con R/W + RFSH a la vez: un
   cliente que espere el ACK lo verá 20 ciclos más tarde. Un cliente que no lo
   espere y tenga el dato en el bus (la megaROM sin `/WAIT`) recibe el dato 20
