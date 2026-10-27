@@ -137,12 +137,18 @@ endmodule
  *   CODE 0  error de reloj: rPLL base sin enganchar (en sync tambien el
  *           reloj del slot ausente o fuera de frecuencia) -> parpadeo rapido
  *           (6,4 Hz)
+ *   CODE 2  solo xtal: sin reloj del slot (MSX apagado o cartucho mal
+ *           metido) -> destello corto cada 1,24 s
  *   CODE 1  arrancando: rPLL enganchado, sistema aun no listo -> parpadeo
  *           lento (1,6 Hz). Normalmente no se ve (dura microsegundos, o
  *           milisegundos con el borrado de la megaROM); si se queda, el
- *           arranque fallo y el MSX ya corre sin el cartucho (tope de 50 ms)
- *   CODE 2  solo xtal: sin reloj del slot (MSX apagado o cartucho mal
- *           metido) -> destello corto cada 1,24 s
+ *           arranque fallo y el MSX ya corre sin el cartucho (tope de 50 ms).
+ *           Desde la fusion con hito/bus el top pasa SYS_READY = sistema
+ *           listo && BUS_OK (reloj del slot vivo y /RESET del slot suelto),
+ *           asi que tambien se ve con el /RESET del MSX pulsado o con el bus
+ *           del slot muerto (cartucho mudo). Por eso el codigo 2 va antes:
+ *           en xtal sin MSX BUS_OK es 0 y, con el orden del hito 3, el LED
+ *           diria "arrancando" en lugar de "sin reloj del slot"
  *   CODE 3  listo, con WAIT_TIMEOUT pegajoso -> doble destello cada 1,24 s
  *   CODE 4  listo, tras perder el enganche y recuperarlo (pegajoso) ->
  *           rafaga de cuatro destellos cada 1,24 s
@@ -171,8 +177,8 @@ module STATUS_LED #(
     wire b3 = blink[BITS-4];    // 155 ms
 
     wire [2:0] code = !PLL_OK                            ? 3'd0 :
-                      !SYS_READY                         ? 3'd1 :
                       ((SYNC == 0) && !SLOT_PRESENT)     ? 3'd2 :
+                      !SYS_READY                         ? 3'd1 :
                       WAIT_TIMEOUT                       ? 3'd3 :
                       RELOCKED                           ? 3'd4 :
                                                            3'd5;

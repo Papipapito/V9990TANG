@@ -43,10 +43,15 @@
 //    de lock (DRIVE_EN_27, BOOT_HOLD_27)
 //  - SYSTEM_RESET (CLK_BASE): PLL_OK sincronizado (BASE_READY, que tambien
 //    resetea la SDRAM: antes era el LOCK crudo) y reset_n
-//  - BOARD_WT200B_BUS_GUARD: el gateo de DRIVE_EN_27 y BOOT_HOLD_27 sobre
-//    las salidas al slot, provisional hasta la fusion con hito/bus
+//  - BOARD_REV1_BUS (hito/bus) con las guardias en los pines: DRIVE_EN_27 y
+//    BOOT_HOLD_27 de la guardia de lock, BUS_OK (reloj del slot vivo y
+//    /RESET del slot suelto) y el timeout fail-open del /WAIT
+//    (WAIT_TIMEOUT, al LED). Fusion: sustituye a BOARD_WT200B_BUS_GUARD
 //  - STATUS_LED (CLK_27M): error de reloj / arrancando / listo, con
 //    WAIT_TIMEOUT pegajoso
+//  - palancas por configuracion (fpga/config/<cfg>.sv): BLEND del upscan
+//    (CONFIG::UPSCAN_BLEND) y pre-WAIT de memoria del bus
+//    (CONFIG::BUS_PREWAIT_MEM_EN, solo con la MegaRAM de ENABLE_MEM_WAIT)
 //  - el reset del DAC I2S pasa por dos FF en CLK_DAC
 //  - xtal o sync: lo decide el board_wt200b_config_*.sv que compile cada
 //    build_*.tcl (CONFIG_BOARD::SYNC_CPU_CLK)
@@ -163,16 +168,19 @@ module TNCART_BOARD_WT200B_TOP (
     logic relocked;
     logic wait_timeout_27;
 
-    // >>> FUSION hito/bus: WAIT_TIMEOUT es el error pegajoso del timeout de
-    // /WAIT que saca BOARD_REV1_BUS en CLK_BASE (puerto WAIT_TIMEOUT de
-    // hito/bus). Hasta la fusion no hay fuente: 0. En la fusion, esta linea
-    // pasa a "logic wait_timeout;" y u_bus la conecta. Ademas u_bus saca
-    // BUS_OK (reloj del slot vivo, 2,43 ms despues de RESET_n, y /RESET del
-    // slot suelto), sin el cual no conduce nada: u_guard pasa a recibir
-    // .SYS_READY(sys_ready && bus_ok), para que BOOT_HOLD cubra tambien esa
-    // ventana (docs/notas/integ.md, seccion 8).
-    wire wait_timeout = 1'b0;
-    // <<< FUSION hito/bus
+    // WAIT_TIMEOUT: error pegajoso del timeout fail-open del /WAIT, que saca
+    // u_bus en CLK_BASE (la guardia lo sincroniza con wto_ff y lo lleva al
+    // LED). BUS_OK: flop de CLK_BASE de u_bus, reloj del slot vivo (>= 64
+    // flancos en 2^18 ciclos, asi que sube 2,43-4,86 ms despues de RESET_n)
+    // y /RESET del slot suelto; sin el, u_bus no saca datos, /INT ni el
+    // /WAIT del V9990. Por eso la guardia recibe SYS_READY = sys_ready &&
+    // bus_ok: BOOT_HOLD retiene al MSX tambien esa ventana (si no, correria
+    // 2,43 ms con el cartucho mudo; docs/notas/integ.md, seccion 8) y el LED
+    // ve BUS_OK a 0 como "arrancando" (con el /RESET del MSX pulsado, o con
+    // el reloj del slot parado; en xtal, sin reloj del slot, sale antes el
+    // codigo 2 de STATUS_LED).
+    logic wait_timeout;
+    logic bus_ok;
 
     BOARD_WT200B_GUARD #(
         .SYNC           (CONFIG_BOARD::SYNC_CPU_CLK)
@@ -180,7 +188,7 @@ module TNCART_BOARD_WT200B_TOP (
         .CLK_27M,
         .PLL_LOCK       (CLK_BASE_LOCK),
         .SLOT_CLK       (CART_CLOCK),
-        .SYS_READY      (sys_ready),
+        .SYS_READY      (sys_ready && bus_ok),
         .WAIT_TIMEOUT   (wait_timeout),
         .PLL_RESET      (pll_reset),
         .PLL_OK         (pll_ok),
@@ -219,13 +227,34 @@ module TNCART_BOARD_WT200B_TOP (
     );
 
     // バス信号処理
-    //  BusPin: el lado de los pines (BOARD_REV1_BUS); Bus: el de los cartuchos
-    BUS_IF BusPin();
+    //  Las guardias van dentro de BOARD_REV1_BUS, en los pines y de forma
+    //  combinacional (CART_WAIT_n = 1 activa el transistor que baja el /WAIT
+    //  del slot):
+    //   /WAIT = BOOT_HOLD || (BUS_OK && DRIVE_EN && wait && !timeout)
+    //   /INT  = BUS_OK && DRIVE_EN && int          (CART_INT_n = 0 en reposo, 2.00b)
+    //   datos = solo con BUS_OK && DRIVE_EN, /RD del pin a 0 y una lectura
+    //           que empezo con Bus.BUSDIR_n en reposo (si no, CART_DATA_DIR =
+    //           1, CART_BUSDIR_n = 1 y CART_DATA_SIG en alta impedancia)
+    //  DRIVE_EN_27 y BOOT_HOLD_27 son flops de CLK_27M: en los pines entran
+    //  directos y, para el contador del timeout, por dos FF de CLK_BASE
+    //  (drive_en_s/boot_hold_s de u_bus; el set_clock_groups del .sdc corta
+    //  el cruce). DRIVE_EN puede bajar y volver sin reset (LOCK bajo menos de
+    //  152 us): u_bus no lo toma como un reset.
+    //  PREWAIT_MEM_EN = 1 solo con una megaROM que baje Bus.WAIT_n en sus
+    //  lecturas (la de hito/megaram con ENABLE_MEM_WAIT = 1): lo fija cada
+    //  configuracion (CONFIG::BUS_PREWAIT_MEM_EN, comprobado abajo). El resto
+    //  de parametros, los de hito/bus por defecto (docs/notas/bus.md).
     BUS_IF Bus();
-    BOARD_REV1_BUS u_bus (
+    BOARD_REV1_BUS #(
+        .PREWAIT_MEM_EN (CONFIG::BUS_PREWAIT_MEM_EN)
+    ) u_bus (
         .RESET_n,
         .CLK,
         .CLK_21M,
+        .DRIVE_EN       (drive_en_27),
+        .BOOT_HOLD      (boot_hold_27),
+        .WAIT_TIMEOUT   (wait_timeout),
+        .BUS_OK         (bus_ok),
         .CART_BUSDIR_n,
         .CART_INT_n,
         .CART_WAIT_n,
@@ -237,30 +266,15 @@ module TNCART_BOARD_WT200B_TOP (
         .CART_MUX_CS_n,
         .CART_DATA_SIG,
         .CART_DATA_DIR,
-        .Bus            (BusPin)
+        .Bus
     );
 
-    // >>> FUSION hito/bus: guardia de lock sobre las salidas al slot.
-    // Cuando BOARD_REV1_BUS tenga las entradas DRIVE_EN y BOOT_HOLD (con el
-    // gateo en los pines y su bus_ok) y la salida WAIT_TIMEOUT, este bloque
-    // se sustituye por .DRIVE_EN(drive_en_27), .BOOT_HOLD(boot_hold_27) y
-    // .WAIT_TIMEOUT(wait_timeout) en u_bus y .Bus(Bus) en lugar de
-    // .Bus(BusPin); BusPin, u_bus_guard y board_wt200b_bus_guard.sv (y su
-    // linea en build_common.tcl) desaparecen. Hasta entonces el gateo
-    // equivalente lo hace BOARD_WT200B_BUS_GUARD sobre las cuatro salidas que
-    // BOARD_REV1_BUS lleva a los pines de forma combinacional (ver el modulo):
-    //   /WAIT = BOOT_HOLD || (DRIVE_EN && wait)  (CART_WAIT_n = 1 activa el
-    //           transistor que baja el /WAIT del slot)
-    //   /INT  = DRIVE_EN && int                  (CART_INT_n = 0 en reposo, 2.00b)
-    //   datos = solo con DRIVE_EN                (si no, CART_DATA_DIR = 1,
-    //           CART_BUSDIR_n = 1 y CART_DATA_SIG en alta impedancia)
-    BOARD_WT200B_BUS_GUARD u_bus_guard (
-        .DRIVE_EN       (drive_en_27),
-        .BOOT_HOLD      (boot_hold_27),
-        .Pin            (BusPin),
-        .Cart           (Bus)
-    );
-    // <<< FUSION hito/bus
+    // El pre-WAIT de memoria pide una megaROM con /WAIT en sus lecturas, y
+    // esa megaROM lo necesita (sin el, a 3,58 MHz fallan 71 de 253 lecturas:
+    // docs/notas/megaram.md). Una configuracion que los separe no elabora.
+    if(CONFIG::BUS_PREWAIT_MEM_EN != ((CONFIG::ENABLE_MEGAROM != CONFIG::DISABLE) && (CONFIG::ENABLE_MEM_WAIT != 0))) begin
+        TOP_BUS_PREWAIT_MEM_EN_NO_CASA_CON_ENABLE_MEM_WAIT u_prewait_mem_no_casa ();
+    end
 
     /***************************************************************
      * SDRAM
@@ -409,8 +423,12 @@ module TNCART_BOARD_WT200B_TOP (
      ***************************************************************/
     VIDEO_IF Video();
     VIDEO_IF VideoTmds();
+    // BLEND (hito/video): 1 = la mezcla de puntos de tnCart, 0 = el punto
+    // mas cercano (menos logica y otra colocacion; ultima palanca del
+    // estudio para la Fmax). Lo fija cada configuracion.
     VIDEO_UPSCAN #(
-        .ENABLE_SCANLINE(CONFIG::ENABLE_SCANLINE)
+        .ENABLE_SCANLINE(CONFIG::ENABLE_SCANLINE),
+        .BLEND          (CONFIG::UPSCAN_BLEND)
     ) u_upscan (
         .RESET_n,
         .DCLK           (CLK_TMDS_P),
