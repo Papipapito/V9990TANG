@@ -82,6 +82,19 @@
 //
 `define HAVE_MEGAROM_CLEAR
 //
+// Configuracion v9990_megaram_nextor (CONFIG::ENABLE_NEXTOR, solo con la
+// megaROM: necesita el slot expandido). Vuelven, solo en esa configuracion
+// (rama de generate dentro de la de la megaROM, para no mover los nombres
+// genblk de las otras), el cartucho Nextor de tnCart (CARTRIDGE_NEXTOR, con
+// su TF_CONTROLLER, en la subranura 2), el SPI de la TF y la copia de la ROM
+// de Nextor de la flash a la SDRAM (NEXTOR_LOADER, con FLASH_SPI y su SPI, en
+// lugar del BOOTLOADER de tnCart: ver system/nextor_loader.sv). Los pines de
+// la flash y de la TF salen de MAIN como hilos sueltos (TF_*, FLASH_*): en
+// las otras configuraciones MAIN los deja en el reposo que antes ponia el
+// top. Secuencia de arranque: RESET_n -> MEGAROM_CLEAR (32 KB) -> copia de
+// Nextor (128 KB, ~70 ms) -> SYS_RESET_n; el canal 0 del UMA lo usan por
+// turnos (EXPANSION_RAM hace OR de los clientes). Ver docs/notas/nextor.md.
+//
 
 `default_nettype none
 
@@ -97,13 +110,24 @@ module MAIN #(
     VIDEO_IF                Video,              // ビデオ出力
     SOUND_IF.OUT            SoundExternal[0:EXT_SOUND_CH_COUNT-1],  // 外部サウンド出力
     SOUND_IF.OUT            SoundInternal,      // カートリッジサウンド出力
-    output  wire            SYS_READY           // V9990TANG: SYS_RESET_n (sistema listo), hacia la guardia del top
+    output  wire            SYS_READY,          // V9990TANG: SYS_RESET_n (sistema listo), hacia la guardia del top
+    // V9990TANG: pines de la TF (SPI de la SD) y de la flash (solo los usa
+    // la configuracion v9990_megaram_nextor; en las otras, en reposo)
+    output  wire            TF_SCLK,
+    output  wire            TF_MOSI,
+    input   wire            TF_MISO,
+    output  wire            TF_CS_n,
+    output  wire            FLASH_SCLK,
+    output  wire            FLASH_MOSI,
+    input   wire            FLASH_MISO,
+    output  wire            FLASH_CS_n
 );
     /***************************************************************
      * V9990TANG: configuraciones soportadas
      ***************************************************************/
-    if(CONFIG::ENABLE_FM || CONFIG::ENABLE_NEXTOR || CONFIG::ENABLE_RAM || CONFIG::ENABLE_PSG || !CONFIG::ENABLE_V9990) begin
-        // FM, Nextor, mapper y PSG no estan en V9990TANG; el V9990 es obligatorio
+    if(CONFIG::ENABLE_FM || (CONFIG::ENABLE_NEXTOR && !CONFIG::ENABLE_MEGAROM) || CONFIG::ENABLE_RAM || CONFIG::ENABLE_PSG || !CONFIG::ENABLE_V9990) begin
+        // FM, mapper y PSG no estan en V9990TANG; Nextor solo con la megaROM
+        // (v9990_megaram_nextor); el V9990 es obligatorio
         MAIN_CONFIGURACION_NO_SOPORTADA_EN_V9990TANG u_config_no_soportada ();
     end
 
@@ -125,7 +149,9 @@ module MAIN #(
      ***************************************************************/
     localparam RAM_MEGAROM    = 0;
     localparam RAM_BOOTLOADER = 1;      // V9990TANG: el canal del borrado de la megaROM (antes del bootloader)
-    localparam RAM_COUNT      = 2;
+    localparam RAM_NEXTOR     = 2;      // V9990TANG: solo con Nextor
+    localparam RAM_LOADER     = 3;      // V9990TANG: copia de Nextor (NEXTOR_LOADER), solo con Nextor
+    localparam RAM_COUNT      = CONFIG::ENABLE_NEXTOR ? 4 : 2;
     RAM_IF ExpRam[0:RAM_COUNT-1]();
     EXPANSION_RAM #(
         .COUNT          (RAM_COUNT),
@@ -142,11 +168,12 @@ module MAIN #(
      ***************************************************************/
     logic SYS_RESET_n;
     logic clear_done;
+    logic boot_done;        // V9990TANG: clear_done y, con Nextor, la copia de su ROM
 
     SYSTEM_RESET_HOLD u_sysrst (
         .CLK,
         .RESET_n,
-        .HOLD           (!clear_done),
+        .HOLD           (!boot_done),
         .SYS_RESET_n
     );
     assign SYS_READY = SYS_RESET_n;
@@ -195,12 +222,94 @@ module MAIN #(
             .CLK,
             .Primary        (Bus),
             .Secondary      (ExpBus),
-            .WAIT_n         (clear_done)    // V9990TANG: antes BOOT_WAIT_n del bootloader
+            .WAIT_n         (boot_done)     // V9990TANG: antes BOOT_WAIT_n del bootloader
         );
         always_comb ExpBus[BUS_FM].connect_dummy();
-        always_comb ExpBus[BUS_NEXTOR].connect_dummy();
         always_comb ExpBus[BUS_RAM].connect_dummy();
         always_comb ExpBus[BUS_PSG].connect_dummy();
+
+        /***********************************************************
+         * V9990TANG: NEXTOR カートリッジ (v9990_megaram_nextor)
+         *  subranura 2; ROM de 128 KB copiada de la flash (10_0000h)
+         *  a CONFIG::RAM_ADDR_BIOS_NEXTOR por NEXTOR_LOADER tras el
+         *  borrado de la megaROM
+         ***********************************************************/
+        if(CONFIG::ENABLE_NEXTOR) begin
+            logic load_done;
+            assign boot_done = clear_done && load_done;
+
+            // SPI de la TF (como en el top de tnCart)
+            SPI_IF TF();
+            SPI #(
+                .CLK_DIV        (CONFIG_BOARD::TF_CLK_DIV)
+            ) u_tf_spi (
+                .CLK,
+                .RESET_n,
+                .SCLK           (TF_SCLK),
+                .MOSI           (TF_MOSI),
+                .MISO           (TF_MISO),
+                .CS_n           (TF_CS_n),
+                .SPI_Interface  (TF)
+            );
+
+            LED_IF LedNextor();     // sin lector: el LED de la placa es STATUS_LED
+            CARTRIDGE_NEXTOR #(
+                .RAM_ADDR       (CONFIG::RAM_ADDR_BIOS_NEXTOR)
+            ) u_nextor (
+                .RESET_n        (SYS_RESET_n),
+                .CLK,
+                .Bus            (ExpBus[BUS_NEXTOR]),
+                .Ram            (ExpRam[RAM_NEXTOR]),
+                .TF,
+                .Led            (LedNextor)
+            );
+
+            // flash (como en el top de tnCart) y la copia de Nextor
+            FLASH_IF Flash();
+            SPI_IF #(
+                .MOSI_BIT_WIDTH (24 + 8)    // Flash.ADDR_WIDTH + orden
+            ) Flash_SPI();
+            SPI #(
+                .CLK_DIV        (CONFIG_BOARD::FLASH_CLK_DIV)
+            ) u_flash_spi (
+                .CLK,
+                .RESET_n,
+                .SCLK           (FLASH_SCLK),
+                .MOSI           (FLASH_MOSI),
+                .MISO           (FLASH_MISO),
+                .CS_n           (FLASH_CS_n),
+                .SPI_Interface  (Flash_SPI)
+            );
+            FLASH_SPI u_flash (
+                .CLK,
+                .RESET_n,
+                .SPI            (Flash_SPI),
+                .Flash          (Flash)
+            );
+            NEXTOR_LOADER #(
+                .SRC_ADDR       (CONFIG::FLASH_ADDR_BIOS),
+                .DST_ADDR       (CONFIG::RAM_ADDR_BIOS_NEXTOR),
+                .SIZE           (CONFIG::FLASH_SIZE_BIOS_NEXTOR)
+            ) u_loader (
+                .RESET_n,
+                .CLK,
+                .START          (clear_done),
+                .Flash          (Flash),
+                .Ram            (ExpRam[RAM_LOADER]),
+                .DONE           (load_done)
+            );
+        end
+        else begin
+            assign boot_done = clear_done;
+            always_comb ExpBus[BUS_NEXTOR].connect_dummy();
+            // pines en reposo (los que ponia el top hasta la 0.1beta)
+            assign TF_CS_n    = 1'b1;
+            assign TF_SCLK    = 1'b0;
+            assign TF_MOSI    = 1'b1;
+            assign FLASH_CS_n = 1'b1;
+            assign FLASH_SCLK = 1'b0;
+            assign FLASH_MOSI = 1'b0;
+        end
 
         /***********************************************************
          * MEGAROM カートリッジ
@@ -288,6 +397,14 @@ module MAIN #(
     end
     else begin
         assign clear_done = 1'b1;
+        assign boot_done  = 1'b1;
+        // pines de la TF y de la flash en reposo (los que ponia el top)
+        assign TF_CS_n    = 1'b1;
+        assign TF_SCLK    = 1'b0;
+        assign TF_MOSI    = 1'b1;
+        assign FLASH_CS_n = 1'b1;
+        assign FLASH_SCLK = 1'b0;
+        assign FLASH_MOSI = 1'b0;
         always_comb ExpRam[RAM_MEGAROM].connect_dummy();
         always_comb ExpRam[RAM_BOOTLOADER].connect_dummy();
         always_comb Sound[SOUND_MEGAROM].connect_dummy();
