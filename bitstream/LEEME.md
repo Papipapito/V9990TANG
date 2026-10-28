@@ -1,16 +1,21 @@
-# V9990TANG 0.1beta para la WonderTANG 2.02b
+# V9990TANG 0.2beta para la WonderTANG 2.02b
 
 V9990TANG es un cartucho V9990 (el VDP del GFX9000) para MSX. Corre en la
 **WonderTANG 2.02b**, con su Tang Nano 20K. Usa el core tiny9990 de buppu3
 (tnCart) con parches de fidelidad, guarda la VRAM en la SDRAM de la Tang y saca
 la imagen por el HDMI de la Tang (DVI, sin audio).
 
-**Esta versión es para probar en placa.** Los cuatro bitstreams compilan con el
+**Esta versión es para probar en placa.** Los seis bitstreams compilan con el
 timing cerrado y pasan todos los bancos de simulación, incluido el de la placa
 entera, pero **ninguno se ha cargado todavía en una placa**. Lo único probado
 en placa es el hito 1 (el core sin parches, con el bootloader de tnCart), y
 según el usuario funciona. Al final hay una [lista de pruebas](#lista-de-pruebas-en-placa)
 con una tabla para apuntar los resultados.
+
+Novedad de la 0.2beta: las dos variantes **`megaram_nextor_*`**, el cartucho
+"multi todo": V9990 + MegaRAM SCC-I de 4 MB + **Nextor arrancando desde la
+microSD de la Tang**. Las cuatro variantes de la 0.1beta son las mismas (mismo
+cuerpo de `.fs`, mismos CheckSum); se repiten aquí para tenerlo todo junto.
 
 ## Ficheros
 
@@ -20,8 +25,10 @@ con una tabla para apuntar los resultados.
 | `v9990tang_wt202b_v9990_sync_0.1beta.fs` | V9990 solo, reloj del slot | 7 264 153 | `5f5369227e3e` | `0x7B75` |
 | `v9990tang_wt202b_megaram_xtal_0.1beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del cristal | 7 264 153 | `eca3b40eba33` | `0x95F1` |
 | `v9990tang_wt202b_megaram_sync_0.1beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del slot | 7 264 153 | `3812094d40d5` | `0x4693` |
+| `v9990tang_wt202b_megaram_nextor_xtal_0.2beta.fs` | **V9990 + MegaRAM SCC-I de 4 MB + Nextor en la microSD de la Tang**, reloj del cristal | 7 264 153 | `47ed9b813c81` | `0x0BA7` |
+| `v9990tang_wt202b_megaram_nextor_sync_0.2beta.fs` | lo mismo, reloj del slot | 7 264 153 | `3c52b74b0bdb` | `0x1D3F` |
+| `v9990tang_nextor_pack_0.2beta.bin` | **solo para `megaram_nextor_*`**: el kernel oficial `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM` sin cambios, para grabar en la flash en **`0x100000`**. Las otras cuatro `.fs` no lo usan. Licencia: `NEXTOR_LICENSE.md` | 131 072 | `b2394dfca88e` | — |
 | `TNCROM.COM` | cargador de ROMs para la MegaRAM (r3, `v0.07 (V9990TANG r3)`), para MSX-DOS 2 o Nextor | 13 700 | `5f40a90d4918` | — |
-| `v9990tang_nextor_pack_0.2beta.bin` | **para la configuración `v9990_megaram_nextor` (en preparación, rama `hito/nextor`; aún sin `.fs` publicado)**: el kernel oficial `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM` sin cambios, para grabar en la flash en `0x100000` ("exFlash C Bin Erase, Program thru GAO-Bridge"). Las cuatro `.fs` de la 0.1beta no lo usan. Licencia: `NEXTOR_LICENSE.md` | 131 072 | `b2394dfca88e` | — |
 | `NEXTOR_LICENSE.md` | licencia de Nextor (no es MIT: sin uso comercial) | | | |
 | `SHA256SUMS.txt` | el SHA-256 completo de todo lo anterior | | | |
 
@@ -45,8 +52,16 @@ Gowin Programmer lo enseña al cargar el fichero. Para comprobar los ficheros:
   está expandido y la megaROM está en la subranura 0. Al encender es una Konami
   SCC-I RAM de 2 MB con los primeros 32 KB a `FFh`, así que la BIOS no ve
   ninguna ROM. Las ROMs se cargan con `TNCROM.COM`.
+- **`megaram_nextor_*`**: lo mismo que `megaram_*` y además **Nextor en la
+  subranura 2**, con la **microSD de la Tang** como disco (emula el SPI de la
+  MegaFlashROM SCC+ SD; el kernel es el oficial de Konamiman). El MSX arranca
+  MSX-DOS desde la SD y desde ella se cargan las ROMs con `TNCROM.COM`, sin
+  otro cartucho. Al arrancar, el cartucho copia Nextor de la flash de la Tang
+  (`0x100000`) a la SDRAM: por eso hay que grabar también el pack. **Sin el
+  pack grabado, la subranura 2 queda vacía y lo demás funciona igual que
+  `megaram_*`.**
 
-Las cuatro llevan el mismo V9990: los mismos parches, el cuadro PAL, el cursor
+Las seis llevan el mismo V9990: los mismos parches, el cuadro PAL, el cursor
 EOR y R#16.
 
 ## Qué hace falta
@@ -58,8 +73,16 @@ EOR y R#16.
 - Para oír el SCC (solo `megaram_*`): **pon el puente J3**. El SCC sale por el
   DAC I2S de la Tang hacia la salida de audio de la placa y hacia `SOUNDIN`
   del slot. Sin J3 no se oye. Con `v9990_*` no hay ninguna fuente de sonido.
-- Para cargar ROMs: un MSX con **MSX-DOS 2 o Nextor**, desde el disco o la SD
-  del propio MSX (o de otro cartucho), no desde este.
+- Para cargar ROMs con `megaram_*`: un MSX con **MSX-DOS 2 o Nextor**, desde
+  el disco o la SD del propio MSX (o de otro cartucho), no desde este.
+- Para `megaram_nextor_*`: una **microSD** en la ranura de la Tang, con
+  **FAT12 o FAT16** (una partición de hasta 4 GB; Nextor 2.1 también lee
+  FAT16 en tarjetas mayores si la primera partición es FAT16) y en la raíz los
+  `.SYS` de Nextor (`NEXTOR.SYS` y `COMMAND2.COM`, de la misma release 2.1.2),
+  más `TNCROM.COM` y las ROMs. La tarjeta se puede preparar en el PC; también
+  vale una SD que ya arranque en una MegaFlashROM SCC+ SD o en un Carnivore.
+  Un MSX con **64 KB de RAM** (MSX2 o superior, o MSX1 con 64 KB) para
+  arrancar MSX-DOS.
 
 ## Cómo grabarlo
 
@@ -79,12 +102,32 @@ encendido.
 ### 2. Después en la flash externa
 
 Cuando la prueba en SRAM va bien, el `.fs` se graba en la flash SPI externa de
-la Tang, en la dirección **`0x000000`**. No hay nada más que grabar: ni ROM, ni
-BIOS, ni Nextor. Las ROMs de la MegaRAM se cargan cada vez desde el MSX.
+la Tang, en la dirección **`0x000000`**. Con `v9990_*` y `megaram_*` no hay
+nada más que grabar: ni ROM, ni BIOS, ni Nextor. Las ROMs de la MegaRAM se
+cargan cada vez desde el MSX.
 
 - Con openFPGALoader: `openFPGALoader -b tangnano20k -f <fichero.fs>`
 - Con Gowin Programmer: *Access Mode* **External Flash Mode**, *Operation*
   **exFlash Erase,Program thru GAO-Bridge**, *Start Address* `0x000000`.
+
+**Con `megaram_nextor_*` hay que grabar dos cosas**, en este orden o en el
+contrario (son zonas distintas de la flash):
+
+| Qué | Dirección | Gowin Programmer |
+|---|---|---|
+| `v9990tang_wt202b_megaram_nextor_<xtal\|sync>_0.2beta.fs` | `0x000000` | **exFlash Erase,Program thru GAO-Bridge**, *Start Address* `0x000000` |
+| `v9990tang_nextor_pack_0.2beta.bin` | **`0x100000`** | **exFlash C Bin Erase,Program thru GAO-Bridge**, *Start Address* `0x100000` (en *User Code / File name* el `.bin`) |
+
+Por línea de órdenes: `openFPGALoader -b tangnano20k -f <fichero.fs>` para el
+bitstream y, para el pack, `openFPGALoader -b tangnano20k -f -o 0x100000
+v9990tang_nextor_pack_0.2beta.bin` (o `programmer_cli -d GW2AR-18C -r 38
+--spiaddr 0x100000 -f v9990tang_nextor_pack_0.2beta.bin` de Gowin).
+
+El pack ocupa `0x100000`-`0x11FFFF`; grabar el `.fs` en `0x000000` no lo toca
+y grabar el pack no toca el `.fs`. Para probar en SRAM antes de grabar nada,
+el pack tiene que estar ya en la flash: el bitstream lo lee de ahí también
+cuando se carga por SRAM. Si la flash está vacía en `0x100000`, el cartucho
+arranca como `megaram_*` (sin Nextor).
 
 **Cuidado con la flash compartida con el MoonTANG.** El MoonTANG guarda su ROM
 de muestras YRW801 en la misma flash, en `0x200000`. Grabar el `.fs` en
@@ -101,6 +144,11 @@ de la megaROM. Mientras tanto sigue reteniendo el MSX con `/WAIT`, con un
 **tope de 50 ms**: si en ese tiempo no queda listo, suelta el MSX, que arranca
 sin el cartucho. En el banco de simulación el MSX echa a andar unos 6 ms
 después de que la FPGA queda configurada.
+
+En `megaram_nextor_*`, tras el borrado copia además los 128 KB de Nextor de la
+flash a la SDRAM (**~70 ms**) y el tope sube a **200 ms**. Si la copia no
+acaba a tiempo, el MSX arranca igual, sin Nextor. Con el pack grabado y una
+SD arrancable, la BIOS encuentra Nextor en la subranura 2 y sale MSX-DOS.
 
 ### El LED
 
@@ -190,6 +238,22 @@ máximos de la ventana de 4 MB.
 - En `sync`, **sin el MSX encendido no hay HDMI**.
 - La salida de vídeo no es CEA: algún monitor puede rechazarla, sobre todo los
   modos PAL y los 59,92 Hz de `sync`.
+- **Nextor** (`megaram_nextor_*`):
+  - La SD va en **modo SPI a 18 MHz**; no hay detección de tarjeta ni de
+    protección de escritura (Nextor las ve siempre "presente" y escribible). Un
+    cambio de tarjeta en caliente lo tiene que notar el propio Nextor.
+  - Solo la **microSD de la Tang**; la ranura SD de la WonderTANG, si la tiene
+    la placa, no se usa.
+  - La ROM de Nextor es de **solo lectura** (no hay escritura en la flash
+    desde el MSX ni `NEXTOR.SYS`/kernel actualizables en caliente: para
+    cambiar de kernel se vuelve a grabar el pack).
+  - Igual que la MegaRAM, está **pensado para 3,58 MHz**. La lectura del SPI
+    en el banco 40h devuelve el byte anterior y lanza otra transferencia: a
+    más velocidad puede perder bytes.
+  - La subranura 2 lleva solo la página 1 (`4000h`-`7FFFh`); la 0 es la
+    MegaRAM y la 1 y la 3 están vacías.
+  - Nada de esto se ha probado en placa: ni la copia desde la flash, ni la SD,
+    ni que la BIOS arranque Nextor con la MegaRAM al lado.
 
 ## Lista de pruebas en placa
 
@@ -234,6 +298,17 @@ Apunta cada resultado en la tabla del final.
     pantalla apagada y tras 1 hora en standby. En `megaram_*`, comprueba
     también que la VRAM sigue intacta tras 10 minutos de `LDIR` sobre la
     megaROM.
+11. **Nextor** (`megaram_nextor_*`, MSX a 3,58 MHz, pack grabado en
+    `0x100000`, microSD con los `.SYS` y `TNCROM.COM`). Primero **sin SD**: el
+    MSX tiene que arrancar a BASIC igual (Nextor sin tarjeta no cuelga la
+    máquina). Después con SD: sale MSX-DOS (o el `COMMAND2` de Nextor),
+    `DIR` lista la tarjeta, copia un fichero de 1 MB a la misma SD y
+    compáralo (`FC` o un `COPY` y vuelta). Después `TNCROM -T KONAMI -R
+    GNG2M.ROM` desde la propia SD: el juego arranca con la MegaRAM en la
+    subranura 0 y Nextor en la 2. Pulsa el reset del MSX: vuelve a arrancar
+    MSX-DOS desde la SD. Prueba por último sin el pack grabado (borra solo
+    `0x100000`, o prueba la `.fs` en una Tang con la flash vacía): la BIOS no
+    debe ver nada en la subranura 2 y la MegaRAM debe funcionar.
 
 ### Resultados
 
@@ -250,6 +325,10 @@ Apunta cada resultado en la tabla del final.
 | 8 | Reset | | | | | | | |
 | 9 | LED y reloj del slot | | | | | | | |
 | 10 | VRAM (1 h pantalla apagada, 1 h standby, LDIR) | | | | | | | |
+| 11 | Nextor sin SD | | | | | | | |
+| 11 | Nextor: arranque, DIR, copia de 1 MB | | | | | | | |
+| 11 | Nextor: TNCROM desde la SD y reset | | | | | | | |
+| 11 | Nextor sin pack grabado | | | | | | | |
 | | | | | | | | | |
 | | | | | | | | | |
 
@@ -259,9 +338,12 @@ Apunta cada resultado en la tabla del final.
   con los pines.
 - [`../docs/VERIFICATION.md`](../docs/VERIFICATION.md): la puerta de cada
   build, los bancos de simulación y la matriz de monitores.
-- [`../docs/changelog.md`](../docs/changelog.md): lo que entra en la 0.1beta.
+- [`../docs/notas/nextor.md`](../docs/notas/nextor.md): cómo está hecho
+  Nextor (arranque, mapa de la SDRAM y de la flash, pack, builds).
+- [`../docs/changelog.md`](../docs/changelog.md): lo que entra en la 0.1beta y
+  en la 0.2beta.
 - Evidencia de cada build (recursos, timing, salida de la puerta):
-  `../fpga/reports/v0.1beta/<variante>/`.
+  `../fpga/reports/v0.1beta/<variante>/` y `../fpga/reports/nextor/<variante>/`.
 
 Licencia BSD 3-Clause (ver [`../LICENSE`](../LICENSE)). El IP DVI_TX de Gowin
 que va dentro del bitstream es del fabricante.

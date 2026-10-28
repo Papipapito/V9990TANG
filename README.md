@@ -32,12 +32,13 @@ en una placa**. El hito 1 (core sin parches, con el bootloader de tnCart) sí se
 probó en placa y, según el usuario, funciona. Qué `.fs` usar y qué esperar, en
 [`docs/WONDERTANG.md`](docs/WONDERTANG.md).
 
-**En preparación (rama `hito/nextor`)**: la configuración
-`v9990_megaram_nextor`, V9990 + MegaRAM + Nextor con la microSD de la Tang,
-para arrancar MSX-DOS desde la SD y cargar las ROMs con `TNCROM.COM` desde ella
+La **0.2beta** añade la tercera configuración, `v9990_megaram_nextor`: V9990 +
+MegaRAM + Nextor con la microSD de la Tang, para arrancar MSX-DOS desde la SD y
+cargar las ROMs con `TNCROM.COM` desde ella
 ([`docs/notas/nextor.md`](docs/notas/nextor.md)). Pasa la puerta y los bancos;
-sin probar en placa. La ROM de Nextor va en la flash en `0x100000`
-(`bitstream/v9990tang_nextor_pack_0.2beta.bin`).
+sin probar en placa. Hacen falta dos grabaciones: el `.fs` en `0x000000` y la
+ROM de Nextor en `0x100000` (`bitstream/v9990tang_nextor_pack_0.2beta.bin`).
+Todo lo que hay que grabar y cómo, en [`bitstream/LEEME.md`](bitstream/LEEME.md).
 
 ## Compilar
 

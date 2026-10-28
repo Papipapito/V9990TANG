@@ -3,10 +3,24 @@
 Formato: un apartado por hito o versión, lo más reciente arriba. Las cifras de
 cada build están en [VERIFICATION.md](VERIFICATION.md).
 
-## Configuración `v9990_megaram_nextor` (rama `hito/nextor`, 28 de octubre de 2026, sin fusionar)
+## 0.2beta (28 de octubre de 2026, etiqueta local `v0.2beta`, sin publicar)
 
-El cartucho "multi todo": V9990 + MegaRAM SCC-I + Nextor con la microSD de la
-Tang ([notas/nextor.md](notas/nextor.md)). **Sin probar en placa.**
+Añade la configuración `v9990_megaram_nextor`, el cartucho "multi todo": V9990
++ MegaRAM SCC-I + Nextor con la microSD de la Tang
+([notas/nextor.md](notas/nextor.md)). **Sin probar en placa**, como el resto.
+
+- **`bitstream/`**: `v9990tang_wt202b_megaram_nextor_{xtal,sync}_0.2beta.fs`
+  (CheckSum `0x0BA7` y `0x1D3F`; copias de las builds de
+  `fpga/reports/nextor/`), el pack de Nextor para `0x100000`, `SHA256SUMS.txt`
+  con todo, y el LEEME y el README ampliados (las dos grabaciones, la microSD,
+  los 200 ms, los límites de Nextor y la prueba 11). Los cuatro `.fs` de la
+  0.1beta no cambian.
+- Revisión corta antes de fusionar (tres lentes con refutador): ningún fallo
+  de RTL; se corrige la sección 7 de la nota (el arreglo del banco es una
+  lectura de `FFFFh` entre la escritura y el cambio de páginas, no una espera
+  en `OP_SLOT`) y se apunta como límite que, tras una pérdida de enganche con
+  el MSX en marcha, la copia repetida retiene al Z80 en `/WAIT` ~75 ms sin
+  refresco de su DRAM (esa sesión ya está perdida: la megaRAM se borra).
 
 - `fpga/config/v9990_megaram_nextor.sv`, `build_v9990_megaram_nextor_{xtal,sync}.tcl`
   y sus `.sdc` (copias de los de MegaRAM).

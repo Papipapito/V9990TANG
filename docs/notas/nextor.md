@@ -50,6 +50,12 @@ a FFh, ~1,5 ms) → `NEXTOR_LOADER` (128 KB, ~68 ms) → `SYS_RESET_n`.
   (5 400 000 ciclos de 27 MHz; el arranque completo dura ~72 ms en el banco).
   Si la copia no acabara, el MSX arranca a los 200 ms con el cartucho mudo,
   como con cualquier otro fallo de arranque. tnCart retenía al MSX ~1 s.
+  Pega del tope alto: si se pierde el enganche **con el MSX ya en marcha**, se
+  repiten borrado y copia y `BOOT_HOLD` retiene al Z80 en `/WAIT` ~75 ms
+  (antes ~4 ms), sin ciclos de refresco de la DRAM del MSX. No está medido en
+  placa; esa sesión ya está perdida de todos modos (la megaRAM se borra y
+  Nextor se reinicia). Si molestara: saltar la copia tras un reenganche si la
+  SDRAM no se ha perdido, o no retener al Z80 en los reenganches.
 - La copia empieza nada más soltarse el reset de la carcasa, **sin esperar al
   /RESET del MSX** (el bootloader de tnCart esperaba a que el MSX lo soltara).
   Tras una pérdida de enganche se repiten el borrado y la copia.
@@ -193,8 +199,14 @@ Arreglo del banco encontrado aquí: `OP_SLOT` cambiaba `slot_sel` antes de que
 bajara el /WR de la escritura anterior (las tareas del Z80 vuelven antes de
 soltar sus strobes), así que la escritura de `FFFFh` = 00h justo antes de un
 cambio de páginas se perdía y la fase H fallaba (50 fallos, todos de la
-megaROM leída en la subranura de Nextor). Ahora `OP_SLOT` espera al final del
-ciclo anterior. No era del RTL.
+megaROM leída en la subranura de Nextor). Se probó a esperar en `OP_SLOT` al
+final del ciclo anterior (`d08a6c6`), pero ese `at(zt)` colgaba Verilator, así
+que `OP_SLOT` sigue cambiando `slot_sel` en el acto (`e051305`) y el arreglo
+que queda es del programa: **una lectura de `FFFFh` entre la escritura y el
+cambio de páginas** (`tb_top.sv`, comentario junto a `OP_SLOT`; las lecturas
+con máscara `FFh` de las fases N y H detectan la pérdida si vuelve a ocurrir).
+Quien añada una escritura seguida directamente de `p_op(OP_SLOT, ...)` tiene
+que poner una lectura en medio. No era del RTL.
 
 Resultados (`bash fpga/tb/top/run.sh`, las seis variantes, sobre el árbol
 de `e051305`): **18 de 18 pasan**. Nextor `xtal` y `sync`: `full` 797
