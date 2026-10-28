@@ -1,0 +1,5 @@
+v9990_megaram_nextor_xtal.fs, build del Wed Oct 28 12:20:15 2026
+CheckSum: 0x0BA7
+md5 del fichero: 8e36910a5e8bc9c8248c1fb906b2aac6
+md5 sin las lineas de cabecera (//): ec6da59ba6fb479b83c09d68fc04db64
+comparado con v9990_megaram_nextor_xtal.fs (build del Wed Oct 28 11:39:24 2026, CheckSum 0x0BA7): cuerpo IDENTICO
