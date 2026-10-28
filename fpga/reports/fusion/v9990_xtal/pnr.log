@@ -1,7 +1,7 @@
-Reading netlist file: "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\gwsynthesis\v9990_xtal.vg"
-Parsing netlist file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\gwsynthesis\v9990_xtal.vg" completed
+Reading netlist file: "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\gwsynthesis\v9990_xtal.vg"
+Parsing netlist file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\gwsynthesis\v9990_xtal.vg" completed
 Processing netlist completed
-Reading constraint file: "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\src\board\wt200b\board_wt200b.cst"
+Reading constraint file: "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\src\board\wt200b\board_wt200b.cst"
 Physical Constraint parsed completed
 Running placement......
 [10%] Placement Phase 0 completed
@@ -21,12 +21,12 @@ Bitstream generation in progress......
 Bitstream generation completed
 Running power analysis......
 [100%] Power analysis completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.power.html" completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.pin.html" completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.rpt.html" completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.rpt.txt" completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.sdf" completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.tr.html" completed
-Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\pnr\v9990_xtal.tr" completed
-Tue Oct 27 21:48:46 2026
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.power.html" completed
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.pin.html" completed
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.rpt.html" completed
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.rpt.txt" completed
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.sdf" completed
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.tr.html" completed
+Generate file "C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\pnr\v9990_xtal.tr" completed
+Wed Oct 28 08:44:28 2026
 

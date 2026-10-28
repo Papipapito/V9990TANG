@@ -1,12 +1,10 @@
-PASA   .rpt.txt y .tr de la misma build (2026-10-27 22:18:03 / 2026-10-27 22:18:09)
-SIN REF  recursos sin referencia: RTL nuevo tras la revision (c8e4fd2): flop sys_bus_ready y rearme del tope en xtal
-       Logic: 15253/20736 (73.6 %), frente a 15260: -7 (-0.05 %)
-       CLS: 8973/10368 (86.5 %), frente a 8971: +2 (+0.02 %)
-       BSRAM: 29/46 (63.0 %), frente a 29: +0 (+0.00 %)
+PASA   .rpt.txt y .tr de la misma build (2026-10-28 09:07:59 / 2026-10-28 09:08:04)
+PASA   Logic: 15253/20736 (73.6 %), referencia 15253, desviacion +0.00 % (tolerancia 1.0 %)
+PASA   CLS: 8973/10368 (86.5 %), referencia 8973, desviacion +0.00 % (tolerancia 1.0 %)
+PASA   BSRAM: 29/46 (63.0 %), referencia 29, desviacion +0.00 % (tolerancia 1.0 %)
        Register: 6978/15915
 PASA   CLS <= 9331
        CLS por debajo del aviso (9250)
-PASA   BSRAM <= 46
 PASA   PRIMARY: 8/8 (maximo 8)
 PASA   rPLL: 2/2 (esperado 2)
        LW: 8/8
@@ -33,13 +31,13 @@ PASA   Fmax CLK_BASE: 125.925 MHz (minimo 109)
        Fmax CLK_TMDS_P: 65.436 MHz
        Fmax CLK_DAC: 111.096 MHz
 PASA   forma de DCLK: -offset 7.55 en el .sdc, en el .tr periodo 37.249 (4 x CLK_BASE = 37.248), subida 7.55, maestro CLK_BASE, relacion con CLK_BASE en los set_clock_groups: mismo
-PASA   .sdf de la misma build (2026-10-27 22:18:03)
+PASA   .sdf de la misma build (2026-10-28 09:07:59)
 PASA   offset de DCLK (modelo lento): flanco real >= 7.719 ns (PLL 4.686 + red 2.274 + tC2Q 0.232 + ruta a la OR 0.156 + LUT mas rapida del .sdf 0.371, u_clk/n11_s2 I0), modelado 7.550 ns, margen +0.169 ns
-PASA   log de sintesis fpga/reports/fusion/v9990_megaram_sync/gwsynthesis.log completo
+PASA   log de sintesis fpga/impl/gwsynthesis/v9990_megaram_sync.log completo
 PASA   errores en el log de sintesis: 0
          avisos (leerlos a mano): CK3000 x3, CV0016 x3, NL0002 x5
-PASA   log de P&R fpga/reports/fusion/v9990_megaram_sync/pnr.log completo
-PASA   log de P&R de esta build (2026-10-27 22:18:10 / .tr 2026-10-27 22:18:09)
+PASA   log de P&R fpga/impl/pnr/v9990_megaram_sync.log completo
+PASA   log de P&R de esta build (2026-10-28 09:08:04 / .tr 2026-10-28 09:08:04)
 PASA   errores en el log de P&R: 0
          avisos (leerlos a mano): PR1014 x2
 

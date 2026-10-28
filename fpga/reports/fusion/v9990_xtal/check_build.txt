@@ -1,12 +1,10 @@
-PASA   .rpt.txt y .tr de la misma build (2026-10-27 21:48:38 / 2026-10-27 21:48:45)
-SIN REF  recursos sin referencia: RTL nuevo tras la revision (c8e4fd2): flop sys_bus_ready y rearme del tope en xtal
-       Logic: 13653/20736 (65.8 %), frente a 13824: -171 (-1.24 %)
-       CLS: 8421/10368 (81.2 %), frente a 8493: -72 (-0.85 %)
-       BSRAM: 24/46 (52.2 %), frente a 24: +0 (+0.00 %)
+PASA   .rpt.txt y .tr de la misma build (2026-10-28 08:44:23 / 2026-10-28 08:44:28)
+PASA   Logic: 13653/20736 (65.8 %), referencia 13653, desviacion +0.00 % (tolerancia 1.0 %)
+PASA   CLS: 8421/10368 (81.2 %), referencia 8421, desviacion +0.00 % (tolerancia 1.0 %)
+PASA   BSRAM: 24/46 (52.2 %), referencia 24, desviacion +0.00 % (tolerancia 1.0 %)
        Register: 5975/15915
 PASA   CLS <= 9331
        CLS por debajo del aviso (9250)
-PASA   BSRAM <= 46
 PASA   PRIMARY: 8/8 (maximo 8)
 PASA   rPLL: 2/2 (esperado 2)
        LW: 7/8
@@ -33,13 +31,13 @@ PASA   Fmax CLK_BASE: 111.763 MHz (minimo 109)
        Fmax CLK_TMDS_P: 60.432 MHz
        Fmax CLK_DAC: 105.003 MHz
 PASA   forma de DCLK: -offset 8.2 en el .sdc, en el .tr periodo 37.037 (4 x CLK_BASE = 37.036), subida 8.2, maestro CLK_BASE, relacion con CLK_BASE en los set_clock_groups: mismo
-PASA   .sdf de la misma build (2026-10-27 21:48:39)
+PASA   .sdf de la misma build (2026-10-28 08:44:23)
 PASA   offset de DCLK (modelo lento): flanco real >= 8.367 ns (PLL 5.329 + red 2.274 + tC2Q 0.232 + ruta a la OR 0.161 + LUT mas rapida del .sdf 0.371, u_guard/n1121_s0 I1), modelado 8.200 ns, margen +0.167 ns
-PASA   log de sintesis fpga/reports/fusion/v9990_xtal/gwsynthesis.log completo
+PASA   log de sintesis fpga/impl/gwsynthesis/v9990_xtal.log completo
 PASA   errores en el log de sintesis: 0
          avisos (leerlos a mano): CV0016 x3, NL0002 x5
-PASA   log de P&R fpga/reports/fusion/v9990_xtal/pnr.log completo
-PASA   log de P&R de esta build (2026-10-27 21:48:46 / .tr 2026-10-27 21:48:45)
+PASA   log de P&R fpga/impl/pnr/v9990_xtal.log completo
+PASA   log de P&R de esta build (2026-10-28 08:44:28 / .tr 2026-10-28 08:44:28)
 PASA   errores en el log de P&R: 0
          avisos (leerlos a mano): PR1014 x1
 

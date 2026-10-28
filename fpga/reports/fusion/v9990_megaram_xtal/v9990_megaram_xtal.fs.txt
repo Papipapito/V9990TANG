@@ -1,5 +1,5 @@
-v9990_megaram_xtal.fs, build del Tue Oct 27 21:49:28 2026
+v9990_megaram_xtal.fs, build del Wed Oct 28 08:59:49 2026
 CheckSum: 0x95F1
-md5 del fichero: 57cc56a2da85eca38ffec5a4d409ba97
+md5 del fichero: 4593198afdade5c87a99f8bc25d49e8d
 md5 sin las lineas de cabecera (//): 97bb2beedcd3d2a89df04737ebe1f801
-comparado con v9990_megaram_xtal.fs (build del Tue Oct 27 21:05:38 2026, CheckSum 0x80B4): cuerpo DISTINTO (md5 0db63ce091e43ab86d3188c25dc277f3)
+comparado con v9990_megaram_xtal.fs (build del Tue Oct 27 21:49:28 2026, CheckSum 0x95F1): cuerpo IDENTICO

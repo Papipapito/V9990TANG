@@ -51,14 +51,14 @@ Note:Core Timing Report
 
 1. Timing Messages
 <Report Title>: Timing Analysis Report
-<Design File>: C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_megaram_xtal\fpga\impl\gwsynthesis\v9990_megaram_xtal.vg
-<Physical Constraints File>: C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_megaram_xtal\fpga\src\board\wt200b\board_wt200b.cst
-<Timing Constraints File>: C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_megaram_xtal\fpga\constraints\v9990_megaram_xtal.sdc
+<Design File>: C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\gwsynthesis\v9990_megaram_xtal.vg
+<Physical Constraints File>: C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\src\board\wt200b\board_wt200b.cst
+<Timing Constraints File>: C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\constraints\v9990_megaram_xtal.sdc
 <Tool Version>: V1.9.12.03 (64-bit)
 <Part Number>: GW2AR-LV18QN88C8/I7
 <Device>: GW2AR-18
 <Device Version>: C
-<Created Time>: Tue Oct 27 21:49:37 2026
+<Created Time>: Wed Oct 28 09:00:01 2026
 
 
 2. Timing Summaries

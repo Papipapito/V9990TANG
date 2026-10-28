@@ -5,34 +5,34 @@
 1. PnR Messages
 
   <Report Title>: PnR Report
-  <Design File>: C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\impl\gwsynthesis\v9990_xtal.vg
-  <Physical Constraints File>: C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\src\board\wt200b\board_wt200b.cst
-  <Timing Constraints File>: C:\Users\alber\AppData\Local\Temp\v99wt\fin_v9990_xtal\fpga\constraints\v9990_xtal.sdc
+  <Design File>: C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\impl\gwsynthesis\v9990_xtal.vg
+  <Physical Constraints File>: C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\src\board\wt200b\board_wt200b.cst
+  <Timing Constraints File>: C:\Users\alber\proyectosAI\msx\V9990TANG-wt\fusion\fpga\constraints\v9990_xtal.sdc
   <Tool Version>: V1.9.12.03 (64-bit)
   <Part Number>: GW2AR-LV18QN88C8/I7
   <Device>: GW2AR-18
   <Device Version>: C
-  <Created Time>:Tue Oct 27 21:48:38 2026
+  <Created Time>:Wed Oct 28 08:44:23 2026
 
 
 2. PnR Details
 
   Running placement:
-    Placement Phase 0: CPU time = 0h 0m 9s, Elapsed time = 0h 0m 9s
-    Placement Phase 1: CPU time = 0h 0m 2s, Elapsed time = 0h 0m 2s
-    Placement Phase 2: CPU time = 0h 0m 27s, Elapsed time = 0h 0m 27s
-    Placement Phase 3: CPU time = 0h 0m 56s, Elapsed time = 0h 0m 56s
-    Total Placement: CPU time = 0h 1m 33s, Elapsed time = 0h 1m 33s
+    Placement Phase 0: CPU time = 0h 0m 16s, Elapsed time = 0h 0m 16s
+    Placement Phase 1: CPU time = 0h 0m 3s, Elapsed time = 0h 0m 3s
+    Placement Phase 2: CPU time = 0h 0m 39s, Elapsed time = 0h 0m 39s
+    Placement Phase 3: CPU time = 0h 1m 29s, Elapsed time = 0h 1m 29s
+    Total Placement: CPU time = 0h 2m 28s, Elapsed time = 0h 2m 28s
  Running routing:
-    Routing Phase 0: CPU time = 0h 0m 0.012s, Elapsed time = 0h 0m 0.012s
-    Routing Phase 1: CPU time = 0h 0m 11s, Elapsed time = 0h 0m 11s
-    Routing Phase 2: CPU time = 0h 1m 10s, Elapsed time = 0h 1m 10s
+    Routing Phase 0: CPU time = 0h 0m 0.024s, Elapsed time = 0h 0m 0.023s
+    Routing Phase 1: CPU time = 0h 0m 16s, Elapsed time = 0h 0m 16s
+    Routing Phase 2: CPU time = 0h 1m 51s, Elapsed time = 0h 1m 51s
     Routing Phase 3: CPU time = 0h 0m 0s, Elapsed time = 0h 0m 0s
-    Total Routing: CPU time = 0h 1m 21s, Elapsed time = 0h 1m 21s
+    Total Routing: CPU time = 0h 2m 7s, Elapsed time = 0h 2m 7s
  Generate output files:
-    CPU time = 0h 0m 9s, Elapsed time = 0h 0m 9s
+    CPU time = 0h 0m 8s, Elapsed time = 0h 0m 8s
 
- Total Time and Memory Usage: CPU time = 0h 3m 3s, Elapsed time = 0h 3m 3s, Peak memory usage = 597MB
+ Total Time and Memory Usage: CPU time = 0h 4m 42s, Elapsed time = 0h 4m 42s, Peak memory usage = 600MB
 
 
 3. Resource Usage Summary
