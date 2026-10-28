@@ -196,7 +196,14 @@ cambio de páginas se perdía y la fase H fallaba (50 fallos, todos de la
 megaROM leída en la subranura de Nextor). Ahora `OP_SLOT` espera al final del
 ciclo anterior. No era del RTL.
 
-Resultados: RESULTADOS_TB
+Resultados (`bash fpga/tb/top/run.sh`, las seis variantes, sobre el árbol
+de `e051305`): **18 de 18 pasan**. Nextor `xtal` y `sync`: `full` 797
+comprobaciones, 0 fallos (597 lecturas del slot, TW máximo 3, ninguna mal);
+`io` 226, 0 fallos (lecturas a 5,37 MHz contadas: 22 y 35 de 71 mal, como en la
+megaROM); `nomsx` 15. Las cuatro de la 0.1beta, como antes (12 de 12) más la
+comprobación de que la flash y la microSD no se tocan. 0 ranuras perdidas, 0
+errores de SDRAM y 0 `WAIT_TIMEOUT` en todas. El arranque de Nextor: primer M1
+del Z80 a 72,24 ms (`SYS_READY` a 72,237 ms; `PLL_OK` a 3,64).
 
 ## 8. Riesgos y pendiente
 

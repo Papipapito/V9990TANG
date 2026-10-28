@@ -184,6 +184,49 @@ porque llaman a WSL ellos mismos. El detalle de cada banco está en su nota de
 | megaram | `cd fpga/tb/megaram && bash run.sh` (Git Bash) | 17 variantes, 25 `RESULTADO: PASA`, 0 `FALLA` |
 | tncrom | `tools/tncrom/test/run.sh` (WSL) | 90 comprobaciones, 0 fallos |
 | placa entera | `bash fpga/tb/top/run.sh` (Git Bash) | 12 de 12 (4 variantes por `full`, `io` y `nomsx`); 0 ranuras perdidas, 0 errores de SDRAM, 0 `WAIT_TIMEOUT`. MegaRAM a 5,37 MHz (medida, no contrato): 16 y 29 de 63 lecturas mal |
+| placa entera, rama `hito/nextor` | `bash fpga/tb/top/run.sh` (Git Bash; seis variantes) | 18 de 18 (6 variantes por `full`, `io` y `nomsx`); en las dos de Nextor, `full` con 797 comprobaciones (copia de la flash, subranura 2, "AB", bancos, microSD por SPI, MegaRAM y V9990); 0 ranuras perdidas, 0 errores de SDRAM, 0 `WAIT_TIMEOUT` |
+
+## Builds de `v9990_megaram_nextor`
+
+Rama `hito/nextor` ([notas/nextor.md](notas/nextor.md)), Gowin 1.9.12.03, RTL
+de `3bec232`, compiladas en el worktree desde el árbol commiteado. Primera build
+de la configuración: puerta con `--sin-ref` y `--compara` frente a la
+`v9990_megaram` de la misma variante en la 0.1beta. Evidencia en
+`fpga/reports/nextor/<variante>/`. **Pasan las dos sin palancas**
+(`ENABLE_R16`, `ENABLE_CURSOR_EOR` y `BLEND` siguen a 1). Sin probar en placa.
+
+```
+python tools/check_build.py fpga/impl/pnr/v9990_megaram_nextor_xtal --sin-ref "primera build de v9990_megaram_nextor" --compara 15168,9019,29 --max-bsram 46 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_megaram_nextor_xtal.log --log fpga/impl/pnr/v9990_megaram_nextor_xtal.log --sdc fpga/constraints/v9990_megaram_nextor_xtal.sdc
+python tools/check_build.py fpga/impl/pnr/v9990_megaram_nextor_sync --sin-ref "primera build de v9990_megaram_nextor" --compara 15253,8973,29 --max-bsram 46 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_megaram_nextor_sync.log --log fpga/impl/pnr/v9990_megaram_nextor_sync.log --sdc fpga/constraints/v9990_megaram_nextor_sync.sdc
+```
+
+Desde la segunda build, `--ref-logic/--ref-cls/--ref-bsram` con las cifras de
+esta tabla.
+
+| | `v9990_megaram_nextor_xtal` | `v9990_megaram_nextor_sync` |
+|---|---|---|
+| Opciones (place / route) | 2 / 1 | 0 / 1 |
+| Lógica | 15 578 (+410 frente a `v9990_megaram_xtal`) | 15 647 (+394 frente a `v9990_megaram_sync`) |
+| CLS (máximo 9 331, aviso 9 250) | 9 128 | 9 204 |
+| BSRAM | 29/46 | 29/46 |
+| PRIMARY / rPLL | 8/8, 2/2 | 8/8, 2/2 |
+| Endpoints violados (setup, hold, recovery, removal) | 0 | 0 |
+| Peor slack: setup / hold | +0,444 / +0,074 ns | +0,414 / +0,074 ns |
+| Peor slack: recovery / removal | +4,749 / +0,324 ns | +5,101 / +0,591 ns |
+| Fmax `CLK_BASE` (mínimo 109) | 113,445 MHz | 112,389 MHz |
+| Carrera `CLK_BASE` → `DCLK` (setup / hold) | +1,517 / +4,376 ns | +1,422 / +4,655 ns |
+| Margen del offset de `DCLK` (SDF) | +0,667 ns | +0,174 ns |
+| `.fs`: CheckSum, md5 del cuerpo | `0x0BA7`, `ec6da59b` | `0x1D3F`, `d11d4994` |
+| Avisos | `CV0016` x1 (`UART_RX`), `NL0002` x5; `PR1014` x1 | `CK3000` x3, `CV0016` x1, `NL0002` x5; `PR1014` x2 |
+
+El barrido de opciones está en la nota (sección 5): con la mayoría de juegos la
+Fmax queda por debajo de 109 MHz. El cuerpo de cada `.fs` es idéntico al de la
+build del barrido con las mismas opciones.
+
+**Regresión de la 0.1beta**: las cuatro builds de la 0.1beta rehechas sobre
+este árbol dan el mismo cuerpo de `.fs` que los de `bitstream/` y pasan la
+puerta con las referencias de la 0.1beta
+(`fpga/reports/nextor/regresion_0.1beta.txt`).
 
 ## Builds de la fusión
 
