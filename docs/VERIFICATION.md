@@ -144,10 +144,11 @@ salida de la puerta.
 ## Builds de la fusión
 
 Gowin 1.9.12.03, rama `hito/fusion` en `c8e4fd2` (la fusión, el NOP de la
-SDRAM en el reset y los arreglos de la guardia de la revisión). Cada variante
+SDRAM en el reset y los arreglos de la guardia de la revisión); rehechas sobre
+`055c865`, con el mismo cuerpo de `.fs`, y pasadas con referencia (`36f8f5b`). Cada variante
 con las opciones de P&R de su `build_*.tcl`. Evidencia en
 `fpga/reports/fusion/<variante>/` (`check_build.txt` es la salida de la
-puerta); los `.fs`, en `fpga/impl/fusion_rev/` (git los ignora).
+puerta); los `.fs`, en `fpga/impl/final/` y `fpga/impl/fusion_rev/` (git los ignora).
 
 | | `v9990_xtal` | `v9990_sync` | `v9990_megaram_xtal` | `v9990_megaram_sync` |
 |---|---|---|---|---|

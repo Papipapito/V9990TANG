@@ -188,3 +188,42 @@ pasan la puerta. Sus `.fs` (`fpga/impl/sdram_nop/`, evidencia en
 `fpga/reports/sdram_nop/`) sustituyen a los de la sección 4. Las 12
 ejecuciones del banco pasan sobre el árbol arreglado, y el banco de
 `tb/sdram` da las mismas cifras. Nada de esto se ha probado en la placa.
+
+## 8. Revisión de la fusión y builds finales
+
+Dos revisores repasaron el árbol fusionado (`373a53f`). Veredictos:
+"aceptable" (RTL, bancos y builds) y "aceptable con arreglos" (documentación).
+Lo que se ha hecho con cada hallazgo:
+
+| Hallazgo | Severidad | Qué se hizo |
+|---|---|---|
+| La guardia sincronizaba a `CLK_27M` la AND combinacional `sys_ready && bus_ok` de dos flops de `CLK_BASE`; el comentario de los `.sdc` decía `SYS_RESET_n` | baja | Arreglado (`c8e4fd2`): la AND pasa por un flop de `CLK_BASE` (`sys_bus_ready`) antes de cruzar; comentario de los cuatro `.sdc` al día |
+| En `xtal`, con la Tang alimentada por USB, al encender otra vez el MSX no había `BOOT_HOLD` y el Z80 corría hasta 2,43 ms con el cartucho mudo | baja | Arreglado (`c8e4fd2`): el tope se rearma cuando vuelve el reloj del slot. Escenario nuevo `usb` en `tb/integ`; con la guardia anterior falla (3 de 32, sin `BOOT_HOLD` durante 2,428 ms) |
+| `WONDERTANG.md` seguía en el hito 1 (J3, slot, bootloader, LED, qué `.fs`) | media | Reescrita por configuración y variante (`f470cf1`, `3510007`) |
+| `WONDERTANG.md` decía que todo cabía a 5,37 MHz | media | Limitado a la E/S del V9990; la MegaRAM, solo a 3,58 MHz (`f470cf1`) |
+| README y changelog en el hito 1 | baja | Al día (`8eec89c`) |
+| `VERIFICATION.md`: referencias de la puerta del hito 1 y matriz de monitores solo NTSC de `xtal` | baja | Orden de la puerta por variante con sus referencias y matriz con NTSC/PAL y `xtal`/`sync` (`3510007`) |
+
+Con el RTL nuevo, `v9990_megaram_sync` con place 2 / route 1 daba 109,50 MHz,
+al límite; pasa a place 2 / route 2 (125,93 MHz, `055c865`). Las otras tres
+conservan sus opciones.
+
+**Builds finales** (`36f8f5b`): las cuatro se han rehecho sobre `055c865` con
+`gw_sh build_<variante>.tcl` y pasado la puerta **con referencia** (las cifras
+de `VERIFICATION.md`, tolerancia 1 %, desviación +0,00 % en las cuatro). El
+cuerpo de cada `.fs` es idéntico al de la build anterior con el mismo RTL y
+las mismas opciones (P&R determinista). Evidencia en
+`fpga/reports/fusion/<variante>/`. Los `.fs` están en `fpga/impl/final/` y
+`fpga/impl/fusion_rev/`, que git ignora, y son los que hay que cargar en la
+placa:
+
+| Variante | Opciones | Logic | CLS | BSRAM | Fmax CLK_BASE | Setup / hold peor | Violados | `.fs`: CheckSum, md5 del cuerpo |
+|---|---|---|---|---|---|---|---|---|
+| `v9990_xtal` | place 2, route 2 | 13 653 | 8 421 | 24 | 111,763 MHz | +0,312 / +0,074 ns | 0 | `0x345D`, `aa4b16ac` |
+| `v9990_sync` | place 2, route 2 | 13 874 | 8 489 | 24 | 115,873 MHz | +0,682 / +0,074 ns | 0 | `0x7B75`, `0017f68e` |
+| `v9990_megaram_xtal` | place 0, route 2 | 15 168 | 9 019 | 29 | 121,542 MHz | +0,368 / +0,074 ns | 0 | `0x95F1`, `97bb2bee` |
+| `v9990_megaram_sync` | place 2, route 2 | 15 253 | 8 973 | 29 | 125,925 MHz | +1,095 / +0,074 ns | 0 | `0x4693`, `c194119b` |
+
+En las cuatro: grupos de reloj `Actived`, 0 endpoints violados en setup,
+hold, recovery y removal, 8/8 PRIMARY, 2/2 rPLL y CLS por debajo del aviso.
+El margen más corto es el de `v9990_xtal`: 2,76 MHz sobre el mínimo.
