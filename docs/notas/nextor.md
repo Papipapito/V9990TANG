@@ -117,18 +117,18 @@ Barrido (Fmax de `CLK_BASE` en MHz, peor setup en ns, CLS):
 
 | Opciones (síntesis / place / route) | `xtal` | `sync` |
 |---|---|---|
-| auto / 0 / 2 | **110,106 · +0,177 · 9 172: PASA** | 107,686 · +0,026 · 9 204: FALLA |
+| auto / 0 / 2 | 110,106 · +0,177 · 9 172: PASA | 107,686 · +0,026 · 9 204: FALLA |
 | auto / 2 / 2 | 110,106 · +0,177 · 9 128: PASA (otro `.fs`) | 107,932 · +0,047 · 9 135: FALLA |
-| auto / 2 / 1 | XTAL_P2R1 | 107,436 · +0,004 · 9 135: FALLA |
-| auto / 0 / 1 | XTAL_P0R1 | **112,389 · +0,414 · 9 204: PASA** |
+| auto / 2 / 1 | **113,445 · +0,444 · 9 128: PASA** | 107,436 · +0,004 · 9 135: FALLA |
+| auto / 0 / 1 | 110,072 · +0,174 · 9 172: PASA | **112,389 · +0,414 · 9 204: PASA** |
 | auto / 2 / 0 | — | 107,557 · +0,015 · 9 135: FALLA |
-| auto / 0 / 0 | XTAL_P0R0 | — |
-| `-map_option 2` / 0 / 2 | XTAL_M2P0R2 | 107,438 · +0,004 · 9 184: FALLA |
+| auto / 0 / 0 | 108,189 · +0,016 · 9 172: FALLA | — |
+| `-map_option 2` / 0 / 2 | 111,894 · +0,322 · 9 203: PASA | 107,438 · +0,004 · 9 184: FALLA |
 | `-map_option 2` / 2 / 2 | — | 109,737 · +0,199 · 9 075: PASA |
 | `-map_option 2` / 2 / 0 | 108,267 · +0,023 · 9 118: FALLA | — |
-| `-map_option 2` / 0 / 0 | XTAL_M2P0R0 | — |
+| `-map_option 2` / 0 / 0 | 108,162 · +0,014 · 9 203: FALLA | — |
 
-Elegidas: XTAL_ELEGIDA en `xtal` y place 0 / route 1 en `sync`. Builds
+Elegidas: place 2 / route 1 (las del hito 1) en `xtal` y place 0 / route 1 en `sync`. Builds
 archivadas en `fpga/reports/nextor/<variante>/` (`check_build.txt` es la salida
 de la puerta). Cifras: ver la tabla de [VERIFICATION.md](../VERIFICATION.md#builds-de-v9990_megaram_nextor).
 
@@ -137,7 +137,9 @@ Avisos de síntesis y P&R: los de `v9990_megaram` menos el `CV0016` de
 `NL0002` x5 (sonido interno y `MEGAROM_XFER_TIE`); `PR1014` el de `CLK_27M_d`
 (y en `sync` el de `CART_CLOCK_d`); en `sync`, los `CK3000` de siempre.
 
-**Margen**: en `xtal` la Fmax pasa con un 1,9 % sobre los 108 MHz. Si un
+**Margen**: 113,45 MHz en `xtal` (+5,0 % sobre 108) y 112,39 en `sync` (+4,7
+% sobre 107,386), pero con la mayoria de los juegos de opciones la Fmax cae por
+debajo de 109: depende de la colocacion. Si un
 cambio de RTL la tumba, volver a barrer y, si no basta, las palancas en este
 orden: `V9990_ENABLE_R16 = 0`, `V9990_ENABLE_CURSOR_EOR = 0`, `UPSCAN_BLEND =
 0` (solo en `config/v9990_megaram_nextor.sv`).
