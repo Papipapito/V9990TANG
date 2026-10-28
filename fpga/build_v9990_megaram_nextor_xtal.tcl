@@ -12,6 +12,8 @@
 # ============================================================================
 set CFG     v9990_megaram_nextor
 set VARIANT xtal
-# Opciones de P&R: las del barrido de la primera build (docs/notas/nextor.md)
-set BUILD_OPTS {-place_option 0 -route_option 2}
+# Barrido de la primera build (docs/notas/nextor.md): place 0 / route 2 y
+# place 2 / route 2 dan 110,11 MHz, place 0 / route 1 110,07; place 2 /
+# route 1 (las del hito 1), 113,45 MHz y setup +0,444 ns
+set BUILD_OPTS {-place_option 2 -route_option 1}
 source build_common.tcl

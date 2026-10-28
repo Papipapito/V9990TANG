@@ -1257,14 +1257,11 @@ module tb_top;
                     n_chk++;
                     if (last_v !== 8'(o.v)) fail($sformatf("%s: %02h, esperado %02h", o.what, last_v, o.v));
                 end
-                OP_SLOT: begin
-                    // que acabe el ciclo anterior del Z80 (las tareas vuelven
-                    // antes de bajar /WR en una escritura): si no, /SLTSL
-                    // cambia en medio de ese ciclo y la escritura se pierde
-                    // (le paso a la de FFFFh = 00h de la fase N)
-                    at(zt);
-                    slot_sel = 4'(o.v);
-                end
+                // OP_SLOT cambia slot_sel en el acto: las tareas del Z80 vuelven
+                // antes de bajar /WR, asi que una escritura seguida de OP_SLOT
+                // se pierde si el cambio quita la pagina de la escritura. El
+                // programa pone una lectura entre las dos (fase N: FFFFh)
+                OP_SLOT: slot_sel = 4'(o.v);
                 OP_I:    z_i = 8'(o.v);
                 OP_RESET, OP_RESETWAIT: begin
                     if (o.op == OP_RESETWAIT) begin
