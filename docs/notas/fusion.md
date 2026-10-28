@@ -227,3 +227,23 @@ placa:
 En las cuatro: grupos de reloj `Actived`, 0 endpoints violados en setup,
 hold, recovery y removal, 8/8 PRIMARY, 2/2 rPLL y CLS por debajo del aviso.
 El margen más corto es el de `v9990_xtal`: 2,76 MHz sobre el mínimo.
+
+**Bancos sobre el árbol final** (`055c865`, 28/10, todos con Verilator 5.020):
+
+- core: los 15 casos de `geom`, `pal`, `blit`, `ports`, `eor`, `r16`,
+  `r16chg`, `bdbp`, `assert` (la autocomprobación salta 29 366 veces, como se
+  espera) y `hito1` (vídeo idéntico en los 7 casos); paleta `PAL_OK`; replay de
+  GNG con 0 bytes distintos de 524 288 frente a openMSX. 0 ranuras perdidas.
+- sdram: TOTAL PASA (solo cambia la cabecera de `resultados.txt`).
+- bus: TOTAL PASA, 20 de 20 en la matriz; `EQ_OK` en MODE 0 y 1 (MODE 2 es el
+  control y falla, como debe); `M1SPUR_OK` en los 6 casos.
+- integ: pins 150 casos y 968 comprobaciones; guardia, 12 escenarios en
+  `SYNC=0` y 11 en `SYNC=1`, incluidos `busok` y `usb`, sin fallos.
+- video: 121 de 121.
+- megaram (lanzado desde Git Bash, que es lo que saca de git el bus y el UMA de
+  `main`): las 17 variantes, 25 `RESULTADO: PASA` y ninguna FALLA.
+- tb/top: 12 de 12 (cuatro variantes en `full`, `io` a 5,37 MHz y `nomsx`). En
+  la MegaRAM a 5,37 MHz siguen las 16 y 29 lecturas mal leídas de 63, que es
+  medida y no contrato.
+
+Nada de esto se ha probado en la placa.
