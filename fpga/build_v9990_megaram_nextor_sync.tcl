@@ -12,6 +12,7 @@
 # ============================================================================
 set CFG     v9990_megaram_nextor
 set VARIANT sync
-# Opciones de P&R: las del barrido de la primera build (docs/notas/nextor.md)
-set BUILD_OPTS {-place_option 0 -route_option 2}
+# Barrido de la primera build (docs/notas/nextor.md): place 0 / route 2 da
+# 107,69 MHz (falla); place 0 / route 1, 112,39 MHz, setup +0,414 ns
+set BUILD_OPTS {-place_option 0 -route_option 1}
 source build_common.tcl

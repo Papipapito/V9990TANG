@@ -1257,7 +1257,14 @@ module tb_top;
                     n_chk++;
                     if (last_v !== 8'(o.v)) fail($sformatf("%s: %02h, esperado %02h", o.what, last_v, o.v));
                 end
-                OP_SLOT: slot_sel = 4'(o.v);
+                OP_SLOT: begin
+                    // que acabe el ciclo anterior del Z80 (las tareas vuelven
+                    // antes de bajar /WR en una escritura): si no, /SLTSL
+                    // cambia en medio de ese ciclo y la escritura se pierde
+                    // (le paso a la de FFFFh = 00h de la fase N)
+                    at(zt);
+                    slot_sel = 4'(o.v);
+                end
                 OP_I:    z_i = 8'(o.v);
                 OP_RESET, OP_RESETWAIT: begin
                     if (o.op == OP_RESETWAIT) begin
@@ -1374,6 +1381,8 @@ module tb_top;
                 check(mspi_cs, "Nextor: la flash sigue seleccionada tras la copia");
             end
 
+            // +NXFAST (depuracion): sin las fases B a G
+            if (!$test$plusargs("NXFAST")) begin
             // ---------------- B: puertos ----------------
             p_chk(CK_PRINT, "B puertos");
             p_in(P(5), 8'h00, 8'h01, "P#5: CE a 0 en reposo");
@@ -1449,6 +1458,7 @@ module tb_top;
                 p_chk(CK_INT1, "");
             end
             p_wreg(6'd9, 8'h00);
+            end
 
             // ---------------- N: Nextor ----------------
             if (NEXTOR) begin
@@ -1521,12 +1531,15 @@ module tb_top;
                 // FFFFh otra vez a 0 (todas las paginas a la subranura 0)
                 p_op(OP_SLOT, 0, 4'b1000, 0, "");
                 p_mwr(16'hFFFF, 8'h00);
+                p_mrd(16'hFFFF, 8'hFF, 8'hFF, "FFFFh otra vez a 0");
                 p_op(OP_SLOT, 0, 4'b0000, 0, "");
             end
 
             // ---------------- H: MegaRAM ----------------
             if (MEGA) begin
                 p_chk(CK_PRINT, "H MegaRAM: SCC-I RAM al arrancar");
+                p_op(OP_SLOT, 0, 4'b1000, 0, "");
+                p_mrd(16'hFFFF, 8'hFF, 8'hFF, "FFFFh = 00h al empezar H");
                 p_op(OP_SLOT, 0, 4'b0110, 0, "");
                 p_mrd(16'h4000, 8'hFF, 8'hFF, "SCC-I: 4000h borrado (sin AB)");
                 p_mrd(16'hBFFF, 8'hFF, 8'hFF, "SCC-I: BFFFh");
