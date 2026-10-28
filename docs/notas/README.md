@@ -16,6 +16,7 @@ cambia y remiten a estas notas para el detalle.
 | [video.md](video.md) | 7 (vídeo) | `VIDEO_IF.PAL`, salida 720x576 en un cuadro de 855x626, palanca `BLEND`; banco `tb/video` |
 | [bus.md](bus.md) | 5 | escaneo adaptativo del multiplexor, pre-WAIT de E/S y de memoria, rearme, timeout del /WAIT, guardia de bus vivo (`BUS_OK`); bancos `tb/bus` a 3,58 / 5,37 / 7,16 / 10,74 MHz |
 | [megaram.md](megaram.md) | 8 | configuración `v9990_megaram`: megaROM SCC-I con ventana de 4 MB, PLAIN0, `MEGAROM_CLEAR`, /WAIT de memoria, `tncrom` r3; bancos `tb/megaram` y `tools/tncrom/test` |
+| [nextor.md](nextor.md) | — | configuración `v9990_megaram_nextor` (rama `hito/nextor`): Nextor de tnCart con la microSD en la subranura 2, copia de la ROM de la flash (`NEXTOR_LOADER`), pack de Nextor, builds y escenario del banco de placa entera |
 | [fusion.md](fusion.md) | — | la fusión de las seis ramas, los contratos entre áreas, el barrido de opciones de P&R, el banco de placa entera (`tb/top`), la revisión y las builds finales |
 
 Las cifras de las builds de cada nota son las de su rama. Las de la 0.1beta

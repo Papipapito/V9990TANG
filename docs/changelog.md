@@ -3,6 +3,27 @@
 Formato: un apartado por hito o versión, lo más reciente arriba. Las cifras de
 cada build están en [VERIFICATION.md](VERIFICATION.md).
 
+## Configuración `v9990_megaram_nextor` (rama `hito/nextor`, 28 de octubre de 2026, sin fusionar)
+
+El cartucho "multi todo": V9990 + MegaRAM SCC-I + Nextor con la microSD de la
+Tang ([notas/nextor.md](notas/nextor.md)). **Sin probar en placa.**
+
+- `fpga/config/v9990_megaram_nextor.sv`, `build_v9990_megaram_nextor_{xtal,sync}.tcl`
+  y sus `.sdc` (copias de los de MegaRAM).
+- Vuelven, solo en esta configuración, `CARTRIDGE_NEXTOR` (subranura 2, con
+  `Plain` a 0 y /WAIT de memoria), `TF_CONTROLLER`, el SPI de la TF, `FLASH_SPI`
+  y su SPI; la copia de Nextor la hace `NEXTOR_LOADER` (propio) tras
+  `MEGAROM_CLEAR`. `BOOT_HOLD` con tope de 200 ms con Nextor.
+- Los pines de la flash y de la TF salen de `MAIN`; las cuatro variantes de la
+  0.1beta dan el mismo cuerpo de `.fs` que los de `bitstream/`.
+- `bitstream/v9990tang_nextor_pack_0.2beta.bin`: el kernel oficial
+  `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM` sin cambios, para la flash en
+  `0x100000` (`tools/nextor/make_pack.py`, licencia en
+  `bitstream/NEXTOR_LICENSE.md`: no es MIT).
+- Builds: pasan la puerta sin palancas (`xtal` place 2 / route 1, `sync`
+  place 0 / route 1). `tb/top`: seis variantes, escenario de Nextor con modelos
+  de la flash SPI y de la microSD en modo SPI.
+
 ## 0.1beta (28 de octubre de 2026, etiqueta local `v0.1beta`, sin publicar)
 
 Primera versión para probar en placa. Es la fusión de las seis áreas (detalle

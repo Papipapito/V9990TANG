@@ -21,6 +21,8 @@ con una tabla para apuntar los resultados.
 | `v9990tang_wt202b_megaram_xtal_0.1beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del cristal | 7 264 153 | `eca3b40eba33` | `0x95F1` |
 | `v9990tang_wt202b_megaram_sync_0.1beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del slot | 7 264 153 | `3812094d40d5` | `0x4693` |
 | `TNCROM.COM` | cargador de ROMs para la MegaRAM (r3, `v0.07 (V9990TANG r3)`), para MSX-DOS 2 o Nextor | 13 700 | `5f40a90d4918` | — |
+| `v9990tang_nextor_pack_0.2beta.bin` | **para la configuración `v9990_megaram_nextor` (en preparación, rama `hito/nextor`; aún sin `.fs` publicado)**: el kernel oficial `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM` sin cambios, para grabar en la flash en `0x100000` ("exFlash C Bin Erase, Program thru GAO-Bridge"). Las cuatro `.fs` de la 0.1beta no lo usan. Licencia: `NEXTOR_LICENSE.md` | 131 072 | `b2394dfca88e` | — |
+| `NEXTOR_LICENSE.md` | licencia de Nextor (no es MIT: sin uso comercial) | | | |
 | `SHA256SUMS.txt` | el SHA-256 completo de todo lo anterior | | | |
 
 El CheckSum es el que Gowin escribe en la cabecera del `.fs` (`//CheckSum:`).

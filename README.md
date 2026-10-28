@@ -32,6 +32,13 @@ en una placa**. El hito 1 (core sin parches, con el bootloader de tnCart) sí se
 probó en placa y, según el usuario, funciona. Qué `.fs` usar y qué esperar, en
 [`docs/WONDERTANG.md`](docs/WONDERTANG.md).
 
+**En preparación (rama `hito/nextor`)**: la configuración
+`v9990_megaram_nextor`, V9990 + MegaRAM + Nextor con la microSD de la Tang,
+para arrancar MSX-DOS desde la SD y cargar las ROMs con `TNCROM.COM` desde ella
+([`docs/notas/nextor.md`](docs/notas/nextor.md)). Pasa la puerta y los bancos;
+sin probar en placa. La ROM de Nextor va en la flash en `0x100000`
+(`bitstream/v9990tang_nextor_pack_0.2beta.bin`).
+
 ## Compilar
 
 Hace falta el IDE de Gowin (probado con la 1.9.12.03). Desde `fpga/`, una de:
@@ -41,6 +48,8 @@ gw_sh build_v9990_xtal.tcl
 gw_sh build_v9990_sync.tcl
 gw_sh build_v9990_megaram_xtal.tcl
 gw_sh build_v9990_megaram_sync.tcl
+gw_sh build_v9990_megaram_nextor_xtal.tcl
+gw_sh build_v9990_megaram_nextor_sync.tcl
 ```
 
 Cada una saca `fpga/impl/pnr/<configuración>_<variante>.fs`, con su informe de
