@@ -1,13 +1,16 @@
 # Arquitectura
 
-V9990TANG es, en el hito 1, la carcasa wt200b de tnCartWonder con el core tiny9990
-de tnCart **sin cambios de RTL**: lo único propio son la configuración
-(`fpga/config/v9990.sv`), el `.sdc` (`fpga/constraints/v9990_xtal.sdc`), el
-script de build y la puerta (`tools/check_build.py`). Esta página describe ese punto de partida; cada hito siguiente
-apunta aquí lo que cambia. **Lo que cambia con la fusión de las áreas (hitos 2
-a 8) está al final, en [Desde la fusión de las
-áreas](#desde-la-fusión-de-las-áreas)**; las secciones de en medio siguen
-siendo las del hito 1.
+Esta página describe primero el punto de partida, el hito 1: la carcasa wt200b
+de tnCartWonder con el core tiny9990 de tnCart **sin cambios de RTL**, donde lo
+único propio eran la configuración (`fpga/config/v9990.sv`), el `.sdc`
+(`fpga/constraints/v9990_xtal.sdc`), el script de build y la puerta
+(`tools/check_build.py`). **La versión 0.1beta (la fusión de las áreas, hitos 2
+a 8, que es lo que hay ahora en `main`) se describe al final, en [Desde la
+fusión de las áreas](#desde-la-fusión-de-las-áreas)**: esa sección manda sobre
+las de en medio donde no coinciden. Las secciones de en medio siguen siendo
+las del hito 1 porque los mecanismos que explican (bloques de tnCart, `DCLK`
+como reloj generado de `CLK_BASE`, grupos del `.sdc`) no han cambiado; el
+detalle de cada área está en el anexo de [notas](notas/README.md).
 
 ## Bloques
 
@@ -230,9 +233,12 @@ Para los hitos siguientes; ninguno se toca en el hito 1, que no cambia el RTL.
 
 ## Desde la fusión de las áreas
 
-Rama `hito/fusion`: las seis áreas fusionadas sobre el hito 1, con sus contratos
-conectados ([notas/fusion.md](notas/fusion.md)). Cada fila remite a la nota del
-área, que tiene el detalle y las fuentes. **Nada de esto se ha probado en placa.**
+Versión 0.1beta (antes rama `hito/fusion`, ahora en `main`): las seis áreas
+fusionadas sobre el hito 1, con sus contratos conectados
+([notas/fusion.md](notas/fusion.md)). Cada fila remite a la nota del área, que
+tiene el detalle y las fuentes. Las cuatro builds y sus cifras están en
+[VERIFICATION.md](VERIFICATION.md#builds-de-la-01beta) y los bitstreams en
+`bitstream/`. **Nada de esto se ha probado en placa.**
 
 ### Bloques que cambian
 

@@ -45,10 +45,10 @@ la build de un hito, como la variante de comparación de más abajo.
    modelado (ver [ARCHITECTURE.md](ARCHITECTURE.md#dclk-va-con-clk_base)). El
    `.rpt.txt`, el `.tr` y el `.sdf` tienen que ser de la misma build (fechas).
 
-Para las cuatro builds de `hito/fusion`, desde la raíz del repositorio y
+Para las cuatro builds de la 0.1beta, desde la raíz del repositorio y
 después de `cd fpga && gw_sh build_<variante>.tcl`, con la referencia de cada
-variante (la de las builds archivadas en `fpga/reports/fusion/`, sección
-[Builds de la fusión](#builds-de-la-fusión)):
+variante (la de las builds archivadas en `fpga/reports/v0.1beta/` y
+`fpga/reports/fusion/`, sección [Builds de la 0.1beta](#builds-de-la-01beta)):
 
 ```
 python tools/check_build.py fpga/impl/pnr/v9990_xtal --ref-logic 13653 --ref-cls 8421 --ref-bsram 24 --tol 0.01 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/v9990_xtal.log --log fpga/impl/pnr/v9990_xtal.log --sdc fpga/constraints/v9990_xtal.sdc
@@ -140,6 +140,50 @@ salida de la puerta.
   TF; entradas `TF_DAT0` y `UART_RX` sin uso) y uno de P&R, también en la
   referencia: `PR1014`, `CLK_27M_d` llega a un CLKDIV por enrutado genérico (solo
   afecta al jitter de `CLK_DAC`).
+
+## Builds de la 0.1beta
+
+Los cuatro `.fs` de [`bitstream/`](../bitstream/) son copias byte a byte de los
+de `fpga/impl/pnr/` de las builds del 28 de octubre de 2026 sobre `055c865`
+(último cambio de RTL y de opciones de P&R; después solo cambia
+documentación), con Gowin 1.9.12.03. La puerta se repitió sobre esas builds
+con las órdenes de arriba y **pasa en las cuatro**, con desviación +0,00 %
+frente a la referencia. Evidencia en `fpga/reports/v0.1beta/<variante>/`
+(`check_build.txt` es la salida de la puerta; `<variante>.fs.txt`, las sumas del
+bitstream y la comparación del cuerpo frente a `fpga/impl/final/`: idéntico).
+Son las mismas builds de la tabla de [Builds de la fusión](#builds-de-la-fusión),
+que tiene el resto de cifras:
+
+| | `v9990_xtal` | `v9990_sync` | `v9990_megaram_xtal` | `v9990_megaram_sync` |
+|---|---|---|---|---|
+| Fichero en `bitstream/` | `v9990tang_wt202b_v9990_xtal_0.1beta.fs` | `v9990tang_wt202b_v9990_sync_0.1beta.fs` | `v9990tang_wt202b_megaram_xtal_0.1beta.fs` | `v9990tang_wt202b_megaram_sync_0.1beta.fs` |
+| Referencia de la puerta (lógica / CLS / BSRAM) | 13 653 / 8 421 / 24 | 13 874 / 8 489 / 24 | 15 168 / 9 019 / 29 | 15 253 / 8 973 / 29 |
+| Fmax `CLK_BASE` | 111,763 MHz | 115,873 MHz | 121,542 MHz | 125,925 MHz |
+| CheckSum de Gowin | `0x345D` | `0x7B75` | `0x95F1` | `0x4693` |
+| SHA-256 (12 primeros) | `f668f7abbfc8` | `5f5369227e3e` | `eca3b40eba33` | `3812094d40d5` |
+| md5 del cuerpo (sin `//`) | `aa4b16ac` | `0017f68e` | `97bb2bee` | `c194119b` |
+
+El SHA-256 completo está en `bitstream/SHA256SUMS.txt`, junto con el de
+`TNCROM.COM` r3 (13 700 bytes, `5f40a90d4918...`, el de `tools/tncrom/bin/`).
+
+### Bancos sobre el árbol de la 0.1beta
+
+Repetidos sobre `055c865`, sin cambios de RTL después. Todos en WSL con
+Verilator 5.020 salvo `tb/megaram` y `tb/top`, que se lanzan desde Git Bash
+porque llaman a WSL ellos mismos. El detalle de cada banco está en su nota de
+área.
+
+| Banco | Orden | Resultado |
+|---|---|---|
+| core | `cd fpga && bash tb/core/run_t9990_core.sh geom`, y luego con `pal blit ports eor r16 r16chg bdbp assert hito1` | pasan todos: los 15 casos de `geom`, `PALT_OK`, `BLIT_OK`, `PORTS_OK`, `EOR_OK`, `R16_OK`, `R16CHG_OK`, `BDBP_OK`, `ASSERT_SELFTEST_OK` y vídeo idéntico al hito 1 en los 7 casos; `LOST_SLOTS=0` |
+| core, paleta y replay de GNG | `bash tb/core/run_t9990_palette.sh`; `OBJTAG=rep REPLAY=... bash tb/core/run_t9990_core.sh replay` | `PAL_OK`; VRAM idéntica a openMSX (0 de 524 288 bytes distintos) |
+| sdram | `bash fpga/tb/sdram/run.sh` | `TOTAL: PASA` (48 casos a 108 y 107,386 MHz y los controles negativos) |
+| bus | `bash fpga/tb/bus/run.sh`; `run_eq.sh`; `run_m1spur.sh` | 20 de 20 `BUS_OK` (fallos solo donde se esperan, a 7,16 y 10,74 MHz); `EQ_OK` en MODE 0 y 1; `M1SPUR_OK` en los 6 casos |
+| integ | `bash fpga/tb/integ/run.sh` | pins: 150 casos, 968 comprobaciones, 0 fallos; guardia: 11 escenarios por `SYNC`, incluidos `busok` y `usb` |
+| video | `bash fpga/tb/video/run.sh` | 121 de 121 |
+| megaram | `cd fpga/tb/megaram && bash run.sh` (Git Bash) | 17 variantes, 25 `RESULTADO: PASA`, 0 `FALLA` |
+| tncrom | `tools/tncrom/test/run.sh` (WSL) | 90 comprobaciones, 0 fallos |
+| placa entera | `bash fpga/tb/top/run.sh` (Git Bash) | 12 de 12 (4 variantes por `full`, `io` y `nomsx`); 0 ranuras perdidas, 0 errores de SDRAM, 0 `WAIT_TIMEOUT`. MegaRAM a 5,37 MHz (medida, no contrato): 16 y 29 de 63 lecturas mal |
 
 ## Builds de la fusión
 
@@ -356,19 +400,22 @@ Las cifras son de un modelo, no de la placa.
 
 ## Pruebas en placa del hito 1
 
-Sin hacer. Lo que hay que comprobar con el `.fs` del hito 1, en este orden:
+El usuario cargó el bitstream del hito 1 (`main` antes de la 0.1beta: core sin
+parches, con el bootloader de tnCart) en su WonderTANG y, según él, funciona.
+Aquí no consta con qué monitores ni con qué programas; conviene apuntarlos en
+la matriz de abajo.
 
-1. Cargar en **SRAM** con el MSX apagado y la Tang por USB; encender el MSX.
-   Esperado: el LED parpadea mientras corre el bootloader; el MSX arranca normal
-   (el V9990 solo ocupa los puertos 60h-6Fh y un slot expandido vacío).
-2. Con el MSX en BASIC, el HDMI saca el color de fondo del V9990 (pantalla
-   apagada: sincronismo estable y borde).
-3. Un programa V9990 **de disco** (solo puertos) pinta: por ejemplo un visor de
-   imágenes B1/B3, o una demo de disco. Anotar el programa, el modo y el
-   resultado en la matriz de abajo.
-4. Repetir en un **segundo monitor**.
-5. Reset del MSX con la imagen en pantalla: vuelve a arrancar y la imagen se
-   recupera.
+## Pruebas en placa de la 0.1beta
+
+Sin hacer. La lista ordenada (arranque, HDMI en dos monitores, programa de
+disco, ROMs de la lista del estudio, PAL, turbo, reset, LED y reloj del slot,
+retención de la VRAM) y la tabla de resultados están en
+[`bitstream/LEEME.md`](../bitstream/LEEME.md#lista-de-pruebas-en-placa).
+Lo que el banco no cubre y solo se ve en placa: el `/WAIT` de la MegaRAM a
+3,58 MHz con osciloscopio (en el banco el margen es de un ciclo de 108 MHz), el
+enganche de `sync` en cada máquina, la aceptación de los modos en cada monitor,
+una pérdida de enganche en marcha, el tope de 50 ms de `BOOT_HOLD` sin MSX y
+las cuentas de puntos con `BLEND=0` (que ninguna build lleva).
 
 ## Matriz de monitores
 

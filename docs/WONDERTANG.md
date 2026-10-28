@@ -1,31 +1,32 @@
 # V9990TANG en la WonderTANG 2.02b
 
-Guía de placa para los cuatro bitstreams de la rama `hito/fusion`. **Ninguno se
-ha probado todavía en una placa.** Los cuatro compilan con el timing cerrado y
-pasan los bancos de simulación (incluido el de placa entera, `fpga/tb/top`).
-Esta página dice qué `.fs` elegir, qué hace falta, qué ve el MSX y qué esperar
-al encenderlo.
+Guía de placa de la versión **0.1beta** (cuatro bitstreams en
+[`bitstream/`](../bitstream/)). **Ninguno se ha probado todavía en una placa.**
+Los cuatro compilan con el timing cerrado y pasan los bancos de simulación
+(incluido el de placa entera, `fpga/tb/top`). Esta página dice qué `.fs`
+elegir, qué hace falta, qué ve el MSX y qué esperar al encenderlo. La guía corta
+para quien lo prueba, con la lista de pruebas en placa y la tabla de resultados,
+es [`bitstream/LEEME.md`](../bitstream/LEEME.md).
 
 ## Qué `.fs` usar
 
 Hay dos configuraciones y, de cada una, dos variantes de reloj:
 
-| `.fs` | Configuración | Reloj | Cuándo usarlo |
-|---|---|---|---|
-| `v9990_xtal.fs` | `v9990`: solo el V9990 | `xtal`: `CLK_BASE` = 108,000 MHz del cristal de 27 MHz de la Tang | **la primera que hay que probar**; da HDMI también con el MSX apagado |
-| `v9990_sync.fs` | `v9990` | `sync`: `CLK_BASE` = reloj del slot x30 = 107,386 MHz | el V9990 al ritmo del MSX; **sin el MSX encendido no hay HDMI** |
-| `v9990_megaram_xtal.fs` | `v9990_megaram`: V9990 + MegaRAM SCC-I de 4 MB | `xtal` | para cargar ROMs con `TNCROM.COM` |
-| `v9990_megaram_sync.fs` | `v9990_megaram` | `sync` | igual, con el reloj del slot; sin MSX no hay HDMI |
+| `.fs` de `bitstream/` | Build | Configuración | Reloj | Cuándo usarlo |
+|---|---|---|---|---|
+| `v9990tang_wt202b_v9990_xtal_0.1beta.fs` | `v9990_xtal` | `v9990`: solo el V9990 | `xtal`: `CLK_BASE` = 108,000 MHz del cristal de 27 MHz de la Tang | **la primera que hay que probar**; da HDMI también con el MSX apagado |
+| `v9990tang_wt202b_v9990_sync_0.1beta.fs` | `v9990_sync` | `v9990` | `sync`: `CLK_BASE` = reloj del slot x30 = 107,386 MHz | el V9990 al ritmo del MSX; **sin el MSX encendido no hay HDMI** |
+| `v9990tang_wt202b_megaram_xtal_0.1beta.fs` | `v9990_megaram_xtal` | `v9990_megaram`: V9990 + MegaRAM SCC-I de 4 MB | `xtal` | para cargar ROMs con `TNCROM.COM` |
+| `v9990tang_wt202b_megaram_sync_0.1beta.fs` | `v9990_megaram_sync` | `v9990_megaram` | `sync` | igual, con el reloj del slot; sin MSX no hay HDMI |
 
-Se generan con `cd fpga && gw_sh build_<configuración>_<variante>.tcl`. Los de
-la última build buena quedan en `fpga/impl/final/` (y, con el mismo cuerpo, en
-`fpga/impl/fusion_rev/`), que git ignora (los de `fpga/impl/fusion/` y
-`fpga/impl/sdram_nop/` son de builds anteriores). La evidencia de cada build
-(recursos, timing y la salida de la puerta) está en
-`fpga/reports/fusion/<variante>/`, y las sumas md5 del cuerpo de cada `.fs`, en
-[notas/fusion.md](notas/fusion.md#8-revisión-de-la-fusión-y-builds-finales). Si la variante `sync` da problemas, la
-`xtal` de la misma configuración es el respaldo: tiene el mismo RTL y solo
-cambia el reloj.
+Los `.fs` de `bitstream/` son copias de los de `fpga/impl/pnr/` de las builds
+sobre `055c865` (el último cambio de RTL y de opciones de P&R), con su SHA-256
+en `bitstream/SHA256SUMS.txt`. Se regeneran con `cd fpga && gw_sh
+build_<configuración>_<variante>.tcl`. La evidencia de cada build (recursos,
+timing y la salida de la puerta) está en `fpga/reports/v0.1beta/<variante>/`
+(y, con el mismo cuerpo de `.fs`, en `fpga/reports/fusion/`). Si la variante
+`sync` da problemas, la `xtal` de la misma configuración es el respaldo: tiene
+el mismo RTL y solo cambia el reloj.
 
 ## Qué hace falta
 
@@ -60,7 +61,7 @@ la Tang solo guarda el bitstream.
 
 ## Cargar ROMs (`v9990_megaram`)
 
-`TNCROM.COM` es el de `tools/tncrom/bin/` (r3, `v0.07 (V9990TANG r3)`), no el de
+`TNCROM.COM` es el de `bitstream/` (copia de `tools/tncrom/bin/`; r3, `v0.07 (V9990TANG r3)`), no el de
 tnCart. Se rehace con `bash tools/tncrom/build.sh` (SDCC). Lo que añade el r3:
 
 - **Máximo por tipo.** ASCII16 y R-TYPE: 4 MB. ASCII8, KONAMI, KONAMI_SCC_I y
@@ -153,15 +154,17 @@ solo se borran al recargar la FPGA o al quitar la alimentación de la Tang.
 
 ## Grabación
 
-- Primero en **SRAM** (se pierde al apagar): con el MSX apagado y la Tang
+- Primero en **SRAM** (se pierde al apagar): `openFPGALoader -b tangnano20k
+  <fichero.fs>` o Gowin Programmer en "SRAM Mode", con el MSX apagado y la Tang
   alimentada por USB, o reseteando el MSX después. En `sync` el HDMI no sale
   hasta encender el MSX.
-- En flash, el `.fs` va en `0x000000` ("External Flash mode" del Gowin
-  Programmer). Nada más: no hay ROM ni BIOS que grabar. Las ROMs de la MegaRAM
+- En flash, el `.fs` va en `0x000000`: `openFPGALoader -b tangnano20k -f
+  <fichero.fs>` o "External Flash Mode" del Gowin Programmer. Nada más: no hay
+  ROM ni BIOS que grabar. Las ROMs de la MegaRAM
   se cargan cada vez desde el MSX con `TNCROM.COM`.
 - **Ojo con la flash compartida.** Si la Tang se usa también con el MoonTANG, su
-  ROM YRW801 vive en `0x200000`; algunas herramientas borran más allá del
-  bitstream al grabar uno nuevo. Después de grabar el V9990TANG, vuelve a grabar
+  ROM YRW801 vive en `0x200000`. Grabar el `.fs` en `0x000000` no la toca,
+  pero un borrado completo de la flash sí. Después de grabar el V9990TANG, vuelve a grabar
   la YRW801 antes de volver al MoonTANG.
 
 ## Antes de encenderlo

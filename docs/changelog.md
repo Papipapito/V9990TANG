@@ -3,7 +3,53 @@
 Formato: un apartado por hito o versión, lo más reciente arriba. Las cifras de
 cada build están en [VERIFICATION.md](VERIFICATION.md).
 
-## Fusión de las seis áreas (rama `hito/fusion`, 27 de octubre de 2026, sin publicar)
+## 0.1beta (28 de octubre de 2026, etiqueta local `v0.1beta`, sin publicar)
+
+Primera versión para probar en placa. Es la fusión de las seis áreas (detalle
+en el apartado siguiente) llevada a `main`, con los bitstreams y la guía para
+quien la prueba. **Ningún bitstream de la 0.1beta se ha cargado todavía en una
+placa.**
+
+- **`bitstream/`**: los cuatro `.fs` (`v9990tang_wt202b_{v9990,megaram}_{xtal,sync}_0.1beta.fs`),
+  copias de las builds sobre `055c865`; `TNCROM.COM` r3; `SHA256SUMS.txt`;
+  [`LEEME.md`](../bitstream/LEEME.md), con qué fichero elegir, cómo grabarlo
+  (SRAM y flash en `0x000000`, y el aviso de la YRW801 del MoonTANG), el puente
+  J3, el LED, la carga de ROMs, los límites conocidos y la lista de pruebas en
+  placa con su tabla; y un [`README.md`](../bitstream/README.md) corto en
+  inglés.
+- **Qué entra**, frente al hito 1:
+  - carcasa sin bootloader, flash, SPI ni TF; POR del rPLL, gestor con
+    reintentos, guardia de lock con `DRIVE_EN` y `BOOT_HOLD` (tope de 50 ms) y
+    `STATUS_LED` con los códigos 0-5;
+  - variantes de reloj `xtal` (108,000 MHz del cristal) y `sync` (reloj del
+    slot x30, 107,386 MHz), con su `.sdc` y su `build_*.tcl`;
+  - core tiny9990 con seis parches, P#8-P#15 a `FFh`, cuadro PAL de 313 líneas,
+    cursor EOR y R#16;
+  - salida 720x480 en 855x524 y, con PAL, 720x576 en 855x626;
+  - refresco propio de la SDRAM en el UMA, sin tocar la cadencia, y NOP en sus
+    pines durante el reset;
+  - bus con escaneo adaptativo, pre-WAIT de E/S y de memoria, rearme, timeout
+    del /WAIT y guardia de bus vivo;
+  - configuración `v9990_megaram`: MegaRAM SCC-I de 4 MB en la subranura 0,
+    PLAIN0, borrado de 32 KB al arrancar, /WAIT en sus lecturas y SCC por el
+    DAC I2S;
+  - `tncrom` r3 (PLAIN0, máximos por tipo, Konami de 1-2 MB, `-S` con
+    comprobación).
+- **Builds**: las cuatro pasan la puerta con referencia (desviación +0,00 %);
+  cifras, SHA-256 y CheckSum en
+  [VERIFICATION.md](VERIFICATION.md#builds-de-la-01beta) y evidencia en
+  `fpga/reports/v0.1beta/`.
+- **Bancos**: pasan todos sobre el árbol de la 0.1beta (core, sdram, bus,
+  integ, video, megaram, tncrom y placa entera).
+- **Documentación**: ARCHITECTURE, VERIFICATION, WONDERTANG, UPSTREAM y el
+  README al día; las notas de área quedan como anexo
+  ([notas/README.md](notas/README.md)).
+- **Límites conocidos**: MegaRAM solo a 3,58 MHz; E/S del V9990 a 3,58 y
+  5,37 MHz; sin B5/B6, B0/B7 ni kanji; entrelazado en bob; R#16 recortado por
+  la ventana fija del upscan; la VRAM se conserva en standby (el chip real no
+  la refresca); en `sync` no hay HDMI sin el MSX encendido.
+
+## Fusión de las seis áreas (rama `hito/fusion`, 27 de octubre de 2026, entra en la 0.1beta)
 
 Las seis ramas de área entran sobre el hito 1 con merges normales, sin
 conflictos de texto. Los contratos entre áreas y cómo se cablean están en
@@ -78,6 +124,6 @@ conflictos de texto. Los contratos entre áreas y cómo se cablean están en
 - Build: 14 140 lógica (igual que la referencia), 8 679 CLS (−0,20 %), 24 BSRAM,
   todas las restricciones activas, **0 endpoints violados** en setup, hold,
   recovery y removal, Fmax de `CLK_BASE` 109,08 MHz, rPLL 2/2, PRIMARY 8/8.
-- Sin probar en placa. Pendiente del hito 1: un programa V9990 de disco que pinte
-  por HDMI en dos monitores (ver la matriz de monitores de
-  [VERIFICATION.md](VERIFICATION.md#matriz-de-monitores)).
+- Probado en placa por el usuario después de cerrar el hito: según él,
+  funciona. Falta apuntar los monitores y los programas en la matriz de
+  [VERIFICATION.md](VERIFICATION.md#matriz-de-monitores).

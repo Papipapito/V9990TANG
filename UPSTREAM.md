@@ -3,6 +3,9 @@
 Este repositorio no es un fork con historia: es una copia de un subconjunto de
 dos proyectos BSD-3, hecha el 22 de octubre de 2026, más los ficheros propios del
 port. Los avisos de copyright de cada fichero copiado se conservan sin cambios.
+Los cambios de cada área sobre los ficheros copiados están en su nota de
+`docs/notas/` (ver [el anexo](docs/notas/README.md)); `git diff` contra el
+commit de upstream los enseña todos (ver [Fines de línea](#fines-de-línea)).
 
 ## Proyectos de origen
 
@@ -51,34 +54,36 @@ fichero entra en la build `v9990` (`fpga/build_common.tcl`, que cargan
 | Destino | Origen | Build | Notas |
 |---|---|---|---|
 | `fpga/src/tnCart_board_wt200b_top.sv` | igual | sí | top de la placa; desde el hito 3 sin `FLASH_SPI`, los `SPI` ni el LED de tnCart (pines en reposo), con la guardia de lock, la cadena de reset y el LED de estado |
-| `fpga/src/main.sv` | igual | sí | desde el hito 3 sin bootloader: `SYS_RESET_n` por POR (`system/system_reset.sv`); en `v9990` el V9990 va directo al bus, sin slot expandido |
-| `fpga/src/cartridge_v9990.sv` | igual | sí | puertos 60h-6Fh, genera `Video.DCLK` |
+| `fpga/src/main.sv` | igual | sí | desde el hito 3 sin bootloader: `SYS_RESET_n` por POR (`system/system_reset.sv`); en `v9990` el V9990 va directo al bus, sin slot expandido; en `v9990_megaram`, slot expandido con la megaROM en la subranura 0 y `MEGAROM_CLEAR` (hito 8) |
+| `fpga/src/cartridge_v9990.sv` | igual | sí | puertos 60h-6Fh, genera `Video.DCLK`; desde la fusión lleva la salida `PAL` del core a `Video.PAL` y los parámetros del core por configuración |
 | `fpga/src/bootloader.sv` | igual | solo MegaRAM | ya no se instancia (hito 3); la configuración MegaRAM lo compila por el paquete `XFER` y `XFER_IF` |
-| `fpga/src/cartridge_megarom.sv` | igual | no | para el hito 8 (MegaRAM) |
+| `fpga/src/cartridge_megarom.sv` | igual | solo MegaRAM | hito 8: /WAIT en las lecturas de memoria (`ENABLE_MEM_WAIT`) (`docs/notas/megaram.md`) |
 | `fpga/src/board/board_id.sv` | igual | sí | |
-| `fpga/src/board/rev1/board_rev1_bus.sv` | igual | sí | bus multiplexado de 9 estados y filtros de pin (`PIN_FILTER`) |
+| `fpga/src/board/rev1/board_rev1_bus.sv` | igual | sí | bus multiplexado de 9 estados y filtros de pin (`PIN_FILTER`); desde el hito 5, escaneo adaptativo, pre-WAIT, rearme, timeout del /WAIT, `BUS_OK` y las guardias `DRIVE_EN`/`BOOT_HOLD` (`docs/notas/bus.md`) |
 | `fpga/src/board/rev1/board_rev1_tmds.sv` | igual | sí | envoltorio del DVI_TX |
 | `fpga/src/board/rev1/dvi_tx/dvi_tx.{v,ipc,vo}` | igual | `.v` sí | IP cifrado de Gowin |
 | `fpga/src/board/wt200b/board_wt200b_clock.sv` | igual | sí | rPLL 108 MHz (xtal) o 107,386 MHz (sync); desde el hito 6 el rPLL base con reset del POR y `LOCK` crudo |
 | `fpga/src/board/wt200b/board_wt200b_config_xtal.sv`, `board_wt200b_config_sync.sv` | `board/wt200b/board_wt200b_config.sv` | uno por variante | partido en el hito 6: `SYNC_CPU_CLK = 0` (xtal) o `1` (sync), `SYNC_CPU_UMA = 0` en los dos; `board_wt200b_config.sv` ya no existe |
-| `fpga/src/board/wt200b/board_wt200b_guard.sv`, `board_wt200b_bus_guard.sv` | propios | sí | POR, gestor del rPLL base y guardia de lock (27 MHz); gateo provisional de los pines del slot hasta la fusión con `hito/bus` |
+| `fpga/src/board/wt200b/board_wt200b_guard.sv` | propio | sí | POR, gestor del rPLL base y guardia de lock (27 MHz). El `board_wt200b_bus_guard.sv` provisional de los hitos 3 y 6 desapareció en la fusión: los pines los gatea `board_rev1_bus.sv` |
 | `fpga/src/system/system_reset.sv`, `megarom_xfer_tie.sv` | propios | `system_reset.sv` sí; el otro solo MegaRAM | cadena de reset en `CLK_BASE`; `XFER_IF` atado de la megaROM |
 | `fpga/src/board/wt200b/board_wt200b.cst` | igual | sí | pines de la WonderTANG 2.00b/2.02b |
 | `fpga/src/board/wt200b/board_wt200b_27M.sdc` | igual | no | referencia; lo sustituye `fpga/constraints/v9990_xtal.sdc` |
 | `fpga/src/board/wt200b/board_wt200b_3_58M.sdc` | igual | no | referencia para la variante `sync` (hito 6) |
 | `fpga/src/peripheral/flash.sv` | igual | solo MegaRAM | ya no se instancia (hito 3); la MegaRAM lo compila por `FLASH_IF` |
 | `fpga/src/peripheral/spi.sv` | igual | solo MegaRAM | ya no se instancia (hito 3); la MegaRAM lo compila por `SPI_IF` |
-| `fpga/src/peripheral/led.sv` | igual | sí | `LED` de tnCart sin cambios y sin instanciar; se añade `STATUS_LED` (hito 3) |
+| `fpga/src/peripheral/led.sv` | igual | sí | `LED` de tnCart sin cambios y sin instanciar; se añade `STATUS_LED` con los códigos 0-5 (hitos 3 y 6) |
 | `fpga/src/peripheral/msx/bus.sv` | igual | sí | `BUS_IF` (y `EXPANSION_BUS`, que no se instancia) |
 | `fpga/src/peripheral/msx/expansion_slot.sv` | igual | sí | slot expandido |
-| `fpga/src/peripheral/msx/megarom_configure.sv`, `megarom_controller.sv` | igual | no | para el hito 8 |
-| `fpga/src/peripheral/ram/ram.sv`, `sdram.sv`, `uma.sv` | igual | sí | SDRAM + UMA, sin tocar la cadencia |
+| `fpga/src/peripheral/msx/megarom_configure.sv`, `megarom_controller.sv` | igual | solo MegaRAM | hito 8: ventana de 4 MB, modo PLAIN0 y su borrado con el /RESET |
+| `fpga/src/peripheral/msx/megarom_clear.sv` | propio | solo MegaRAM | borrado de los primeros 32 KB de la megaROM a `FFh` al arrancar (hito 8) |
+| `fpga/src/peripheral/ram/ram.sv`, `sdram.sv`, `uma.sv` | igual | sí | SDRAM + UMA, sin tocar la cadencia; desde el hito 4, refresco propio del UMA y AUTO REFRESH en la inicialización, y NOP en los pines de la SDRAM durante el reset (`docs/notas/sdram.md`) |
 | `fpga/src/peripheral/signal/attenuator.sv`, `limiter.sv` | igual | sí | mezclador de sonido de `main.sv` |
 | `fpga/src/peripheral/sound/sound.sv`, `dac_16bit.sv`, `i2s_audio_tx.sv` | igual | sí | DAC I2S de la WonderTANG |
-| `fpga/src/peripheral/sound/scc/scc.sv` | igual | no | para el hito 8 |
-| `fpga/src/peripheral/video/video.sv`, `video_upscan.sv` | igual | sí | upscan a 720x480 en 855x524 |
-| `fpga/v9990/tiny9990/*.sv` (17 ficheros) | `peripheral/video/tiny9990/` | sí | core sin parches (los parches entran en el hito 2) |
-| `fpga/config/v9990.sv` | `config.sv` | sí | solo cambian los `ENABLE_*`: V9990 y su VDP de comandos activos, el resto desactivado |
+| `fpga/src/peripheral/sound/scc/scc.sv` | igual | solo MegaRAM | SCC de la megaROM, sin cambios |
+| `fpga/src/peripheral/video/video.sv`, `video_upscan.sv` | igual | sí | upscan a 720x480 en 855x524; desde la fusión, `VIDEO_IF.PAL`, 720x576 en 855x626 y la palanca `BLEND` (`docs/notas/video.md`) |
+| `fpga/v9990/tiny9990/*.sv` (17 ficheros) | `peripheral/video/tiny9990/` | sí | core sin parches en el hito 1; desde los hitos 2 y 7, con los seis parches, P#8-P#15 a `FFh`, PAL, cursor EOR, R#16 y la aserción de ranura perdida (`docs/notas/core.md`) |
+| `fpga/config/v9990.sv` | `config.sv` | sí | solo cambian los `ENABLE_*`: V9990 y su VDP de comandos activos, el resto desactivado; desde la fusión, las palancas del core, de `BLEND` y del pre-WAIT de memoria |
+| `fpga/config/v9990_megaram.sv` | `config/v9990.sv` | una de las dos | configuración MegaRAM (hito 8): `ENABLE_MEGA_SCC_I`, SCC, ventana de 4 MB en `00_0000h`, `ENABLE_MEM_WAIT` |
 | `fpga/constraints/v9990_xtal.sdc` | propio | sí | relojes del `board_wt200b_27M.sdc` presentes en esta configuración y grupos asíncronos propios |
 | `fpga/constraints/v9990_sync.sdc`, `v9990_megaram_xtal.sdc`, `v9990_megaram_sync.sdc` | propios | uno por build | variante `sync` (hito 6, a partir de `board_wt200b_3_58M.sdc`) y configuración MegaRAM |
 | `fpga/build_common.tcl`, `fpga/build_v9990_{xtal,sync}.tcl`, `fpga/build_v9990_megaram_{xtal,sync}.tcl` | propios, a partir de `tnCart_board_wt200b.gprj` | — | lista de ficheros y opciones comunes, y un script por configuración y variante (hito 6) |
@@ -88,6 +93,11 @@ fichero entra en la build `v9990` (`fpga/build_common.tcl`, que cargan
 | `fpga/reports/hito1/v9990_xtal.sdc`, `check_build.txt`, `v9990_xtal.fs.txt` | propios | — | copia del `.sdc` con el que se hizo la build, salida de la puerta y sumas del bitstream |
 | `fpga/reports/hito1/variante_dclk_asincrono/` | `gw_sh` (informes y logs) y propios (`.sdc`, `LEEME.txt`, `check_build.txt`) | — | variante de comparación de la Fmax, no es la build del hito |
 | `fpga/reports/hito3/` (`v9990_xtal`), `fpga/reports/hito6/` (`v9990_sync`) | como los de `hito1/` | — | evidencia de las builds de los hitos 3 y 6, con los mismos criterios que la del hito 1 |
+| `fpga/reports/sdram_nop/`, `fpga/reports/fusion/`, `fpga/reports/v0.1beta/` (una carpeta por variante) | como los de `hito1/` | — | evidencia de las builds de la fusión: con el NOP de la SDRAM, las finales de la revisión y las de la 0.1beta (las mismas builds que `fusion/`, con la puerta repetida) |
+| `fpga/tb/{core,sdram,bus,video,megaram,top}/` | propios | — | bancos de las áreas y de la placa entera (Verilator 5.020). El modelo de SDRAM de `tb/sdram` (`sdram_model_bl.v`) parte del `sdram_model.v` del MoonTANG (ver `docs/notas/sdram.md`); `tb/top/gowin_models.sv` son modelos de comportamiento propios de las primitivas de Gowin, solo para simulación |
+| `tools/tncrom/{src,cfg,lib}`, `LICENSE` | `tnCartWonder/tools/tncrom/{src,cfg}` y `tools/lib` de `d3a54f1` | — | cargador de ROMs de la megaROM, BSD-3 de Shinobu Hashimoto; extendido (PLAIN0, máximos por tipo, máscara Konami, `-S` con comprobación: líneas marcadas `V9990TANG`) y compilado con SDCC en lugar de z88dk (`tools/tncrom/build.sh`, `sdcc/`, propios); `test/` es un banco propio del host (`docs/notas/megaram.md`, apartado 6) |
+| `tools/tncrom/bin/TNCROM.COM`, `bitstream/TNCROM.COM` | generado | — | binario de `build.sh` (r3, 13 700 bytes) |
+| `bitstream/*.fs` | generados por `gw_sh` 1.9.12.03 | — | los cuatro bitstreams de la 0.1beta, copias de `fpga/impl/pnr/`. Llevan dentro el IP DVI_TX de Gowin. `SHA256SUMS.txt`, `LEEME.md` y `README.md` son propios |
 
 ## Lo que no se copia
 

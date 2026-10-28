@@ -247,3 +247,15 @@ El margen más corto es el de `v9990_xtal`: 2,76 MHz sobre el mínimo.
   medida y no contrato.
 
 Nada de esto se ha probado en la placa.
+
+## 9. Versión 0.1beta
+
+La rama se cierra como versión 0.1beta para probar en placa (28 de octubre de
+2026). No cambia el RTL: los bitstreams son los de las builds sobre `055c865`
+de la sección 8. La puerta se repitió sobre `fpga/impl/pnr/` con las
+referencias de VERIFICATION.md y pasa en las cuatro (desviación +0,00 %); la
+evidencia está en `fpga/reports/v0.1beta/<variante>/` y el cuerpo de cada `.fs`
+es idéntico al de `fpga/impl/final/`. Los `.fs`, `TNCROM.COM` r3, sus SHA-256,
+la guía para quien lo prueba (`bitstream/LEEME.md`, con la lista de pruebas en
+placa) y un README corto en inglés están en `bitstream/`. La rama entra en
+`main` con la etiqueta local `v0.1beta`.

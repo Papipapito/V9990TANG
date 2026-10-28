@@ -12,19 +12,25 @@
 
 ## Estado
 
-**En desarrollo, sin publicar y sin probar en placa.** La rama `hito/fusion`
-reúne las seis áreas del plan sobre el hito 1 (ver
+**Versión 0.1beta (28 de octubre de 2026), para probar en placa.** Los cuatro
+bitstreams están en [`bitstream/`](bitstream/), con su SHA-256, el cargador de
+ROMs `TNCROM.COM` y una guía para quien lo prueba
+([`bitstream/LEEME.md`](bitstream/LEEME.md), con la lista de pruebas en placa;
+[`bitstream/README.md`](bitstream/README.md) en inglés).
+
+La 0.1beta reúne las seis áreas del plan sobre el hito 1 (ver
 [`docs/changelog.md`](docs/changelog.md) y
 [`docs/notas/fusion.md`](docs/notas/fusion.md)): carcasa sin bootloader ni
 flash, con POR y guardia de lock; core tiny9990 con los parches de fidelidad y
 el cuadro PAL; refresco propio de la SDRAM; bus con escaneo adaptativo y
 pre-WAIT; salida 720x480 y 720x576; y la MegaRAM SCC-I de 4 MB con `tncrom` r3.
-Hay cuatro bitstreams, dos configuraciones (`v9990`, solo el V9990, y
-`v9990_megaram`, con la MegaRAM) con dos variantes de reloj cada una (`xtal`,
-del cristal de la Tang, y `sync`, del reloj del slot). Los cuatro pasan la
-puerta y los bancos de simulación, incluido el de placa entera, pero **ninguno
-se ha cargado todavía en una placa**. Qué `.fs` usar y qué esperar, en
-[`docs/WONDERTANG.md`](docs/WONDERTANG.md). `main` sigue en el hito 1.
+Hay dos configuraciones (`v9990`, solo el V9990, y `v9990_megaram`, con la
+MegaRAM) con dos variantes de reloj cada una (`xtal`, del cristal de la Tang, y
+`sync`, del reloj del slot). Los cuatro pasan la puerta y los bancos de
+simulación, incluido el de placa entera, pero **ninguno se ha cargado todavía
+en una placa**. El hito 1 (core sin parches, con el bootloader de tnCart) sí se
+probó en placa y, según el usuario, funciona. Qué `.fs` usar y qué esperar, en
+[`docs/WONDERTANG.md`](docs/WONDERTANG.md).
 
 ## Compilar
 
@@ -52,7 +58,8 @@ ROMs de la MegaRAM, se rehace con `bash tools/tncrom/build.sh` (SDCC).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): bloques, relojes, cruces de reloj y `.sdc`.
 - [`docs/WONDERTANG.md`](docs/WONDERTANG.md): qué `.fs` usar, la placa, pines, puente J3, carga de ROMs, LED y grabación.
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md): puerta de cada build, números medidos, bancos y matriz de monitores.
-- [`docs/notas/`](docs/notas/): una nota por área (`sdram`, `integ`, `core`, `video`, `bus`, `megaram`) y la de la fusión.
+- [`docs/notas/`](docs/notas/README.md): anexo con una nota por área (`sdram`, `integ`, `core`, `video`, `bus`, `megaram`) y la de la fusión.
+- [`bitstream/LEEME.md`](bitstream/LEEME.md): la guía de la 0.1beta para probarla en placa.
 - [`UPSTREAM.md`](UPSTREAM.md): de dónde sale cada fichero, y dónde está el
   estudio del port que fija el plan de hitos.
 
