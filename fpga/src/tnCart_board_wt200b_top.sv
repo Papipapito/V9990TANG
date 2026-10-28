@@ -55,6 +55,8 @@
 //  - el reset del DAC I2S pasa por dos FF en CLK_DAC
 //  - xtal o sync: lo decide el board_wt200b_config_*.sv que compile cada
 //    build_*.tcl (CONFIG_BOARD::SYNC_CPU_CLK)
+//  - v9990_megaram_nextor: la flash y la TF vuelven a usarse (los pines los
+//    conduce MAIN) y el tope de BOOT_HOLD pasa a 200 ms
 //
 
 `default_nettype none
@@ -103,14 +105,14 @@ module TNCART_BOARD_WT200B_TOP (
     output wire    [2:0]    tmds_data_p,
     output wire    [2:0]    tmds_data_n,
 
-    // SPI FLASH (sin uso en V9990TANG: en reposo)
+    // SPI FLASH (solo la usa v9990_megaram_nextor; en las demas, en reposo)
     output  wire            mspi_cs,
     output  wire            mspi_sclk,
     input   wire            mspi_miso,
     output  wire            mspi_mosi,
     output  wire            mspi_hold,
 
-    // TF (sin uso en V9990TANG: en reposo)
+    // TF (solo la usa v9990_megaram_nextor; en las demas, en reposo)
     output  wire            TF_SCLK,    // SCLK
     output  wire            TF_CMD,     // MOSI
     input   wire            TF_DAT0,    // MISO
@@ -185,8 +187,15 @@ module TNCART_BOARD_WT200B_TOP (
     logic wait_timeout;
     logic bus_ok;
 
+    // Tope de BOOT_HOLD_27 por arranque (fail-open): 50 ms (el valor por
+    // defecto de la guardia) salvo con Nextor, cuya copia de la flash a la
+    // SDRAM tarda ~70 ms: 200 ms (5 400 000 ciclos de 27 MHz) en
+    // v9990_megaram_nextor (docs/notas/nextor.md)
+    localparam int BOOT_HOLD_CYCLES = (CONFIG::ENABLE_NEXTOR != CONFIG::DISABLE) ? 5_400_000 : 1_350_000;
+
     BOARD_WT200B_GUARD #(
-        .SYNC           (CONFIG_BOARD::SYNC_CPU_CLK)
+        .SYNC           (CONFIG_BOARD::SYNC_CPU_CLK),
+        .HOLD_CYCLES    (BOOT_HOLD_CYCLES)
     ) u_guard (
         .CLK_27M,
         .PLL_LOCK       (CLK_BASE_LOCK),
@@ -357,18 +366,15 @@ module TNCART_BOARD_WT200B_TOP (
     /***************************************************************
      * V9990TANG: pines sin uso, en reposo
      ***************************************************************/
-    // Flash SPI de la Tang (mspi_*, la del bitstream; -use_mspi_as_gpio):
-    // /CS alto (deseleccionada), /HOLD alto (inactivo), SCLK y MOSI a 0.
-    assign mspi_cs   = 1'b1;
-    assign mspi_sclk = 1'b0;
-    assign mspi_mosi = 1'b0;
+    // Flash SPI de la Tang (mspi_*, la del bitstream; -use_mspi_as_gpio) y
+    // TF: desde la configuracion v9990_megaram_nextor los conduce MAIN (la
+    // flash para copiar Nextor, la TF por el SPI de CARTRIDGE_NEXTOR); en las
+    // demas MAIN los deja en el reposo de siempre: flash con /CS alto
+    // (deseleccionada), SCLK y MOSI a 0; TF con CS_n (DAT3) alto, SCLK a 0 y
+    // CMD (MOSI) a 1 (reposo del bus SPI de la SD), y TF_DAT0 y mspi_miso sin
+    // carga. /HOLD de la flash alto (inactivo) siempre; DAT1 y DAT2 de la TF
+    // en alta impedancia con el pull-up del .cst.
     assign mspi_hold = 1'b1;
-    // TF: CS_n (DAT3) alto, SCLK a 0, CMD (MOSI) a 1 (reposo del bus SPI de
-    // la SD); DAT1 y DAT2 en alta impedancia con el pull-up del .cst.
-    // TF_DAT0 y mspi_miso son entradas sin carga.
-    assign TF_DAT3 = 1'b1;
-    assign TF_SCLK = 1'b0;
-    assign TF_CMD  = 1'b1;
     assign TF_DAT1 = 1'bZ;
     assign TF_DAT2 = 1'bZ;
 
@@ -471,7 +477,15 @@ module TNCART_BOARD_WT200B_TOP (
         .Video,
         .SoundInternal,
         .SoundExternal,
-        .SYS_READY      (sys_ready)
+        .SYS_READY      (sys_ready),
+        .TF_SCLK        (TF_SCLK),
+        .TF_MOSI        (TF_CMD),
+        .TF_MISO        (TF_DAT0),
+        .TF_CS_n        (TF_DAT3),
+        .FLASH_SCLK     (mspi_sclk),
+        .FLASH_MOSI     (mspi_mosi),
+        .FLASH_MISO     (mspi_miso),
+        .FLASH_CS_n     (mspi_cs)
     );
 
 endmodule

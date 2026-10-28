@@ -1,9 +1,10 @@
 # ============================================================================
 #  build_common.tcl -- V9990TANG - WonderTANG 2.02b (Tang Nano 20K, GW2AR-LV18QN88C8/I7)
-#  Parte comun de las cuatro builds. No se ejecuta sola: la cargan
-#  build_v9990_xtal.tcl, build_v9990_sync.tcl, build_v9990_megaram_xtal.tcl y
-#  build_v9990_megaram_sync.tcl despues de fijar
-#    CFG      v9990 | v9990_megaram   (fpga/config/<CFG>.sv)
+#  Parte comun de las seis builds. No se ejecuta sola: la cargan
+#  build_v9990_xtal.tcl, build_v9990_sync.tcl, build_v9990_megaram_xtal.tcl,
+#  build_v9990_megaram_sync.tcl, build_v9990_megaram_nextor_xtal.tcl y
+#  build_v9990_megaram_nextor_sync.tcl despues de fijar
+#    CFG      v9990 | v9990_megaram | v9990_megaram_nextor   (fpga/config/<CFG>.sv)
 #    VARIANT  xtal  | sync            (src/board/wt200b/board_wt200b_config_<VARIANT>.sv
 #                                      y constraints/<CFG>_<VARIANT>.sdc)
 #  Salida: impl/pnr/<CFG>_<VARIANT>.fs, .bin, .rpt.txt (recursos), .tr
@@ -26,12 +27,16 @@ if {![info exists CFG] || ![info exists VARIANT]} {
     puts "ERROR: build_common.tcl no se lanza solo: usar build_v9990_xtal.tcl, build_v9990_sync.tcl, build_v9990_megaram_xtal.tcl o build_v9990_megaram_sync.tcl"
     exit 1
 }
-if {[lsearch -exact {v9990 v9990_megaram} $CFG] < 0 || [lsearch -exact {xtal sync} $VARIANT] < 0} {
+if {[lsearch -exact {v9990 v9990_megaram v9990_megaram_nextor} $CFG] < 0 || [lsearch -exact {xtal sync} $VARIANT] < 0} {
     puts "ERROR: CFG = '$CFG' / VARIANT = '$VARIANT' no validos"
     exit 1
 }
 set NAME ${CFG}_${VARIANT}
-set MEGA [expr {$CFG eq "v9990_megaram"}]
+set MEGA [expr {$CFG eq "v9990_megaram" || $CFG eq "v9990_megaram_nextor"}]
+# Nextor (v9990_megaram_nextor): lo de MEGA mas CARTRIDGE_NEXTOR, TF_CONTROLLER
+# y NEXTOR_LOADER. BOOTLOADER sigue sin instanciarse, pero FLASH_SPI y SPI ya
+# si (la flash de la copia de Nextor y la TF)
+set NEXTOR [expr {$CFG eq "v9990_megaram_nextor"}]
 
 # Lista de ficheros: la de tnCart_board_wt200b.gprj de tnCartWonder, en el
 # mismo orden, sin lo que estas configuraciones no elaboran (FM, PSG, Nextor,
@@ -55,9 +60,15 @@ if {$MEGA} {
     lappend FILES src/bootloader.sv
     lappend FILES src/system/megarom_xfer_tie.sv
 }
+if {$NEXTOR} {
+    lappend FILES src/system/nextor_loader.sv
+}
 lappend FILES src/cartridge_v9990.sv
 if {$MEGA} {
     lappend FILES src/cartridge_megarom.sv
+}
+if {$NEXTOR} {
+    lappend FILES src/cartridge_nextor.sv
 }
 lappend FILES config/${CFG}.sv
 lappend FILES src/main.sv
@@ -71,6 +82,9 @@ if {$MEGA} {
     lappend FILES src/peripheral/msx/megarom_configure.sv
     lappend FILES src/peripheral/msx/megarom_controller.sv
     lappend FILES src/peripheral/msx/megarom_clear.sv
+}
+if {$NEXTOR} {
+    lappend FILES src/peripheral/msx/tf_controller.sv
 }
 lappend FILES src/peripheral/ram/ram.sv
 lappend FILES src/peripheral/ram/sdram.sv

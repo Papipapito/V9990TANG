@@ -1,8 +1,8 @@
 # V9990TANG en la WonderTANG 2.02b
 
-Guía de placa de la versión **0.1beta** (cuatro bitstreams en
+Guía de placa de la versión **0.2beta** (seis bitstreams en
 [`bitstream/`](../bitstream/)). **Ninguno se ha probado todavía en una placa.**
-Los cuatro compilan con el timing cerrado y pasan los bancos de simulación
+Los seis compilan con el timing cerrado y pasan los bancos de simulación
 (incluido el de placa entera, `fpga/tb/top`). Esta página dice qué `.fs`
 elegir, qué hace falta, qué ve el MSX y qué esperar al encenderlo. La guía corta
 para quien lo prueba, con la lista de pruebas en placa y la tabla de resultados,
@@ -10,7 +10,7 @@ es [`bitstream/LEEME.md`](../bitstream/LEEME.md).
 
 ## Qué `.fs` usar
 
-Hay dos configuraciones y, de cada una, dos variantes de reloj:
+Hay tres configuraciones y, de cada una, dos variantes de reloj:
 
 | `.fs` de `bitstream/` | Build | Configuración | Reloj | Cuándo usarlo |
 |---|---|---|---|---|
@@ -18,13 +18,16 @@ Hay dos configuraciones y, de cada una, dos variantes de reloj:
 | `v9990tang_wt202b_v9990_sync_0.1beta.fs` | `v9990_sync` | `v9990` | `sync`: `CLK_BASE` = reloj del slot x30 = 107,386 MHz | el V9990 al ritmo del MSX; **sin el MSX encendido no hay HDMI** |
 | `v9990tang_wt202b_megaram_xtal_0.1beta.fs` | `v9990_megaram_xtal` | `v9990_megaram`: V9990 + MegaRAM SCC-I de 4 MB | `xtal` | para cargar ROMs con `TNCROM.COM` |
 | `v9990tang_wt202b_megaram_sync_0.1beta.fs` | `v9990_megaram_sync` | `v9990_megaram` | `sync` | igual, con el reloj del slot; sin MSX no hay HDMI |
+| `v9990tang_wt202b_megaram_nextor_xtal_0.2beta.fs` | `v9990_megaram_nextor_xtal` | `v9990_megaram_nextor`: V9990 + MegaRAM + Nextor con la microSD de la Tang | `xtal` | el cartucho completo: MSX-DOS desde la SD y `TNCROM` desde ella. Necesita además el pack de Nextor en la flash en `0x100000` ([notas/nextor.md](notas/nextor.md)) |
+| `v9990tang_wt202b_megaram_nextor_sync_0.2beta.fs` | `v9990_megaram_nextor_sync` | `v9990_megaram_nextor` | `sync` | igual, con el reloj del slot; sin MSX no hay HDMI |
 
 Los `.fs` de `bitstream/` son copias de los de `fpga/impl/pnr/` de las builds
 sobre `055c865` (el último cambio de RTL y de opciones de P&R), con su SHA-256
 en `bitstream/SHA256SUMS.txt`. Se regeneran con `cd fpga && gw_sh
 build_<configuración>_<variante>.tcl`. La evidencia de cada build (recursos,
 timing y la salida de la puerta) está en `fpga/reports/v0.1beta/<variante>/`
-(y, con el mismo cuerpo de `.fs`, en `fpga/reports/fusion/`). Si la variante
+(y, con el mismo cuerpo de `.fs`, en `fpga/reports/fusion/`); la de las dos
+`megaram_nextor_*` de la 0.2beta, en `fpga/reports/nextor/<variante>/`. Si la variante
 `sync` da problemas, la `xtal` de la misma configuración es el respaldo: tiene
 el mismo RTL y solo cambia el reloj.
 

@@ -16,3 +16,5 @@
 *.fs  -text
 # Ejecutables de MSX (TNCROM.COM): binarios, byte a byte
 *.COM binary
+# Imagenes para la flash (pack de Nextor): binarios, byte a byte
+*.bin binary

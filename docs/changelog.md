@@ -3,6 +3,41 @@
 Formato: un apartado por hito o versión, lo más reciente arriba. Las cifras de
 cada build están en [VERIFICATION.md](VERIFICATION.md).
 
+## 0.2beta (28 de octubre de 2026, etiqueta local `v0.2beta`, sin publicar)
+
+Añade la configuración `v9990_megaram_nextor`, el cartucho "multi todo": V9990
++ MegaRAM SCC-I + Nextor con la microSD de la Tang
+([notas/nextor.md](notas/nextor.md)). **Sin probar en placa**, como el resto.
+
+- **`bitstream/`**: `v9990tang_wt202b_megaram_nextor_{xtal,sync}_0.2beta.fs`
+  (CheckSum `0x0BA7` y `0x1D3F`; copias de las builds de
+  `fpga/reports/nextor/`), el pack de Nextor para `0x100000`, `SHA256SUMS.txt`
+  con todo, y el LEEME y el README ampliados (las dos grabaciones, la microSD,
+  los 200 ms, los límites de Nextor y la prueba 11). Los cuatro `.fs` de la
+  0.1beta no cambian.
+- Revisión corta antes de fusionar (tres lentes con refutador): ningún fallo
+  de RTL; se corrige la sección 7 de la nota (el arreglo del banco es una
+  lectura de `FFFFh` entre la escritura y el cambio de páginas, no una espera
+  en `OP_SLOT`) y se apunta como límite que, tras una pérdida de enganche con
+  el MSX en marcha, la copia repetida retiene al Z80 en `/WAIT` ~75 ms sin
+  refresco de su DRAM (esa sesión ya está perdida: la megaRAM se borra).
+
+- `fpga/config/v9990_megaram_nextor.sv`, `build_v9990_megaram_nextor_{xtal,sync}.tcl`
+  y sus `.sdc` (copias de los de MegaRAM).
+- Vuelven, solo en esta configuración, `CARTRIDGE_NEXTOR` (subranura 2, con
+  `Plain` a 0 y /WAIT de memoria), `TF_CONTROLLER`, el SPI de la TF, `FLASH_SPI`
+  y su SPI; la copia de Nextor la hace `NEXTOR_LOADER` (propio) tras
+  `MEGAROM_CLEAR`. `BOOT_HOLD` con tope de 200 ms con Nextor.
+- Los pines de la flash y de la TF salen de `MAIN`; las cuatro variantes de la
+  0.1beta dan el mismo cuerpo de `.fs` que los de `bitstream/`.
+- `bitstream/v9990tang_nextor_pack_0.2beta.bin`: el kernel oficial
+  `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM` sin cambios, para la flash en
+  `0x100000` (`tools/nextor/make_pack.py`, licencia en
+  `bitstream/NEXTOR_LICENSE.md`: no es MIT).
+- Builds: pasan la puerta sin palancas (`xtal` place 2 / route 1, `sync`
+  place 0 / route 1). `tb/top`: seis variantes, escenario de Nextor con modelos
+  de la flash SPI y de la microSD en modo SPI.
+
 ## 0.1beta (28 de octubre de 2026, etiqueta local `v0.1beta`, sin publicar)
 
 Primera versión para probar en placa. Es la fusión de las seis áreas (detalle

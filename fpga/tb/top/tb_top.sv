@@ -3,7 +3,8 @@
 //
 // DUT: TNCART_BOARD_WT200B_TOP entero, con la lista de ficheros de
 // fpga/build_common.tcl (filelist.py) de la configuracion y la variante que
-// compile run.sh (v9990 / v9990_megaram, xtal / sync). Lo que Verilator no
+// compile run.sh (v9990 / v9990_megaram / v9990_megaram_nextor, xtal / sync).
+// Lo que Verilator no
 // puede con lo de Gowin va en modelos del banco (gowin_models.sv: rPLL,
 // CLKDIV, MULT18X18, DPB) y el DVI_TX cifrado en tb/video/sim/dvi_tx_stub.sv;
 // el RTL no se toca (filelist.py hace copias con cuatro arreglos de sintaxis
@@ -31,6 +32,11 @@
 //   - el /RESET del MSX (por el mux, grupo 2), /SLTSL decodificado de /MREQ y
 //     la pagina (slot_sel: paginas cuyo slot primario es el cartucho), y la
 //     memoria del MSX contestando en las demas.
+//   - la flash SPI de la Tang (mspi_*): modelo de la orden 03h (lectura) con
+//     una ROM de Nextor de prueba de 128 KB en 10_0000h ("AB" al principio) y
+//     FFh en el resto; y la microSD (TF_*) en modo SPI: CMD0, CMD8, CMD55,
+//     ACMD41 y CMD17 (bloque de 512 bytes con patron), R1 tras un byte de
+//     Ncr. Sin Nextor, los pines de las dos tienen que quedarse en reposo.
 //
 // Comprobaciones siempre activas: el FPGA no conduce D0-D7 sin una lectura
 // legitima, ni 30 ns despues de subir /RD, ni a la vez que el Z80 o la
@@ -54,7 +60,14 @@
 //   F /INT del V9990 (VBlank, R#9): INTA + ISR (P#6) en un bucle de HALT
 //   G video: B1 BD8 con borde de paleta; NTSC 855 x 524 con DE 720 x 480 y,
 //     con R#7 PAL, 855 x 626 con DE 720 x 576; colores en la imagen
-//   H MegaRAM (solo esa configuracion): SCC-I RAM al arrancar, tncrom
+//   N Nextor (solo v9990_megaram_nextor): la copia de la flash a la SDRAM
+//     (en A, por la puerta de atras), registro FFFFh del slot expandido con
+//     Nextor en la subranura 2 de la pagina 1 y la megaROM en la 0 de la
+//     pagina 2, "AB" de Nextor (lo que busca la BIOS), sus bancos de 8 KB
+//     (6000h, 6800h), proteccion contra escritura y, en full, el SPI de la
+//     microSD por el banco 40h (CMD0, CMD8, CMD55 + ACMD41 hasta salir de
+//     idle, CMD17 y los 512 bytes del bloque)
+//   H MegaRAM (MegaRAM y Nextor): SCC-I RAM al arrancar, tncrom
 //     (desbloqueo, ASCII16, bancos por 8000h, lectura de vuelta, proteccion),
 //     PLAIN0 (M1 en 0000h-BFFFh, escrituras ignoradas, /RESET lo borra) y el
 //     /WAIT de memoria (cada lectura de la ventana espera al dato)
@@ -73,6 +86,8 @@
 
 module tb_top;
     localparam bit MEGA = (CONFIG::ENABLE_MEGAROM != CONFIG::DISABLE);
+    localparam bit NEXTOR = (CONFIG::ENABLE_NEXTOR != CONFIG::DISABLE);
+    localparam string CFGNAME = NEXTOR ? "v9990_megaram_nextor" : MEGA ? "v9990_megaram" : "v9990";
     localparam bit SYNC = (CONFIG_BOARD::SYNC_CPU_CLK != 0);
     localparam [7:0] V99 = 8'h60;
 
@@ -153,6 +168,8 @@ module tb_top;
     wire [2:0]  tmds_data_p, tmds_data_n;
     wire        mspi_cs, mspi_sclk, mspi_mosi, mspi_hold;
     wire        tf_sclk, tf_cmd, tf_dat1, tf_dat2, tf_dat3, uart_tx;
+    reg         fl_miso = 1'b1;     // modelo de la flash
+    reg         sd_miso = 1'b1;     // modelo de la microSD
 
     TNCART_BOARD_WT200B_TOP dut (
         .CLK_27M        (clk27),
@@ -188,12 +205,12 @@ module tb_top;
         .tmds_data_n    (tmds_data_n),
         .mspi_cs        (mspi_cs),
         .mspi_sclk      (mspi_sclk),
-        .mspi_miso      (1'b1),
+        .mspi_miso      (fl_miso),
         .mspi_mosi      (mspi_mosi),
         .mspi_hold      (mspi_hold),
         .TF_SCLK        (tf_sclk),
         .TF_CMD         (tf_cmd),
-        .TF_DAT0        (1'b1),
+        .TF_DAT0        (sd_miso),
         .TF_DAT1        (tf_dat1),
         .TF_DAT2        (tf_dat2),
         .TF_DAT3        (tf_dat3),
@@ -279,6 +296,126 @@ module tb_top;
     end
     always @(posedge i_on_d) npn_i = 1'b1;
     always @(negedge i_off_d) if (!i_on_d) npn_i = 1'b0;
+
+    // ------------------------------------------------------------------
+    //  Flash SPI de la Tang: orden 03h (READ) con direccion de 24 bits, modo 0
+    //  (el SPI de tnCart saca MOSI en la bajada de SCLK y muestrea MISO en la
+    //  subida). ROM de Nextor de prueba (nx_img) en 10_0000h-11_FFFFh; FFh en
+    //  el resto
+    // ------------------------------------------------------------------
+    localparam int unsigned NX_SIZE = 131072;
+    localparam int unsigned NX_FLASH = 32'h10_0000;
+    function automatic [7:0] nx_img(input int unsigned a);
+        if (a == 0) return 8'h41;
+        if (a == 1) return 8'h42;
+        return 8'((a * 7) ^ (a >> 8) ^ ((a >> 13) * 29) ^ 8'h3C);
+    endfunction
+    function automatic [7:0] flash_byte(input int unsigned a);
+        if (a >= NX_FLASH && a < NX_FLASH + NX_SIZE) return nx_img(a - NX_FLASH);
+        return 8'hFF;
+    endfunction
+    int unsigned fl_bits = 0, fl_dbits = 0;
+    reg [31:0] fl_sh = 32'd0;
+    reg [7:0]  fl_cmd = 8'h00;
+    reg [23:0] fl_addr = 24'h0;
+    int n_fl_cs = 0, n_fl_bytes = 0, n_fl_badcmd = 0;
+    reg [7:0]  fl_cmd_first = 8'h00;
+    reg [23:0] fl_addr_first = 24'h0;
+    always @(negedge mspi_cs) begin
+        fl_bits = 0; fl_dbits = 0; n_fl_cs++;
+    end
+    always @(posedge mspi_sclk) if (!mspi_cs) begin
+        if (fl_bits < 32) begin
+            fl_sh = {fl_sh[30:0], mspi_mosi};
+            fl_bits++;
+            if (fl_bits == 32) begin
+                fl_cmd = fl_sh[31:24]; fl_addr = fl_sh[23:0];
+                if (n_fl_cs == 1) begin fl_cmd_first = fl_cmd; fl_addr_first = fl_addr; end
+                if (fl_cmd != 8'h03) n_fl_badcmd++;
+            end
+        end
+        else begin
+            fl_dbits++;
+            if (fl_dbits % 8 == 0) n_fl_bytes++;
+        end
+    end
+    always @(negedge mspi_sclk) if (!mspi_cs && fl_bits == 32) begin
+        reg [7:0] b;
+        b = flash_byte(fl_addr + fl_dbits / 8);
+        fl_miso = b[7 - (fl_dbits % 8)];
+    end
+
+    // ------------------------------------------------------------------
+    //  microSD en modo SPI (TF_DAT3 = /CS, TF_SCLK, TF_CMD = MOSI, TF_DAT0 =
+    //  MISO), modo 0. Una orden son 6 bytes que empiezan por 01xxxxxx; la
+    //  respuesta sale tras un byte de Ncr (FFh). CMD0 -> R1 01h; CMD8 -> R7
+    //  (01h 00h 00h 01h AAh); CMD55 -> R1; ACMD41 -> 01h la primera vez y 00h
+    //  despues (sale de idle); CMD17 -> R1 00h, un FFh, el testigo FEh, 512
+    //  bytes (sd_img del bloque) y 2 de CRC; cualquier otra, R1 05h (orden
+    //  ilegal)
+    // ------------------------------------------------------------------
+    function automatic [7:0] sd_img(input int unsigned blk, input int unsigned i);
+        return 8'((blk * 13) ^ i ^ (i >> 8) * 91 ^ 8'hA5);
+    endfunction
+    int unsigned sd_bits = 0;
+    reg [7:0] sd_rx = 8'hFF, sd_tx = 8'hFF;
+    reg [7:0] sd_cmd [0:5];
+    int sd_n = 0;
+    byte unsigned sd_q [$];
+    bit sd_idle = 1'b1, sd_app = 1'b0;
+    int sd_acmd41 = 0;
+    int sd_log [$];
+    int unsigned sd_blk = 0;
+    int n_sd_cs = 0;
+    always @(negedge tf_dat3) begin
+        sd_bits = 0; sd_n = 0; n_sd_cs++;
+        sd_tx = (sd_q.size() > 0) ? sd_q.pop_front() : 8'hFF;
+        sd_miso = sd_tx[7];
+    end
+    always @(posedge tf_sclk) if (!tf_dat3) begin
+        sd_rx = {sd_rx[6:0], tf_cmd};
+        sd_bits++;
+        if (sd_bits == 8) begin
+            sd_bits = 0;
+            if (sd_n == 0 && sd_rx[7:6] == 2'b01) begin
+                sd_cmd[0] = sd_rx; sd_n = 1;
+            end
+            else if (sd_n > 0) begin
+                sd_cmd[sd_n] = sd_rx; sd_n++;
+                if (sd_n == 6) begin
+                    int c;
+                    c = sd_cmd[0][5:0];
+                    sd_n = 0;
+                    sd_log.push_back(sd_app ? 100 + c : c);
+                    sd_q.push_back(8'hFF);                  // Ncr
+                    if (sd_app && c == 41) begin
+                        sd_acmd41++;
+                        if (sd_acmd41 >= 2) sd_idle = 1'b0;
+                        sd_q.push_back({7'd0, sd_idle});
+                        sd_app = 1'b0;
+                    end
+                    else begin
+                        sd_app = 1'b0;
+                        case (c)
+                            0:  begin sd_idle = 1'b1; sd_q.push_back(8'h01); end
+                            8:  begin sd_q.push_back({7'd0, sd_idle}); sd_q.push_back(8'h00); sd_q.push_back(8'h00);
+                                      sd_q.push_back(8'h01); sd_q.push_back(sd_cmd[4]); end
+                            55: begin sd_app = 1'b1; sd_q.push_back({7'd0, sd_idle}); end
+                            17: begin
+                                sd_blk = {sd_cmd[1], sd_cmd[2], sd_cmd[3], sd_cmd[4]};
+                                sd_q.push_back(8'h00); sd_q.push_back(8'hFF); sd_q.push_back(8'hFE);
+                                for (int i = 0; i < 512; i++) sd_q.push_back(sd_img(sd_blk, i));
+                                sd_q.push_back(8'h12); sd_q.push_back(8'h34);
+                            end
+                            default: sd_q.push_back(8'h05);
+                        endcase
+                    end
+                end
+            end
+            sd_tx = (sd_q.size() > 0) ? sd_q.pop_front() : 8'hFF;
+        end
+    end
+    always @(negedge tf_sclk) if (!tf_dat3) sd_miso = sd_tx[7 - sd_bits];
 
     // ------------------------------------------------------------------
     //  Contadores
@@ -521,7 +658,7 @@ module tb_top;
         bit we, wn;
         int lim;
         ntw = 0;
-        lim = boot_phase ? 400000 : 3000;
+        lim = boot_phase ? (NEXTOR ? 1000000 : 400000) : 3000;
         forever begin
             at(tf - T_SU_W); we = npn_w;
             at(tf);          wn = npn_w;
@@ -727,7 +864,7 @@ module tb_top;
     // ------------------------------------------------------------------
     typedef enum int {
         OP_OUT, OP_IN, OP_MRD, OP_MWR, OP_FETCH, OP_POLL, OP_WAITINT, OP_FRAMES,
-        OP_SLOT, OP_I, OP_RESET, OP_RESETWAIT, OP_CHK
+        OP_SLOT, OP_I, OP_RESET, OP_RESETWAIT, OP_CHK, OP_MPOLL, OP_LASTV
     } op_t;
     typedef struct {
         op_t        op;
@@ -885,7 +1022,7 @@ module tb_top;
 
     localparam int CK_PRINT = 0, CK_VRAM = 1, CK_LMMV = 2, CK_NTSC = 3, CK_PAL = 4, CK_SCCI = 5,
                    CK_TNCROM = 6, CK_PROT = 7, CK_PLAIN = 8, CK_MEMSUM = 9, CK_RESET = 10, CK_SAVEF = 11,
-                   CK_INT1 = 12;
+                   CK_INT1 = 12, CK_NXPROT = 13, CK_SD = 14;
 
     function automatic void chk_frame(input int k, input int lines, input int delines, input string what);
         $display("  cuadro %0d (%s): %0d lineas de %0d..%0d puntos, DE en %0d lineas de %0d..%0d puntos, rojo %0d, verde %0d, azul %0d",
@@ -977,6 +1114,20 @@ module tb_top;
                 $display("  /WAIT de memoria: %0d lecturas del slot, TW por lectura: 0:%0d 1:%0d 2:%0d 3:%0d 4+:%0d; %0d mal leidas",
                          n_mrd_ours, mem_tw_hist[0], mem_tw_hist[1], mem_tw_hist[2], mem_tw_hist[3],
                          mem_tw_hist[4] + mem_tw_hist[5] + mem_tw_hist[6] + mem_tw_hist[7], n_mem_bad);
+            CK_NXPROT:
+                check(sd_byte(CONFIG::RAM_ADDR_BIOS_NEXTOR + 5 * 8192) == nx_img(5 * 8192) &&
+                      sd_byte(CONFIG::RAM_ADDR_BIOS_NEXTOR + 15 * 8192 + 16'h1FFF) == nx_img(15 * 8192 + 16'h1FFF),
+                      "Nextor: una escritura en la ROM llego a la SDRAM");
+            CK_SD: begin
+                string l;
+                l = "";
+                foreach (sd_log[i]) l = {l, $sformatf(" %s%0d", sd_log[i] >= 100 ? "A" : "", sd_log[i] % 100)};
+                $display("  microSD: ordenes recibidas:%s; /CS bajo %0d veces; ACMD41 %0d", l, n_sd_cs, sd_acmd41);
+                check(sd_log.size() == 7 && sd_log[0] == 0 && sd_log[1] == 8 && sd_log[2] == 55 && sd_log[3] == 141 &&
+                      sd_log[4] == 55 && sd_log[5] == 141 && sd_log[6] == 17, $sformatf("microSD: ordenes recibidas:%s, esperadas 0 8 55 A41 55 A41 17", l));
+                check(!sd_idle, "microSD: sigue en idle tras ACMD41");
+                check(sd_blk == 3, $sformatf("microSD: CMD17 del bloque %0d, esperado 3", sd_blk));
+            end
             CK_RESET: begin
                 $display("  /RESET a %0.3f ms; el /WAIT del pin bajo a %0.3f ms; primer M1 de despues acabado a %0.3f ms",
                          t_rw_reset / 1.0e6, t_rw_wait_drop / 1.0e6, t_rw_m1 / 1.0e6);
@@ -1087,6 +1238,29 @@ module tb_top;
                         zt_now();
                     end
                 end
+                OP_MPOLL: begin
+                    // LD A,(nn) hasta (d & m) == (v & m), 64 veces como mucho
+                    k = 0;
+                    forever begin
+                        z_m1(pc, 8'h3A, 0, dmy, ntw);
+                        z_mrd(pc + 16'd1, 8'(o.a), dmy, ntw);
+                        z_mrd(pc + 16'd2, 8'(o.a >> 8), dmy, ntw);
+                        pc = pc_next(pc, 3);
+                        z_mrd(16'(o.a), 8'hFF, d, ntw2);
+                        k++;
+                        if ((d & 8'(o.m)) == (8'(o.v) & 8'(o.m)) || k >= 64) break;
+                    end
+                    last_v = d; areg = d;
+                    check(k < 64 || (d & 8'(o.m)) == (8'(o.v) & 8'(o.m)), $sformatf("%s: no llega tras %0d lecturas (ultima %02h)", o.what, k, d));
+                end
+                OP_LASTV: begin
+                    n_chk++;
+                    if (last_v !== 8'(o.v)) fail($sformatf("%s: %02h, esperado %02h", o.what, last_v, o.v));
+                end
+                // OP_SLOT cambia slot_sel en el acto: las tareas del Z80 vuelven
+                // antes de bajar /WR, asi que una escritura seguida de OP_SLOT
+                // se pierde si el cambio quita la pagina de la escritura. El
+                // programa pone una lectura entre las dos (fase N: FFFFh)
                 OP_SLOT: slot_sel = 4'(o.v);
                 OP_I:    z_i = 8'(o.v);
                 OP_RESET, OP_RESETWAIT: begin
@@ -1143,7 +1317,7 @@ module tb_top;
         if (!$value$plusargs("STRICTMEM=%d", stm)) stm = (hz <= 3600000) ? 1 : 0;
         strict_mem = (stm != 0);
         $display("tb_top: configuracion %s, variante %s, Z80 a %0.3f MHz, escenario %s, lecturas de la megaROM %s",
-                 MEGA ? "v9990_megaram" : "v9990", SYNC ? "sync" : "xtal", real'(hz) / 1.0e6, scen,
+                 CFGNAME, SYNC ? "sync" : "xtal", real'(hz) / 1.0e6, scen,
                  strict_mem ? "estrictas" : "contadas (no estrictas)");
 
         // SDRAM con un patron (contenido de encendido)
@@ -1179,7 +1353,8 @@ module tb_top;
             check(t_busok > 0.0 && t_drive >= t_busok && t_drive >= t_sysrdy, "arranque: DRIVE_EN antes que BUS_OK y SYS_READY");
             check(boot_hold_seen, "arranque: BOOT_HOLD nunca subio el /WAIT del pin");
             check(t_boot_m1 > t_drive, $sformatf("arranque: el primer M1 acabo (%0.3f ms) antes de DRIVE_EN (%0.3f ms): BOOT_HOLD no lo retuvo", t_boot_m1 / 1.0e6, t_drive / 1.0e6));
-            check(t_boot_m1 < 60.0e6, "arranque: el primer M1 tardo mas de 60 ms");
+            if (NEXTOR) check(t_boot_m1 < 120.0e6, "arranque: el primer M1 tardo mas de 120 ms");
+            else        check(t_boot_m1 < 60.0e6, "arranque: el primer M1 tardo mas de 60 ms");
             check(!boot_hold && drive_en && bus_ok, "arranque: guardia sin soltar");
             if (MEGA) begin
                 for (int unsigned a = 0; a < 32768; a++) if (sd_byte(a) !== 8'hFF) n_sd_ff_bad++;
@@ -1188,7 +1363,23 @@ module tb_top;
                 check(n_sd_pat_bad == 0, $sformatf("MegaRAM: el borrado se paso de los 32 KB (%0d bytes)", n_sd_pat_bad));
                 $display("  MegaRAM: borrado de 32 KB comprobado en la SDRAM (%0d bytes mal)", n_sd_ff_bad + n_sd_pat_bad);
             end
+            if (NEXTOR) begin
+                int bad_nx, bad_after;
+                bad_nx = 0; bad_after = 0;
+                for (int unsigned a = 0; a < NX_SIZE; a++) if (sd_byte(CONFIG::RAM_ADDR_BIOS_NEXTOR + a) !== nx_img(a)) bad_nx++;
+                for (int unsigned a = NX_SIZE; a < NX_SIZE + 4096; a++) if (sd_byte(CONFIG::RAM_ADDR_BIOS_NEXTOR + a) !== pat_byte(CONFIG::RAM_ADDR_BIOS_NEXTOR + a)) bad_after++;
+                $display("  Nextor: copia de la flash: /CS bajo %0d vez, orden %02h en %06h, %0d bytes leidos; %0d de %0d bytes mal en la SDRAM, %0d fuera de la ROM tocados",
+                         n_fl_cs, fl_cmd_first, fl_addr_first, n_fl_bytes, bad_nx, NX_SIZE, bad_after);
+                check(n_fl_cs == 1 && fl_cmd_first == 8'h03 && fl_addr_first == 24'(NX_FLASH) && n_fl_badcmd == 0,
+                      "Nextor: la flash no se leyo con una sola orden 03h en 10_0000h");
+                check(n_fl_bytes == NX_SIZE, $sformatf("Nextor: %0d bytes leidos de la flash, esperados %0d", n_fl_bytes, NX_SIZE));
+                check(bad_nx == 0, $sformatf("Nextor: %0d bytes de la ROM mal copiados a la SDRAM", bad_nx));
+                check(bad_after == 0, $sformatf("Nextor: la copia toco %0d bytes fuera de su sitio", bad_after));
+                check(mspi_cs, "Nextor: la flash sigue seleccionada tras la copia");
+            end
 
+            // +NXFAST (depuracion): sin las fases B a G
+            if (!$test$plusargs("NXFAST")) begin
             // ---------------- B: puertos ----------------
             p_chk(CK_PRINT, "B puertos");
             p_in(P(5), 8'h00, 8'h01, "P#5: CE a 0 en reposo");
@@ -1264,10 +1455,88 @@ module tb_top;
                 p_chk(CK_INT1, "");
             end
             p_wreg(6'd9, 8'h00);
+            end
+
+            // ---------------- N: Nextor ----------------
+            if (NEXTOR) begin
+                p_chk(CK_PRINT, "N Nextor: subranura 2 y AB");
+                // FFFFh del slot expandido (pagina 3 del cartucho): pagina 1 a
+                // la subranura 2 (Nextor), las demas a la 0 (megaROM)
+                p_op(OP_SLOT, 0, 4'b1000, 0, "");
+                p_mwr(16'hFFFF, 8'h08);
+                p_mrd(16'hFFFF, 8'hF7, 8'hFF, "FFFFh se lee invertido");
+                p_op(OP_SLOT, 0, 4'b0110, 0, "");
+                p_mrd(16'h4000, 8'h41, 8'hFF, "Nextor 4000h 'A'");
+                p_mrd(16'h4001, 8'h42, 8'hFF, "Nextor 4001h 'B'");
+                p_mrd(16'h8000, 8'hFF, 8'hFF, "megaROM (subranura 0) en 8000h a la vez");
+                p_mrd(16'h5FFF, nx_img(16'h1FFF), 8'hFF, "Nextor 5FFFh, banco 0");
+                p_mrd(16'h6002, nx_img(2), 8'hFF, "Nextor 6002h, banco 1 = 0 al arrancar");
+                if (scen == "full") begin
+                    p_mwr(16'h6000, 8'h05);
+                    p_mwr(16'h6800, 8'h0F);
+                    p_mrd(16'h4000, nx_img(5 * 8192), 8'hFF, "Nextor banco 5 en 4000h");
+                    p_mrd(16'h5ABC, nx_img(5 * 8192 + 16'h1ABC), 8'hFF, "Nextor banco 5 en 5ABCh");
+                    p_mrd(16'h7FFF, nx_img(15 * 8192 + 16'h1FFF), 8'hFF, "Nextor banco 15 en 7FFFh");
+                    p_mrd(16'hA000, 8'hFF, 8'hFF, "megaROM en A000h entre lecturas de Nextor");
+                    p_mrd(16'h6000, nx_img(15 * 8192), 8'hFF, "Nextor banco 15 en 6000h");
+                    p_mwr(16'h4000, 8'h55);         // ROM protegida
+                    p_mwr(16'h7FFF, 8'hAA);
+                    p_mrd(16'h4000, nx_img(5 * 8192), 8'hFF, "Nextor banco 5 tras escribir");
+                    p_chk(CK_NXPROT, "");
+
+                    p_chk(CK_PRINT, "N Nextor: SPI de la microSD (banco 40h)");
+                    p_mwr(16'h6000, 8'h40);
+                    // 10 bytes con /CS alto (5000h: A12 = 1)
+                    for (int i = 0; i < 10; i++) p_mwr(16'h5000, 8'hFF);
+                    // CMD0
+                    p_mwr(16'h4000, 8'h40); for (int i = 0; i < 4; i++) p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h95);
+                    p_op(OP_MPOLL, 16'h4000, 8'h00, 8'h80, "CMD0: R1");
+                    p_op(OP_LASTV, 0, 8'h01, 0, "CMD0: R1");
+                    // CMD8 (2,7-3,6 V, patron AAh)
+                    p_mwr(16'h4000, 8'h48); p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h01);
+                    p_mwr(16'h4000, 8'hAA); p_mwr(16'h4000, 8'h87);
+                    p_op(OP_MPOLL, 16'h4000, 8'h00, 8'h80, "CMD8: R1");
+                    p_op(OP_LASTV, 0, 8'h01, 0, "CMD8: R1");
+                    p_mrd(16'h4000, 8'h00, 8'hFF, "CMD8: R7 1");
+                    p_mrd(16'h4000, 8'h00, 8'hFF, "CMD8: R7 2");
+                    p_mrd(16'h4000, 8'h01, 8'hFF, "CMD8: R7 3 (tension)");
+                    p_mrd(16'h4000, 8'hAA, 8'hFF, "CMD8: R7 4 (patron)");
+                    // CMD55 + ACMD41 (HCS) dos veces
+                    for (int r = 0; r < 2; r++) begin
+                        p_mwr(16'h4000, 8'h77); for (int i = 0; i < 4; i++) p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h65);
+                        p_op(OP_MPOLL, 16'h4000, 8'h00, 8'h80, "CMD55: R1");
+                        p_op(OP_LASTV, 0, (r == 0) ? 8'h01 : 8'h01, 0, "CMD55: R1");
+                        p_mwr(16'h4000, 8'h69); p_mwr(16'h4000, 8'h40); for (int i = 0; i < 3; i++) p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h77);
+                        p_op(OP_MPOLL, 16'h4000, 8'h00, 8'h80, "ACMD41: R1");
+                        p_op(OP_LASTV, 0, (r == 0) ? 8'h01 : 8'h00, 0, "ACMD41: R1");
+                    end
+                    // CMD17 del bloque 3: R1, testigo FEh y 512 bytes
+                    p_mwr(16'h4000, 8'h51); p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h00); p_mwr(16'h4000, 8'h00);
+                    p_mwr(16'h4000, 8'h03); p_mwr(16'h4000, 8'hFF);
+                    p_op(OP_MPOLL, 16'h4000, 8'h00, 8'h80, "CMD17: R1");
+                    p_op(OP_LASTV, 0, 8'h00, 0, "CMD17: R1");
+                    p_op(OP_MPOLL, 16'h4000, 8'hFE, 8'hFF, "CMD17: testigo FEh");
+                    for (int i = 0; i < 512; i++) p_mrd(16'h4000 + 16'(i % 2048), sd_img(3, i), 8'hFF, $sformatf("CMD17: byte %0d del bloque", i));
+                    p_mrd(16'h4000, 8'h12, 8'hFF, "CMD17: CRC 1");
+                    p_mrd(16'h4000, 8'h34, 8'hFF, "CMD17: CRC 2");
+                    p_mrd(16'h5000, 8'hFF, 8'h00, "");      // /CS alto
+                    p_chk(CK_SD, "");
+                    p_mwr(16'h6000, 8'h00);
+                    p_mwr(16'h6800, 8'h00);
+                    p_mrd(16'h4000, 8'h41, 8'hFF, "Nextor 4000h 'A' tras la microSD");
+                end
+                // FFFFh otra vez a 0 (todas las paginas a la subranura 0)
+                p_op(OP_SLOT, 0, 4'b1000, 0, "");
+                p_mwr(16'hFFFF, 8'h00);
+                p_mrd(16'hFFFF, 8'hFF, 8'hFF, "FFFFh otra vez a 0");
+                p_op(OP_SLOT, 0, 4'b0000, 0, "");
+            end
 
             // ---------------- H: MegaRAM ----------------
             if (MEGA) begin
                 p_chk(CK_PRINT, "H MegaRAM: SCC-I RAM al arrancar");
+                p_op(OP_SLOT, 0, 4'b1000, 0, "");
+                p_mrd(16'hFFFF, 8'hFF, 8'hFF, "FFFFh = 00h al empezar H");
                 p_op(OP_SLOT, 0, 4'b0110, 0, "");
                 p_mrd(16'h4000, 8'hFF, 8'hFF, "SCC-I: 4000h borrado (sin AB)");
                 p_mrd(16'hBFFF, 8'hFF, 8'hFF, "SCC-I: BFFFh");
@@ -1390,6 +1659,11 @@ module tb_top;
         check(n_bad_drive == 0, $sformatf("%0d conducciones de D0-D7 sin lectura legitima", n_bad_drive));
         check(n_late_drive == 0, $sformatf("%0d conducciones de D0-D7 tardias", n_late_drive));
         check(n_hang == 0, "Z80 colgado");
+        if (!NEXTOR) begin
+            check(n_fl_cs == 0 && mspi_cs && !mspi_sclk, $sformatf("sin Nextor: la flash se ha seleccionado %0d veces", n_fl_cs));
+            check(n_sd_cs == 0 && tf_dat3 && !tf_sclk && tf_cmd, $sformatf("sin Nextor: la microSD se ha seleccionado %0d veces", n_sd_cs));
+        end
+        check(mspi_hold, "/HOLD de la flash bajo");
         if (scen != "nomsx") begin
             check(led_code == 3'd5, $sformatf("LED en el codigo %0d al final, esperado 5 (listo)", led_code));
             check(n_led_off_ready == 0, $sformatf("LED apagado %0d ciclos con el codigo 5", n_led_off_ready));
@@ -1398,7 +1672,7 @@ module tb_top;
         for (int i = 0; i < led_n && i < 16; i++) $write(" %0d@%0.2f", led_seq[i], led_t[i] / 1.0e6);
         $display("");
         $display("RESULTADO %s_%s %0.2fMHz %s: %0d comprobaciones, %0d fallos; E/S %0d (%0d al V9990, TW max %0d), M1 %0d, INTA %0d, lecturas del slot %0d (TW max %0d, %0d mal), /INT %0d, cuadros %0d, ranuras perdidas %0d, errores SDRAM tras el reset %0d",
-                 MEGA ? "v9990_megaram" : "v9990", SYNC ? "sync" : "xtal", real'(hz) / 1.0e6, scen, n_chk, n_fail,
+                 CFGNAME, SYNC ? "sync" : "xtal", real'(hz) / 1.0e6, scen, n_chk, n_fail,
                  n_io, n_io_ours, tw_max_io, n_m1, n_inta, n_mrd_ours, tw_max_mem, n_mem_bad, n_int, fr_n, lost, u_mem.n_err - n_sd_err_rst);
         if (n_fail == 0) $display("BANCO: PASA");
         else             $display("BANCO: FALLA");

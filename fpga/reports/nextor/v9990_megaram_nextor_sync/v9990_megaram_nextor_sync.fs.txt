@@ -1,0 +1,5 @@
+v9990_megaram_nextor_sync.fs, build del Wed Oct 28 12:53:46 2026
+CheckSum: 0x1D3F
+md5 del fichero: 128da57ff03702b1ca2c4344caec745b
+md5 sin las lineas de cabecera (//): a5063bdaaa0dc419bef34920015ea3ff
+comparado con v9990_megaram_nextor_sync.fs (build del Wed Oct 28 11:08:03 2026, CheckSum 0x1D3F): cuerpo IDENTICO

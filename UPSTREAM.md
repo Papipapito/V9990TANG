@@ -34,6 +34,29 @@ core.
 **tiny9990**: emulación del V9990 de Yamaha escrita por Shinobu Hashimoto, © 2024,
 BSD 3-Clause (aviso en la cabecera de cada fichero de `fpga/v9990/tiny9990/`).
 
+## Nextor (configuración `v9990_megaram_nextor`)
+
+| Fichero | Origen | Autor | Licencia |
+|---|---|---|---|
+| `bitstream/v9990tang_nextor_pack_0.2beta.bin` | `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM`, de las releases de [Konamiman/Nextor](https://github.com/Konamiman/Nextor/releases) (v2.1.2), **sin cambios**: 131 072 bytes, SHA-256 `b2394dfca88e72a9386f90afe7b0e13f0c3b5538a4c397423e3b436c810e74ee`. Es el kernel que pide tnCart (`roms/nextor/README.md` de tnCart y tnCartWonder: tnCart no distribuye la ROM). Lo copia `tools/nextor/make_pack.py`, que comprueba tamaño, cabecera, cadenas y SHA-256 | Néstor Soriano (Konamiman), sobre MSX-DOS; el driver de la MegaFlashROM SCC+ SD (v1.3) va dentro del kernel y es del mismo proyecto | la de Nextor: `bitstream/NEXTOR_LICENSE.md` = `tools/nextor/LICENSE_NEXTOR.md`, copia del `LICENSE.md` del repositorio de Nextor (`f510e43`, 2019-02-01) |
+| `fpga/src/cartridge_nextor.sv`, `fpga/src/peripheral/msx/tf_controller.sv` | tnCartWonder `d3a54f1` (`rtl/src/cartridge_nextor.sv`, `rtl/src/peripheral/msx/tf_controller.sv`) | Shinobu Hashimoto | BSD 3-Clause |
+
+**La licencia de Nextor no es MIT ni BSD.** Es un texto propio (MSX-DOS es de
+The MSX Licensing Corporation, que autoriza su uso en Nextor): permite copiar,
+modificar, publicar y distribuir con el aviso de copyright, pero **no el uso
+comercial** (vender copias del software) ni las obras derivadas (forks del
+código fuente) sin permiso; se puede distribuir hardware con Nextor en ROM si
+no se cobra por el software. El pack es una copia byte a byte de la ROM oficial
+con su licencia al lado, así que entra en lo permitido; quien venda cartuchos
+con él tiene que respetar esa condición. El resto del repositorio sigue siendo
+BSD 3-Clause. El driver de la microSD tampoco es de tnCart: tnCart solo pone el
+hardware que emula la MegaFlashROM SCC+ SD (`TF_CONTROLLER`, BSD 3-Clause) y
+usa el driver que trae el kernel de Nextor.
+
+El SHA-256 de la ROM es el de las tres copias que había en la máquina del autor
+(descargas de fuentes distintas, idénticas entre sí); **no se ha comparado con
+el del fichero de la release en GitHub** (habría que descargarlo).
+
 ## IP del fabricante
 
 `fpga/src/board/rev1/dvi_tx/` contiene el IP **DVI_TX** de Gowin Semiconductor
@@ -66,11 +89,14 @@ fichero entra en la build `v9990` (`fpga/build_common.tcl`, que cargan
 | `fpga/src/board/wt200b/board_wt200b_config_xtal.sv`, `board_wt200b_config_sync.sv` | `board/wt200b/board_wt200b_config.sv` | uno por variante | partido en el hito 6: `SYNC_CPU_CLK = 0` (xtal) o `1` (sync), `SYNC_CPU_UMA = 0` en los dos; `board_wt200b_config.sv` ya no existe |
 | `fpga/src/board/wt200b/board_wt200b_guard.sv` | propio | sí | POR, gestor del rPLL base y guardia de lock (27 MHz). El `board_wt200b_bus_guard.sv` provisional de los hitos 3 y 6 desapareció en la fusión: los pines los gatea `board_rev1_bus.sv` |
 | `fpga/src/system/system_reset.sv`, `megarom_xfer_tie.sv` | propios | `system_reset.sv` sí; el otro solo MegaRAM | cadena de reset en `CLK_BASE`; `XFER_IF` atado de la megaROM |
+| `fpga/src/system/nextor_loader.sv` | propio | solo Nextor | copia de la ROM de Nextor de la flash (`10_0000h`) a la SDRAM (`70_0000h`) con el `FLASH_SPI` de tnCart: sustituye al paso de carga del `BOOTLOADER` (`docs/notas/nextor.md`) |
+| `fpga/src/cartridge_nextor.sv` | igual | solo Nextor | cartucho Nextor de tnCart con la señal `Plain` a 0 y el /WAIT de memoria (`ENABLE_MEM_WAIT`) |
+| `fpga/src/peripheral/msx/tf_controller.sv` | igual | solo Nextor | SPI de la microSD como el de la MegaFlashROM SCC+ SD, sin cambios |
 | `fpga/src/board/wt200b/board_wt200b.cst` | igual | sí | pines de la WonderTANG 2.00b/2.02b |
 | `fpga/src/board/wt200b/board_wt200b_27M.sdc` | igual | no | referencia; lo sustituye `fpga/constraints/v9990_xtal.sdc` |
 | `fpga/src/board/wt200b/board_wt200b_3_58M.sdc` | igual | no | referencia para la variante `sync` (hito 6) |
-| `fpga/src/peripheral/flash.sv` | igual | solo MegaRAM | ya no se instancia (hito 3); la MegaRAM lo compila por `FLASH_IF` |
-| `fpga/src/peripheral/spi.sv` | igual | solo MegaRAM | ya no se instancia (hito 3); la MegaRAM lo compila por `SPI_IF` |
+| `fpga/src/peripheral/flash.sv` | igual | solo MegaRAM | sin instanciar en `v9990_megaram` (la compila por `FLASH_IF`); en `v9990_megaram_nextor` vuelve `FLASH_SPI`, siempre en lectura |
+| `fpga/src/peripheral/spi.sv` | igual | solo MegaRAM | sin instanciar en `v9990_megaram` (por `SPI_IF`); en `v9990_megaram_nextor`, el de la flash y el de la TF |
 | `fpga/src/peripheral/led.sv` | igual | sí | `LED` de tnCart sin cambios y sin instanciar; se añade `STATUS_LED` con los códigos 0-5 (hitos 3 y 6) |
 | `fpga/src/peripheral/msx/bus.sv` | igual | sí | `BUS_IF` (y `EXPANSION_BUS`, que no se instancia) |
 | `fpga/src/peripheral/msx/expansion_slot.sv` | igual | sí | slot expandido |
@@ -84,9 +110,11 @@ fichero entra en la build `v9990` (`fpga/build_common.tcl`, que cargan
 | `fpga/v9990/tiny9990/*.sv` (17 ficheros) | `peripheral/video/tiny9990/` | sí | core sin parches en el hito 1; desde los hitos 2 y 7, con los seis parches, P#8-P#15 a `FFh`, PAL, cursor EOR, R#16 y la aserción de ranura perdida (`docs/notas/core.md`) |
 | `fpga/config/v9990.sv` | `config.sv` | sí | solo cambian los `ENABLE_*`: V9990 y su VDP de comandos activos, el resto desactivado; desde la fusión, las palancas del core, de `BLEND` y del pre-WAIT de memoria |
 | `fpga/config/v9990_megaram.sv` | `config/v9990.sv` | una de las dos | configuración MegaRAM (hito 8): `ENABLE_MEGA_SCC_I`, SCC, ventana de 4 MB en `00_0000h`, `ENABLE_MEM_WAIT` |
+| `fpga/config/v9990_megaram_nextor.sv` | `config/v9990_megaram.sv` | solo Nextor | `ENABLE_NEXTOR`; mapa de la SDRAM con Nextor en `70_0000h` |
+| `tools/nextor/make_pack.py` | propio | — | construye y comprueba el pack de Nextor (BSD 3-Clause, solo el script) |
 | `fpga/constraints/v9990_xtal.sdc` | propio | sí | relojes del `board_wt200b_27M.sdc` presentes en esta configuración y grupos asíncronos propios |
-| `fpga/constraints/v9990_sync.sdc`, `v9990_megaram_xtal.sdc`, `v9990_megaram_sync.sdc` | propios | uno por build | variante `sync` (hito 6, a partir de `board_wt200b_3_58M.sdc`) y configuración MegaRAM |
-| `fpga/build_common.tcl`, `fpga/build_v9990_{xtal,sync}.tcl`, `fpga/build_v9990_megaram_{xtal,sync}.tcl` | propios, a partir de `tnCart_board_wt200b.gprj` | — | lista de ficheros y opciones comunes, y un script por configuración y variante (hito 6) |
+| `fpga/constraints/v9990_sync.sdc`, `v9990_megaram_xtal.sdc`, `v9990_megaram_sync.sdc`, `v9990_megaram_nextor_{xtal,sync}.sdc` | propios | uno por build | variante `sync` (hito 6, a partir de `board_wt200b_3_58M.sdc`), configuración MegaRAM y, copias de esta, Nextor |
+| `fpga/build_common.tcl`, `fpga/build_v9990_{xtal,sync}.tcl`, `fpga/build_v9990_megaram_{xtal,sync}.tcl`, `fpga/build_v9990_megaram_nextor_{xtal,sync}.tcl` | propios, a partir de `tnCart_board_wt200b.gprj` | — | lista de ficheros y opciones comunes, y un script por configuración y variante (hito 6) |
 | `fpga/tb/integ/` | propio | — | banco Verilator de la guardia de lock, el POR y los pines (hitos 3 y 6) |
 | `tools/check_build.py`, `tools/archive_build.py` | propios | — | la puerta de cada build y el archivado de su evidencia (BSD 3-Clause, cabecera propia) |
 | `fpga/reports/hito1/v9990_xtal.rpt.txt`, `.tr`, `.sdf`, `gwsynthesis.log`, `pnr.log` | generados por `gw_sh` 1.9.12.03 en la build del hito 1 | — | evidencia de la build. El `.rpt.txt` y el `.tr` van sin modificar y con la cabecera de Gowin; el `.sdf` es un extracto que conserva esa cabecera y copia celdas y líneas sin cambiar ningún valor; los logs no llevan cabecera. Ninguno es BSD (ver `LICENSE`) |

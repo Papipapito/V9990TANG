@@ -299,6 +299,22 @@ llega junto a un R/W, alarga el `ACK_n` 20 ciclos: es compatible (el /WAIT dura
 
 Sin bootloader nadie escribe las zonas sin uso.
 
+### Configuración `v9990_megaram_nextor` (rama `hito/nextor`)
+
+La de `v9990_megaram` más el cartucho Nextor de tnCart en la subranura 2
+(`CARTRIDGE_NEXTOR` con su `TF_CONTROLLER`: el SPI de la microSD de la Tang como
+el de la MegaFlashROM SCC+ SD) y la copia de su ROM de la flash (`10_0000h`) a la
+SDRAM (`70_0000h`) al arrancar, con `FLASH_SPI` y un cargador propio
+(`NEXTOR_LOADER`) en lugar del `BOOTLOADER` de tnCart. Arranque: `RESET_n` →
+`MEGAROM_CLEAR` → copia (~69 ms) → `SYS_RESET_n`; `BOOT_HOLD` con tope de 200 ms
+en esta configuración. Ningún reloj nuevo; los pines de la flash y de la TF los
+conduce `MAIN` (en las demás configuraciones, en reposo). Las cuatro variantes de
+la 0.1beta dan el mismo `.fs`. Detalle en [notas/nextor.md](notas/nextor.md).
+
+| SDRAM en `v9990_megaram_nextor` | `00_0000h` | `40_0000h` | `70_0000h` | `72_0000h`-`77_FFFFh` | `78_0000h` |
+|---|---|---|---|---|---|
+| | megaROM, 4 MB | sin uso | **Nextor, 128 KB** | sin uso | VRAM, 512 KB |
+
 ### Registros nuevos de la megaROM (`v9990_megaram`)
 
 Con la llave cerrada y `ENABLE`: `1Fh` bit 0 = modo PLAIN0 (ROM plana en
