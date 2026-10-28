@@ -20,7 +20,8 @@ import sys
 
 def main():
     fpga, cfg, variant = sys.argv[1], sys.argv[2], sys.argv[3]
-    mega = (cfg == "v9990_megaram")
+    mega = cfg in ("v9990_megaram", "v9990_megaram_nextor")
+    nextor = (cfg == "v9990_megaram_nextor")
     name = f"{cfg}_{variant}"
     with open(os.path.join(fpga, "build_common.tcl"), encoding="utf-8") as fh:
         lines = fh.read().splitlines()
@@ -44,6 +45,9 @@ def main():
             continue
         if l == "if {$MEGA} {":
             stack.append(mega)
+            continue
+        if l == "if {$NEXTOR} {":
+            stack.append(nextor)
             continue
         m = re.match(r"foreach f \{(.*)$", l)
         if m:

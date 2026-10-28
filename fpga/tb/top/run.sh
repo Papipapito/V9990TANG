@@ -6,7 +6,8 @@
 # Uso (desde Git Bash o WSL, en cualquier directorio):
 #   fpga/tb/top/run.sh [VARIANTE ...]
 # VARIANTE = <cfg>_<variante>: v9990_xtal v9990_sync v9990_megaram_xtal
-# v9990_megaram_sync (sin argumentos, las cuatro). Cada una se compila una vez
+# v9990_megaram_sync v9990_megaram_nextor_xtal v9990_megaram_nextor_sync (sin
+# argumentos, las seis). Cada una se compila una vez
 # con la lista de ficheros de fpga/build_common.tcl (filelist.py) y corre:
 #   full   escenario completo a 3,58 MHz (arranque, puertos, VRAM, paleta,
 #          LMMV, /INT, video NTSC y PAL, MegaRAM, /RESET con /WAIT)
@@ -29,7 +30,7 @@ fi
 FPGA="$(cd "$HERE/../.." && pwd)"
 OUT="$HERE/build"
 mkdir -p "$OUT"
-VARS="${*:-v9990_xtal v9990_sync v9990_megaram_xtal v9990_megaram_sync}"
+VARS="${*:-v9990_xtal v9990_sync v9990_megaram_xtal v9990_megaram_sync v9990_megaram_nextor_xtal v9990_megaram_nextor_sync}"
 RUNS="${RUNS:-full io nomsx}"
 OPT="${OPT:--O1}"
 OBJROOT="$HOME/.tb_top_obj"
@@ -38,6 +39,7 @@ status=0
 build() {   # build <variante>
     local V=$1 CFG VAR OBJ FL
     case $V in
+        v9990_megaram_nextor_*) CFG=v9990_megaram_nextor ;;
         v9990_megaram_*) CFG=v9990_megaram ;;
         v9990_*)         CFG=v9990 ;;
         *) echo "variante desconocida: $V"; return 1 ;;
