@@ -1,0 +1,5 @@
+v9990_megaram_sync.fs, build del Wed Oct 28 09:07:56 2026
+CheckSum: 0x4693
+md5 del fichero: 3236d0e29179de2a60fa979fc066ca9c
+md5 sin las lineas de cabecera (//): c194119b4b349a9aaebd7a4445840684
+comparado con v9990_megaram_sync.fs (build del Wed Oct 28 09:07:56 2026, CheckSum 0x4693): cuerpo IDENTICO

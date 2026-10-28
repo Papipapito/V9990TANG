@@ -14,3 +14,5 @@
 # Gowin bitstreams (.fs): text files, but stored byte for byte, so that the md5
 # of the file in the repository is the md5 of the delivered bitstream
 *.fs  -text
+# Ejecutables de MSX (TNCROM.COM): binarios, byte a byte
+*.COM binary
