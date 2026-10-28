@@ -237,7 +237,7 @@ El margen más corto es el de `v9990_xtal`: 2,76 MHz sobre el mínimo.
 - sdram: TOTAL PASA (solo cambia la cabecera de `resultados.txt`).
 - bus: TOTAL PASA, 20 de 20 en la matriz; `EQ_OK` en MODE 0 y 1 (MODE 2 es el
   control y falla, como debe); `M1SPUR_OK` en los 6 casos.
-- integ: pins 150 casos y 968 comprobaciones; guardia, 12 escenarios en
+- integ: pins 150 casos y 968 comprobaciones; guardia, 11 escenarios en
   `SYNC=0` y 11 en `SYNC=1`, incluidos `busok` y `usb`, sin fallos.
 - video: 121 de 121.
 - megaram (lanzado desde Git Bash, que es lo que saca de git el bus y el UMA de
