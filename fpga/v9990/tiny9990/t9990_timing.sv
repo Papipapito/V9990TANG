@@ -98,6 +98,12 @@ module T9990_TIMING #(
     output reg              MUX_VDE,    // MUX Vアクティブ期間
     output reg              MUX_HDE,    // MUX Hアクティブ期間
 
+    // MSXimus Z 21/10/2026: reinicio del scroll vertical (ver el bloque VOFS mas abajo)
+    output reg [8:0]        VOFS_A,     // linea de pantalla en la que cayo la ultima escritura de R#17 (0 al empezar el cuadro)
+    output reg [8:0]        VOFS_B,     // idem R#21 (plano B de P1)
+    output reg [4:0]        SCAY_HI,    // R#18[4:0] congelado durante el area visible
+    output reg              SCBY_HI,    // R#22[0]   idem
+
     input wire              MEM_REQ,
 
     T9990_MEM_TIMING.TG     MEM,
@@ -116,7 +122,12 @@ module T9990_TIMING #(
 
     localparam  SHIFT_BUFFER_DELAY_LOW = 33;
     localparam  SHIFT_BUFFER_DELAY_HIGH = 65;
-    localparam  COLOR_DECODE_DELAY = 5;    // MUX+PAL / CLR_DEC
+    // MSXimus Z 28/10/2026: era 5 y el contenido salia UN PUNTO ANTES que la ventana DA del selector en todos
+    // los modos (el ultimo punto de borde mostraba el punto 0 de la imagen y el ultimo de la ventana DA el
+    // backdrop: los "desplazamientos horizontales del bitmap" de docs/notas/core.md). La cadena real es PRI 1 +
+    // PAL 3 + selector 1 = 5, pero el DA (STATUS.HR) va un punto por detras de MUX_HDE + 5: con 4 el bitmap,
+    // los sprites y el mux arrancan un punto mas tarde juntos y el punto 0 cae en el primero de la ventana.
+    localparam  COLOR_DECODE_DELAY = 4;    // MUX+PAL / CLR_DEC
     localparam  SPR_DELAY = 1;             // SPRITE DELAY
 
     localparam  H256_LEFT_ERASE   = 50;
@@ -355,8 +366,11 @@ module T9990_TIMING #(
     wire [9:0]  V_DISP_DIS      = REG.HSCN ? (REG.C25M ? (V480_DISP_DIS      - 1'd1) : (V400_DISP_DIS      - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_DISP_DIS - 1'd1) : (V212P_DISP_DIS - 1'd1)) : (REG.MCS ? (V240_DISP_DIS      - 1'd1) : (V212_DISP_DIS      - 1'd1)));   // VD inactive ライン(v_incタイミング用)
     wire [9:0]  V_DISP_LI_START = REG.HSCN ? (REG.C25M ? (V480_DISP_LI_START - 1'd1) : (V400_DISP_LI_START - 1'd1)) : (pal_w ? (REG.MCS ? (V290P_DISP_LI_START - 1'd1) : (V212P_DISP_LI_START - 1'd1)) : (REG.MCS ? (V240_DISP_LI_START - 1'd1) : (V212_DISP_LI_START - 1'd1)));   // ILカウンタ開始ライン(v_inc タイミング用)
 
-    wire [9:0]  H_BG_INIT       = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 2'd3) : (H640_BG_ACTIVE     - 2'd3)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 3'd6) : (H384_BG_ACTIVE     - 3'd4)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 2'd3) : (H256_BG_ACTIVE     - 2'd3));
-    wire [9:0]  H_BG_START      = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 2'd2) : (H640_BG_ACTIVE     - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 3'd5) : (H384_BG_ACTIVE     - 2'd3)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 2'd2) : (H256_BG_ACTIVE     - 2'd2));
+    // MSXimus Z 28/10/2026: en B2 y B4 tbl_init / BG_START van 3 / 2 puntos antes de H_BG_ACTIVE, como en
+    // B1/B3. Eran 4/3 en B2 (el punto 0 de la imagen caia en el borrado: B2 no tiene borde) y 6/5 en B4 (la
+    // imagen salia 3 puntos antes y acababa con tres puntos de backdrop).
+    wire [9:0]  H_BG_INIT       = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 2'd3) : (H640_BG_ACTIVE     - 2'd3)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 2'd3) : (H384_BG_ACTIVE     - 2'd3)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 2'd3) : (H256_BG_ACTIVE     - 2'd3));
+    wire [9:0]  H_BG_START      = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 2'd2) : (H640_BG_ACTIVE     - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 2'd2) : (H384_BG_ACTIVE     - 2'd2)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 2'd2) : (H256_BG_ACTIVE     - 2'd2));
     wire [9:0]  H_BG_ACTIVE     = REG.HSCN ? (REG.C25M ? (H648_BG_ACTIVE     - 1'd1) : (H640_BG_ACTIVE     - 1'd1)) : REG.MCS ? (REG.DCKM[1] ? (H768_BG_ACTIVE     - 1'd1) : (H384_BG_ACTIVE     - 1'd1)) : (REG.DCKM[0] ? (H512_BG_ACTIVE     - 1'd1) : (H256_BG_ACTIVE     - 1'd1));
     wire [9:0]  H_SPR_OUT_START = REG.HSCN ? (REG.C25M ? (H648_SPR_ACTIVE    - 2'd2) : (H640_SPR_ACTIVE    - 2'd2)) : REG.MCS ? (REG.DCKM[1] ? (H768_SPR_ACTIVE    - 2'd2) : (H384_SPR_ACTIVE    - 2'd2)) : (REG.DCKM[0] ? (H512_SPR_ACTIVE    - 2'd2) : (H256_SPR_ACTIVE    - 2'd2));
 
@@ -791,6 +805,49 @@ module T9990_TIMING #(
         else if(!CLK_MASTER_EN)                                             STATUS.HI <= 0;
         else if((mclk_cnt == {REG.IX, 6'b000000}) && (disp_line == REG.IL)) STATUS.HI <= 1;
         else                                                                STATUS.HI <= 0;
+    end
+
+    /***************************************************************
+     * MSXimus Z 21/10/2026: reinicio del scroll vertical y R#18/R#22
+     *  Como openMSX (V9990PixelRenderer::updateScrollAYLow/BYLow, "verified" en el chip real):
+     *  escribir R#17 (o R#21) con la pantalla encendida y dentro del area visible reinicia la
+     *  cuenta de lineas del plano: desde ese punto la linea L muestra la linea 0 del nuevo scroll
+     *  y la L+k la k. Fuera del area visible no reinicia nada. R#18/R#22 (parte alta) se toman
+     *  una vez por cuadro (openMSX scrollAYHigh en frameStart): aqui siguen al registro fuera
+     *  del area visible y se congelan dentro. DISP tambien se toma una vez por cuadro, como el
+     *  displayEnabled de openMSX.
+     *  La ventana sale de v_cnt (= !STATUS.VR en marcha normal) y no de STATUS.VR: cuando
+     *  T9990_CLOCK rearranca el TG (cambio de MCS/DCKM/HSCN/C25M) a mitad de pantalla, v_cnt
+     *  vuelve a 0 pero STATUS.VR se queda a 0 hasta el final del area visible siguiente.
+     *  disp_line cambia en el v_inc (como el lastY de openMSX) y vuelve a 0 justo al abrirse la
+     *  ventana (V_DISP_LI_START = V_VR_ACTIVE); el fetch de la linea de pantalla L se hace dentro
+     *  de la linea L con BG_Y = L, asi que el plano usa Y = SCAY + (BG_Y - VOFS). Xybots lo usa
+     *  para partir la pantalla (R#17 en la linea 95).
+     *  V9990TANG: v_cnt es el contador de la ventana (el que mueve R#16), el mismo de BG_Y y
+     *  disp_line; con el cuadro de la ventana alargado por un reajuste de R#16 v_cnt pasa de
+     *  V_TOTAL, fuera de esta ventana.
+     ***************************************************************/
+    wire vofs_win = TG_EN && (v_cnt > V_VR_ACTIVE) && (v_cnt <= V_VR_INACTIVE);
+    logic disp_fs;
+    always_ff @(posedge CLK or negedge RESET_n) begin
+        if(!RESET_n) begin
+            VOFS_A  <= 0;
+            VOFS_B  <= 0;
+            SCAY_HI <= 0;
+            SCBY_HI <= 0;
+            disp_fs <= 0;
+        end
+        else if(!vofs_win) begin
+            VOFS_A  <= 0;
+            VOFS_B  <= 0;
+            SCAY_HI <= REG.SCAY[12:8];
+            SCBY_HI <= REG.SCBY[8];
+            disp_fs <= REG.DISP;
+        end
+        else begin
+            if(REG.SCAYL_WR && disp_fs) VOFS_A <= disp_line[8:0];
+            if(REG.SCBYL_WR && disp_fs) VOFS_B <= disp_line[8:0];
+        end
     end
 
     /***************************************************************

@@ -621,7 +621,6 @@ module tb_t9990_core;
                     else begin v = palc[(dut.REG.CSP << 2) + (ca[c] >> 6)]; if (ca[c] & 8'h20) v = v ^ 15'h7FFF; end
                 end
             end
-            if (e_bp && x == e_w - 1) v = palc[0];
             exp_px = v;
         end
     endfunction
@@ -646,7 +645,8 @@ module tb_t9990_core;
                 for (x = 0; x < 16; x = x + 1) if (fb[ll][dd + x] !== bgcol(x + o, bline(0))) ok = 0;
                 if (ok) boff = o;
             end
-            if (boff < 0) ll = -1;
+            // 0.3beta: el primer punto de la imagen tiene que ser el X = 0 del bitmap (alineacion del MSXimus Z)
+            if (boff != 0) ll = -1;
         end
     endtask
     // compara el cuadro capturado con el modelo; devuelve los pixeles malos
@@ -790,7 +790,7 @@ module tb_t9990_core;
             $display("---- EOR: B1 256x212 BP4 (R#6=81h) ----");
             bp_fill(256, 212);
             wr_reg(6'd6, 8'h81);
-            e_bp = 1; e_hx = -1;
+            e_bp = 1; e_hx = 0;
             cx[0] = 40;  cy[0] = 50; ca[0] = 8'h20;
             cx[1] = 120; cy[1] = 60; ca[1] = 8'hE0;
             eor_case("BP4 CC0+EOR / CC3+EOR", -1);
@@ -806,7 +806,7 @@ module tb_t9990_core;
             $display("---- EOR: B2 384x240 BP4 (R#6=95h, MCS=1) ----");
             bp_fill(512, 300);
             wr_port(4'd7, 8'h01); wr_reg(6'd6, 8'h95);
-            e_bp = 1; e_hx = -1;
+            e_bp = 1; e_hx = 0;
             e_w = 384; e_h = 240; e_ofs = 14;
             cx[0] = 40;  cy[0] = 20;  ca[0] = 8'h20;
             cx[1] = 330; cy[1] = 500; ca[1] = 8'h40;    // -12: entra por arriba (lineas 3..34)

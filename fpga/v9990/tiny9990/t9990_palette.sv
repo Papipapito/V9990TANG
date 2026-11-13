@@ -108,18 +108,21 @@ module T9990_PALETTE #(
      * transparencia y el color del cursor ya va alineado, y el del punto k + 1
      * (la entrada siguiente) en los modos de paleta, donde la imagen es el color.
      ***************************************************************/
-    logic [15:0] p_data_q;
     wire  [2+$bits(PRI)+$bits(PA)-1:0] pri_entry = buffer[pri_index];
-    wire  [2+$bits(PRI)+$bits(PA)-1:0] col_entry = buffer[pri_index + 1'd1];  // la del color de OUT (k + 1)
-    wire         cur_d = (ENABLE_CURSOR_EOR != 0) && pri_entry[$bits(PRI)+$bits(PA)];
-    wire  [15:0] p_color = cur_d ? p_data_q : p_data;
+    // V9990TANG 0.3beta: con la transparencia ya alineada con el color (pri_index) no hace falta tomar el
+    // color del punto anterior en los puntos del cursor; DIRECT y CUR_IN quedan sin uso.
+    wire  [15:0] p_color = p_data;
 
     // color decode に合わせて遅延をいれる
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n || START) begin
             w_index <= 0;
             pa_index <= 4-1;      // 1dotclk の遅れ
-            pri_index <= 4-3;     // 3dotclk の遅れ
+            // V9990TANG 0.3beta: 2 puntos, los mismos que el color (p_addr un punto despues de la entrada y OUT
+            // otro mas). Con 4-3 la transparencia (OUT[15]) salia un punto despues que su color: en los modos de
+            // color directo el hueco por el que se ve el bitmap iba un punto tarde (el MSXimus Z lo compensa
+            // abriendo antes la ventana del PRI, MUX_HDE_E) y el cursor salia un punto a la derecha.
+            pri_index <= 4-2;
         end
         else if(DCLK_EN) begin
             OUT[14:0] <= p_color[14:0];
@@ -137,12 +140,10 @@ module T9990_PALETTE #(
     // V9990TANG: EOR del cursor, leido del anillo: alineado con el color de OUT
     always_ff @(posedge CLK or negedge RESET_n) begin
         if(!RESET_n) begin
-            p_data_q <= 0;
             EOR_OUT <= 0;
         end
         else if(DCLK_EN) begin
-            p_data_q <= p_data;
-            EOR_OUT <= (ENABLE_CURSOR_EOR != 0) && (DIRECT ? pri_entry[$bits(PRI)+$bits(PA)+1] : col_entry[$bits(PRI)+$bits(PA)+1]);
+            EOR_OUT <= (ENABLE_CURSOR_EOR != 0) && pri_entry[$bits(PRI)+$bits(PA)+1];
         end
     end
 endmodule

@@ -227,6 +227,8 @@ interface T9990_REGISTER_IF;
     logic           AYE;
     logic           AXM;
     logic           AXE;
+    logic           SCAYL_WR;   // MSXimus Z 21/10/2026: pulso de 1 ciclo, la CPU ha escrito R#17 (SCAY bajo)
+    logic           SCBYL_WR;   // MSXimus Z 21/10/2026: idem R#21 (SCBY bajo)
 
 
     modport CPU ( output    SRS,    MCS,
@@ -251,7 +253,8 @@ interface T9990_REGISTER_IF;
                             TP,     LO,
                             WM,
                             FC,     BC,
-                            OP,     AYM,    AYE,    AXM,    AXE
+                            OP,     AYM,    AYE,    AXM,    AXE,
+                            SCAYL_WR, SCBYL_WR
                 );
     modport VDP ( input     SRS,    MCS,
                             CVWA,   CVWAIH, CVRA,   CVRAIH,
@@ -275,7 +278,8 @@ interface T9990_REGISTER_IF;
                             TP,     LO,
                             WM,
                             FC,     BC,
-                            OP,     AYM,    AYE,    AXM,    AXE
+                            OP,     AYM,    AYE,    AXM,    AXE,
+                            SCAYL_WR, SCBYL_WR
                 );
 endinterface
 
@@ -892,6 +896,11 @@ module T9990_PORT (
         else if(det_r && MODE == 4'h3) port4_regnum[5:0] <= port4_regnum[6] ? port4_regnum[5:0] : (port4_regnum[5:0] + 1'd1);   // P#3 read
         else if(det_w && MODE == 4'h4) port4_regnum <= CD_IN;                                                                   // P#4 write
     end
+
+    // MSXimus Z 21/10/2026: escrituras de R#17 / R#21, en el mismo flanco que el vdp_reg[] de arriba.
+    // T9990_TIMING las usa para reiniciar la cuenta de lineas del plano (VOFS_A/VOFS_B).
+    assign REG.SCAYL_WR = det_w && (MODE == 4'h3) && (port4_regnum[5:0] == 6'd17);
+    assign REG.SCBYL_WR = det_w && (MODE == 4'h3) && (port4_regnum[5:0] == 6'd21);
 
     /***************************************************************
      * P#5 STATUS read
