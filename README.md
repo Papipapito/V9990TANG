@@ -12,7 +12,7 @@
 
 ## Estado
 
-**Versión 0.1beta (28 de octubre de 2026), para probar en placa.** Los cuatro
+**Versión 0.3beta (13 de noviembre de 2026), para probar en placa.** Los seis
 bitstreams están en [`bitstream/`](bitstream/), con su SHA-256, el cargador de
 ROMs `TNCROM.COM` y una guía para quien lo prueba
 ([`bitstream/LEEME.md`](bitstream/LEEME.md), con la lista de pruebas en placa;
@@ -39,6 +39,14 @@ cargar las ROMs con `TNCROM.COM` desde ella
 sin probar en placa. Hacen falta dos grabaciones: el `.fs` en `0x000000` y la
 ROM de Nextor en `0x100000` (`bitstream/v9990tang_nextor_pack_0.2beta.bin`).
 Todo lo que hay que grabar y cómo, en [`bitstream/LEEME.md`](bitstream/LEEME.md).
+
+La **0.3beta** (13 de noviembre de 2026) lleva al core los arreglos del V9990
+hechos en el MSXimus Z: CMMC, CMMM y orden de bytes a 16 bpp en el motor de
+comandos, P#2 escrito sin TR, YJK/YUV, el reinicio de la cuenta de líneas con
+R#17/R#21 (Xybots) y la alineación horizontal del bitmap y del cursor
+([`docs/notas/zynqfix.md`](docs/notas/zynqfix.md)). Los seis `.fs` son nuevos;
+el pack de Nextor no cambia. Pasan la puerta y los bancos; **sin probar en
+placa**.
 
 ## Compilar
 
@@ -69,7 +77,7 @@ ROMs de la MegaRAM, se rehace con `bash tools/tncrom/build.sh` (SDCC).
 - [`docs/WONDERTANG.md`](docs/WONDERTANG.md): qué `.fs` usar, la placa, pines, puente J3, carga de ROMs, LED y grabación.
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md): puerta de cada build, números medidos, bancos y matriz de monitores.
 - [`docs/notas/`](docs/notas/README.md): anexo con una nota por área (`sdram`, `integ`, `core`, `video`, `bus`, `megaram`) y la de la fusión.
-- [`bitstream/LEEME.md`](bitstream/LEEME.md): la guía de la 0.1beta para probarla en placa.
+- [`bitstream/LEEME.md`](bitstream/LEEME.md): la guía de la versión para probarla en placa.
 - [`UPSTREAM.md`](UPSTREAM.md): de dónde sale cada fichero, y dónde está el
   estudio del port que fija el plan de hitos.
 

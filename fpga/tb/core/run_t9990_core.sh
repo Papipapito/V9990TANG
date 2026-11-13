@@ -27,9 +27,11 @@
 #   bdbp    puntos de indice 0 de BP4 desde el reset y despues de BD16: color de fondo (+BDBP=1)
 #                                                         -> BDBP_OK
 #   assert  ACK de la VRAM 8 ciclos tarde (+ACKDLY=8): la asercion de ranura perdida tiene que saltar
-#   hito1   la salida de video (HS, VS, R, G, B, DE, EO, IL en cada DCLK_EN, +VIDDUMP) del core de trabajo
-#           con R#16 = 00h y sin PAL, identica punto a punto a la del core del hito 1 (commit 20936e6, con
-#           char -> chr) en B1, P1, P2, B3, B2, B4 y B1 entrelazado
+#   hito1   el sincronismo (HS, VS, DE, EO, IL en cada DCLK_EN, +VIDDUMP sin el color: vid_sync_cmp.py)
+#           del core de trabajo con R#16 = 00h y sin PAL, identico punto a punto al del core del hito 1
+#           (commit 20936e6, con char -> chr) en B1, P1, P2, B3, B2, B4 y B1 entrelazado. Hasta la 0.2beta
+#           se comparaba tambien el color; desde la 0.3beta la imagen va alineada con la ventana (un
+#           punto mas tarde: docs/notas/zynqfix.md) y el color ya no puede coincidir
 #   replay  REPLAY=<.rpl> VRAMOUT=<.bin> [OMSX=<vram de openMSX .bin>]: replay de una traza de openMSX
 #           (mk_trace.py + mk_replay.py del MSXimus Z) y comparacion byte a byte de la VRAM, con el volcado
 #           de openMSX pasado antes al orden del tiny9990 por omsx_vram.py (rutas de WSL, /mnt/c/...)
@@ -137,12 +139,12 @@ for t in $TESTS; do
             tag=$(echo "$m" | tr -d ' +=')
             run hito1 "GEOM_OK" $m +FRAMES=2 +VIDDUMP=$LOG/vid_work_$tag.bin
             VTB=$H1/vtb_t9990_core run hito1 "GEOM_OK" $m +FRAMES=2 +VIDDUMP=$LOG/vid_hito1_$tag.bin
-            if [ -s $LOG/vid_work_$tag.bin ] && cmp -s $LOG/vid_work_$tag.bin $LOG/vid_hito1_$tag.bin; then
-                echo "   video identico al del hito 1: $(stat -c %s $LOG/vid_work_$tag.bin) bytes"
-                SUMMARY="$SUMMARY\n  PASA  hito1 video identico $m"
+            if [ -s $LOG/vid_work_$tag.bin ] && python3 tb/core/vid_sync_cmp.py $LOG/vid_work_$tag.bin $LOG/vid_hito1_$tag.bin; then
+                echo "   sincronismo identico al del hito 1: $(stat -c %s $LOG/vid_work_$tag.bin) bytes"
+                SUMMARY="$SUMMARY\n  PASA  hito1 sincronismo identico $m"
             else
-                echo "   video DISTINTO del hito 1 ($(cmp $LOG/vid_work_$tag.bin $LOG/vid_hito1_$tag.bin 2>&1 | head -1))"
-                SUMMARY="$SUMMARY\n  FALLA hito1 video distinto $m"; FAIL=1
+                echo "   sincronismo DISTINTO del hito 1"
+                SUMMARY="$SUMMARY\n  FALLA hito1 sincronismo distinto $m"; FAIL=1
             fi
         done
         ;;

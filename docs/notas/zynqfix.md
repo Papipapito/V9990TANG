@@ -39,7 +39,7 @@ Los commits que se citan son del MSXimus Z.
   color del punto anterior en los puntos del cursor (`DIRECT`/`CUR_IN` de
   `T9990_PALETTE` quedan sin uso).
 - Con (7) dejan de ser ciertos tres límites apuntados en
-  [core.md](core.md#límites): los desplazamientos horizontales del bitmap, el
+  [core.md](core.md#lo-que-no-se-ha-hecho-o-no-se-ha-podido-comprobar): los desplazamientos horizontales del bitmap, el
   último punto de la imagen en el color de fondo y el cursor un punto a la
   izquierda en BP2/BP4/BP6.
 
@@ -70,4 +70,12 @@ cifras de las seis builds.
 - `eor` exige ahora que el primer punto de la imagen sea el X = 0 del bitmap y
   el cursor en X+0 también en BP4 y B2 (antes X−1), con el último punto de la
   línea del bitmap y no del fondo.
+- `hito1` compara ya solo el sincronismo (HS, VS, DE, EO, IL) con el core del
+  hito 1: idéntico en los 7 casos. El color no puede coincidir (la imagen va
+  un punto más tarde, alineada con la ventana).
+- Diagnóstico `+HPOS=1`: punto 0 del bitmap en el primer punto de la imagen
+  en B1 y B3 (BD16 y BP4), B2 BP4 y B4 BP4. **Queda sin arreglar** que B2 a
+  16 bpp repite cada pareja de puntos (límite de [core.md](core.md), tampoco
+  lo arregla el MSXimus Z).
+- Banco de placa entera: 18 de 18 en las seis variantes.
 - **Nada de esto está probado en placa.**

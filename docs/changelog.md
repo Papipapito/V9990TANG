@@ -3,6 +3,34 @@
 Formato: un apartado por hito o versión, lo más reciente arriba. Las cifras de
 cada build están en [VERIFICATION.md](VERIFICATION.md).
 
+## 0.3beta (13 de noviembre de 2026, etiqueta local `v0.3beta`, sin publicar)
+
+Arreglos del V9990 del MSXimus Z llevados al tiny9990 de aquí
+([notas/zynqfix.md](notas/zynqfix.md), con los descartados y su motivo).
+**Sin probar en placa.**
+
+- **CMMC**: 8 píxeles por byte de P#2 a 2/4/8/16 bpp; la orden pide justo
+  ceil(NX·NY/8) bytes y CE baja tras el último (Chase H.Q. en negro).
+- **CMMM**: la VRAM lineal se decodifica byte a byte desde SA[1:0] (retrato y
+  letras de Chase H.Q.).
+- **16 bpp**: R#48 a la dirección par en LMMV, PSET, LINE, LMMC y SRCH.
+- **P#2 escrito sin TR** con un LMMC o un CMMC en marcha: se retiene con /WAIT
+  hasta que el motor lo toma (SymbOS G9K). Solo con esos dos comandos.
+- **YJK/YUV** decodificados con el grupo de 4 píxeles de la VRAM (tnCart #31).
+- **R#17/R#21 dentro del área visible** reinician la cuenta de líneas del
+  plano; R#18/R#22 y DISP, una vez por cuadro (Xybots).
+- **Alineación horizontal**: el punto 0 del bitmap en el primer punto de la
+  imagen, a paleta y a color directo; la transparencia de la paleta sale con
+  su color y el cursor queda en su X en todos los modos. Desaparecen tres
+  límites de [notas/core.md](notas/core.md).
+- Banco del core: pruebas `cmmc`, `cmmm`, `orden`, `p2notr`, `ycc` y `vscroll`
+  (del banco del MSXimus Z); `eor` exige la alineación nueva.
+- **`bitstream/`**: seis `.fs` nuevos (`*_0.3beta.fs`), en sustitución de los
+  de la 0.1beta y la 0.2beta; el pack de Nextor y `TNCROM.COM` no cambian.
+  Las seis builds pasan la puerta (`fpga/reports/v0.3beta/`); `megaram_sync`
+  pasa a place 0 / route 2 y `megaram_nextor_sync` a place 2 / route 1. Un
+  BSRAM menos en todas (los buffers de YJK de `T9990_COLOR_DECODE`).
+
 ## 0.2beta (28 de octubre de 2026, etiqueta local `v0.2beta`, sin publicar)
 
 Añade la configuración `v9990_megaram_nextor`, el cartucho "multi todo": V9990
