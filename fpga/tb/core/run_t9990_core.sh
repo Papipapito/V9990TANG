@@ -1,10 +1,22 @@
 #!/bin/bash
 # run_t9990_core.sh [prueba ...] -- banco del core (tb_t9990_core.sv) en Verilator 5.020 (WSL).
-#   pruebas: geom pal blit ports eor r16 r16chg bdbp assert hito1 replay   (sin argumentos: todas menos replay)
+#   pruebas: geom pal blit cmmc cmmm orden p2notr ycc vscroll ports eor r16 r16chg bdbp assert hito1 replay
+#            (sin argumentos: todas menos replay)
 #   geom    geometria 1368 x 262 (313 con PAL) en B1/P1/B3/B2/B4, con carga en el canal 0, con R#16 y
 #           con C25M en B1                                -> GEOM_OK
 #   pal     cuadro PAL de 313 lineas (+PALT=1)            -> PALT_OK
 #   blit    motor de comandos en B1 (+BLIT=1)             -> BLIT_OK
+#   cmmc    CMMC a 2/4/8/16 bpp contra el modelo del manual y de openMSX: 8 pixeles por byte de P#2, ningun
+#           byte de mas, nada fuera del rectangulo (+CMMC=1)  -> CMMC_OK
+#   cmmm    CMMM a 2/4/8/16 bpp: bytes de la VRAM lineal desde SA, con las lecturas del motor contadas
+#           (+CMMM=1)                                         -> CMMM_OK
+#   orden   orden de los bytes del color a 16 bpp (R#48 = direccion par) en LMMV/LMMC/PSET/LINE/LMCM/SRCH/
+#           CMMC, y CMMM con SA = 7FFFEh (+ORDEN=1)           -> ORDEN_OK
+#   p2notr  P#2 escrito sin mirar TR (SymbOS G9K): CMMC de nuevo sin sondear TR, LMMC 16x2 seguido y R#6 ->
+#           comando/P#0 inmediato (+CMMC=1 +P2NOTR=1)         -> P2NOTR_OK (y CMMC_OK)
+#   ycc     YJK y YUV en B1 contra el modelo de openMSX, con el desfase calibrado con BD8 (+YCC=1) -> YCC_OK
+#   vscroll reinicio del scroll vertical con R#17/R#21 a mitad de pantalla (Xybots), en B1 y P1, NTSC y PAL:
+#           otro banco (tb_t9990_vscroll.sv, run_t9990_vscroll.sh, que se puede lanzar solo)    -> VSCROLL_OK
 #   ports   P#4/P#7/P#8-P#15 leen FFh (+PORTS=1)         -> PORTS_OK
 #   eor     cursores con la semantica de openMSX sobre BD16, BD16 entrelazado, BP4 y B2 BP4 (NTSC y PAL)
 #           (+EOR=1)                                      -> EOR_OK
@@ -50,7 +62,7 @@ if ! grep -qi microsoft /proc/version 2>/dev/null; then
     WSLENV=VOPT:OBJTAG:REPLAY:VRAMOUT:OMSX MSYS_NO_PATHCONV=1 exec wsl -d Ubuntu-24.04 -- bash "$(pwd | sed s,^/c/,/mnt/c/,)/tb/core/run_t9990_core.sh" "$@"
 fi
 source tb/core/core_sources.sh
-TESTS="${*:-geom pal blit ports eor r16 r16chg bdbp assert hito1}"
+TESTS="${*:-geom pal blit cmmc cmmm orden p2notr ycc vscroll ports eor r16 r16chg bdbp assert hito1}"
 ROOT=$HOME/.cache/v99tang_core
 OBJ=$ROOT/work_$(echo "$VOPT$OBJTAG" | md5sum | cut -c1-8)    # OBJTAG: otro directorio de objetos con las mismas VOPT
 LOG=$ROOT/log_$$
@@ -97,6 +109,19 @@ for t in $TESTS; do
         ;;
     pal)    run pal "PALT_OK" +PALT=1 ;;
     blit)   run blit "BLIT_OK" +BLIT=1 ;;
+    cmmc)   run cmmc "CMMC_OK" +CMMC=1 ;;
+    cmmm)   run cmmm "CMMM_OK" +CMMM=1 ;;
+    orden)  run orden "ORDEN_OK" +ORDEN=1 ;;
+    p2notr) run p2notr "P2NOTR_OK" +CMMC=1 +P2NOTR=1 ;;
+    ycc)    run ycc "YCC_OK" +YCC=1 ;;
+    vscroll)
+        # otro banco: su script compila aparte (en su propio directorio de objetos) y corre la lista de casos
+        echo "===== vscroll"
+        bash tb/core/run_t9990_vscroll.sh > $LOG/vscroll.log 2>&1; vs=$?
+        grep -v '^== verilator' $LOG/vscroll.log | head -60
+        if [ $vs = 0 ]; then SUMMARY="$SUMMARY
+  PASA  vscroll"; else SUMMARY="$SUMMARY
+  FALLA vscroll"; FAIL=1; fi ;;
     ports)  run ports "PORTS_OK" +PORTS=1 ;;
     eor)    run eor "EOR_OK" +EOR=1 ;;
     r16)    run r16 "R16_OK" +R16T=1 ;;
