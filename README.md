@@ -18,6 +18,17 @@ ROMs `TNCROM.COM` y una guía para quien lo prueba
 ([`bitstream/LEEME.md`](bitstream/LEEME.md), con la lista de pruebas en placa;
 [`bitstream/README.md`](bitstream/README.md) en inglés).
 
+### Versiones
+
+| Versión | Fecha | Qué trae | Bitstreams | En placa |
+|---|---|---|---|---|
+| [**0.3beta**](https://github.com/Papipapito/V9990TANG/releases/tag/v0.3beta) | 13-11-2026 | Arreglos del V9990 traídos del MSXimus Z: comandos CMMC y CMMM (Chase H.Q.), orden de los bytes a 16 bpp, P#2 escrito sin mirar TR (SymbOS G9K), colores YJK/YUV, pantalla partida con R#17/R#21 (Xybots) y alineación horizontal de la imagen y del cursor (Dream Puzzle) | los seis, todos nuevos; el pack de Nextor es el de la 0.2beta | sin probar |
+| [0.2beta](https://github.com/Papipapito/V9990TANG/releases/tag/v0.2beta) | 28-10-2026 | Tercera configuración, `v9990_megaram_nextor`: V9990 + MegaRAM + Nextor arrancando desde la microSD de la Tang | dos nuevos (`megaram_nextor`, `xtal` y `sync`) y el pack de Nextor para `0x100000`; los cuatro de la 0.1beta, sin cambios | sin probar |
+| [0.1beta](https://github.com/Papipapito/V9990TANG/releases/tag/v0.1beta) | 28-10-2026 | Primera versión: V9990 (tiny9990 con parches de fidelidad y cuadro PAL) con HDMI a 720x480 y 720x576, sin bootloader, y MegaRAM SCC-I de 4 MB con `TNCROM.COM` | cuatro: `v9990` y `v9990_megaram`, cada una en `xtal` y `sync` | sin probar |
+
+Cada versión sustituye a la anterior: **la que hay que grabar es la 0.3beta**.
+El detalle de cada una, en [`docs/changelog.md`](docs/changelog.md).
+
 La 0.1beta reúne las seis áreas del plan sobre el hito 1 (ver
 [`docs/changelog.md`](docs/changelog.md) y
 [`docs/notas/fusion.md`](docs/notas/fusion.md)): carcasa sin bootloader ni
