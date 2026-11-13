@@ -238,6 +238,24 @@ wire srch_edge_right = work.srch.edge_left;
     wire [7:0] cpu_lane_lo = DST_X[0] ? WRT_DATA[23:16] : WRT_DATA[ 7:0];
     wire [7:0] cpu_lane_hi = DST_X[0] ? WRT_DATA[31:24] : WRT_DATA[15:8];
 
+    // MSXimus Z: CMMC desde la CPU. Cada byte de P#2 son 8 pixeles (bit 7 primero) y cada paso de
+    // STATE_SRC_DECODE encola chr_px de ellos (2/4 bpp: los 8; 8 bpp: 4; 16 bpp: 2); un paso solo
+    // se da si sus pixeles caben en el FIFO (chr_room).
+    wire src_is_cmmc = src_is_cpu && src_is_char;
+    // MSXimus Z: CMMM = lo mismo con los bytes leidos de la VRAM lineal desde SA. Se lee una palabra de
+    // 32 bits solo cuando hace falta (igual que el byte del CMMC) y se decodifican todos sus bytes desde
+    // SA[1:0]; SRC_X es la direccion del byte siguiente y avanza una palabra por lectura (no por NX)
+    wire src_is_cmmm = src_is_linear && src_is_char;
+    wire src_is_bytechr = src_is_cmmc || src_is_cmmm;     // CMMC o CMMM (no CMMK)
+    wire [5:0] chr_px = (DST_CLRM == T9990_REG::CLRM_16BPP) ? 6'd2 : (DST_CLRM == T9990_REG::CLRM_8BPP) ? 6'd4 : 6'd8;
+    wire chr_room = FREE_COUNT >= chr_px;
+
+    // MSXimus Z: el FIFO lleva los bytes en orden de direccion (el de la direccion par arriba). A 16 bpp
+    // R#48 (byte bajo del pixel) va a la direccion par (VRAM0), como en el manual, openMSX y la pantalla
+    // BD16 (t9990_bitmap); REG.FC tal cual ({R#49, R#48}) lo dejaba en la impar en LMMV/PSET/LINE y SRCH
+    // comparaba con los bytes cruzados. A 2/4/8 bpp se queda como estaba (el manual pide R#48 = R#49)
+    wire [15:0] fc_fifo = (DST_CLRM == T9990_REG::CLRM_16BPP) ? {REG.FC[7:0], REG.FC[15:8]} : REG.FC;
+
     wire [4:0] SRC_OUT_COUNT = SRC_COUNT;
     wire [4:0] SRC_POS_COUNT = SRC_COUNT;
     wire [4:0] DST_IN_COUNT = DST_COUNT;
@@ -330,7 +348,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
 
     always_ff @(posedge CLK) begin
         // SRC_CLRM
-        if(REG.OP == T9990_REG::CMD_CMMM || REG.OP == T9990_REG::CMD_BMXL|| REG.OP == T9990_REG::CMD_BMLL) begin
+        // MSXimus Z: CMMM fuera de esta lista: su FIFO lleva pixeles ya expandidos al formato de destino
+        if(REG.OP == T9990_REG::CMD_BMXL|| REG.OP == T9990_REG::CMD_BMLL) begin
             // byte mode
             SRC_CLRM <= T9990_REG::CLRM_8BPP;
         end
@@ -585,12 +604,17 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
             ENQUEUE_COUNT <= SRC_OUT_COUNT;
 
             // キャラクタデータが残ってるならデコード
-            if(src_is_rom && work.chr.decode_count != 0) begin
-                state <= STATE_SRC_DECODE;
+            // CMMC/CMMM: quedan pasos del byte o la palabra anterior -> decodificar si caben; si no,
+            // escribir antes lo del FIFO
+            if(src_is_char && work.chr.decode_count != 0) begin
+                state <= (src_is_rom || chr_room) ? STATE_SRC_DECODE : STATE_SRC_DEQUEUE;
             end
 
             // 転送元データが必要なら読み出し開始
-            else if(ena_enqueue) begin
+            // CMMC/CMMM: otro byte (TR=1) u otra palabra de VRAM solo si el FIFO no tiene ya los pixeles
+            // de la escritura siguiente; asi la orden pide justo ceil(NX*NY/8) bytes y CE baja tras el
+            // ultimo. El CMMM no mira ena_enqueue (SRC_NX/SRC_COUNT cuentan puntos, no bytes)
+            else if((ena_enqueue || src_is_cmmm) && (!src_is_bytechr || (chr_room && AVAIL_COUNT < DST_IN_COUNT))) begin
                 // VRAM リニア
                 if(src_is_linear) begin
                     CMD_MEM.ADDR_MODE <= T9990_REG::DSPM_BITMAP;   // VRAM0/1 = LSB 固定
@@ -625,7 +649,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
 
                 // VDP
                 else begin
-                    ENQUEUE_DATA <= {REG.FC,REG.FC};
+                    ENQUEUE_DATA <= {fc_fifo, fc_fifo};
                     ENQUEUE <= 1;
                     state <= STATE_SRC_ENQUEUE_WAIT1;
                 end
@@ -723,7 +747,14 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                 2'd2:   work.chr.decode_data <= {ENQUEUE_DATA[15:0], 16'b0};
                 2'd3:   work.chr.decode_data <= {ENQUEUE_DATA[ 7:0], 24'b0};
             endcase
-            work.chr.decode_count <= {SRC_OUT_COUNT[2:0], 3'b000};
+            // CMMM: 4 - SA[1:0] bytes; 1 paso por byte a 2/4 bpp, 2 a 8 bpp y 4 a 16 bpp (era
+            // SRC_OUT_COUNT*8 y solo se daba un paso por lectura). La palabra siguiente empieza en el byte 0
+            case (DST_CLRM)
+                T9990_REG::CLRM_8BPP:   work.chr.decode_count <= {2'b00, 3'd4 - SRC_X[1:0], 1'b0};
+                T9990_REG::CLRM_16BPP:  work.chr.decode_count <= {1'b0, 3'd4 - SRC_X[1:0], 2'b00};
+                default:                work.chr.decode_count <= {3'b000, 3'd4 - SRC_X[1:0]};
+            endcase
+            SRC_X <= {SRC_X[18:2] + 17'd1, 2'b00};   // 7FFFCh -> 00000h (vuelta de 512 KB)
             state <= STATE_SRC_DECODE;
         end
 
@@ -744,12 +775,16 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         else if(state == STATE_SRC_READ_CPU_WAIT_BUSY) begin
             if(!P2_CPU_TO_VDP.ACK) begin
                 if(src_is_char) begin
+                    // CMMC: 8 pixeles por byte = 1 paso a 2/4 bpp, 2 a 8 bpp, 4 a 16 bpp (eran 8 pasos
+                    // fijos: a 8 bpp salian 32 pixeles con 4 bits validos y la orden pedia el doble de bytes)
                     work.chr.decode_data <= {P2_CPU_TO_VDP.DATA, 24'b0};
-                    work.chr.decode_count <= 6'd8;
+                    work.chr.decode_count <= (DST_CLRM == T9990_REG::CLRM_16BPP) ? 6'd4 : (DST_CLRM == T9990_REG::CLRM_8BPP) ? 6'd2 : 6'd1;
                     state <= STATE_SRC_DECODE;
                 end
                 else if(SRC_CLRM == T9990_REG::CLRM_16BPP) begin
-                    ENQUEUE_DATA <= {8'b0, P2_CPU_TO_VDP.DATA, 16'b0};
+                    // LMMC 16 bpp: el 1er byte es el bajo del pixel y va a la direccion par, arriba en el
+                    // FIFO (openMSX executeLMMC: (2o << 8) | 1o); antes quedaba en la impar
+                    ENQUEUE_DATA <= {P2_CPU_TO_VDP.DATA, 24'b0};
                     P2_CPU_TO_VDP.REQ <= 1;
                     STATUS.TR <= 1;
                     state <= STATE_SRC_READ_CPU_H_WAIT_ACK;
@@ -778,7 +813,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         //
         else if(state == STATE_SRC_READ_CPU_H_WAIT_BUSY) begin
             if(!P2_CPU_TO_VDP.ACK) begin
-                ENQUEUE_DATA <= {P2_CPU_TO_VDP.DATA, ENQUEUE_DATA[23:0]};
+                ENQUEUE_DATA <= {ENQUEUE_DATA[31:24], P2_CPU_TO_VDP.DATA, 16'b0};
                 ENQUEUE <= 1;
                 state <= STATE_SRC_ENQUEUE_WAIT1;
             end
@@ -809,7 +844,9 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                                     work.chr.decode_data[17] ? REG.FC[ 3: 2] : REG.BC[ 3: 2],
                                     work.chr.decode_data[16] ? REG.FC[ 1: 0] : REG.BC[ 1: 0]
                                 };
-                work.chr.decode_data <= {work.chr.decode_data[15:0], work.chr.decode_data[31:16]};
+                // CMMC/CMMM: un byte (8 pixeles) por paso; CMMK: 16 bits
+                work.chr.decode_data <= src_is_bytechr ? {work.chr.decode_data[23:0], work.chr.decode_data[31:24]}
+                                                       : {work.chr.decode_data[15:0], work.chr.decode_data[31:16]};
             end
             else if(DST_CLRM == T9990_REG::CLRM_4BPP) begin
                 ENQUEUE_DATA <= {
@@ -834,15 +871,16 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                 work.chr.decode_data <= {work.chr.decode_data[27:0], work.chr.decode_data[31:28]};
             end
             else begin
+                // 16 bpp: R#48/R#50 (byte bajo) a la direccion par, como fc_fifo
                 ENQUEUE_DATA <= {
-                                    work.chr.decode_data[31] ? REG.FC[15: 0] : REG.BC[15: 0],
-                                    work.chr.decode_data[30] ? REG.FC[15: 0] : REG.BC[15: 0]
+                                    work.chr.decode_data[31] ? fc_fifo : {REG.BC[7:0], REG.BC[15:8]},
+                                    work.chr.decode_data[30] ? fc_fifo : {REG.BC[7:0], REG.BC[15:8]}
                                 };
                 work.chr.decode_data <= {work.chr.decode_data[29:0], work.chr.decode_data[31:30]};
             end
 
             case (DST_CLRM)
-                T9990_REG::CLRM_2BPP:  ENQUEUE_COUNT <= 5'd16;
+                T9990_REG::CLRM_2BPP:  ENQUEUE_COUNT <= src_is_bytechr ? 5'd8 : 5'd16; // CMMC/CMMM: el byte trae 8 pixeles
                 T9990_REG::CLRM_4BPP:  ENQUEUE_COUNT <= 5'd8;
                 T9990_REG::CLRM_8BPP:  ENQUEUE_COUNT <= 5'd4;
                 T9990_REG::CLRM_16BPP: ENQUEUE_COUNT <= 5'd2;
@@ -874,8 +912,9 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
             ENQUEUE <= 0;
 
             // 残り回数
+            // CMMM: nada por paso de decodificacion (SRC_X avanza por palabra en CONV_8C)
             if(src_is_linear) begin
-                SRC_NX <= SRC_NX - SRC_POS_COUNT;
+                if(!src_is_char) SRC_NX <= SRC_NX - SRC_POS_COUNT;
             end
             else if(src_nx_over) begin
                 // SRC_NY が 1->0 で転送元入力を禁止
@@ -891,7 +930,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
             // 座標更新
             if(src_is_linear) begin
                 // 隣へ移動
-                SRC_X <= SRC_X + SRC_POS_COUNT;
+                if(!src_is_char) SRC_X <= SRC_X + SRC_POS_COUNT;
             end
             else if(src_change_y) begin
                 // 次の行の準備
@@ -1155,6 +1194,8 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         //
         // VRAM 書き込み完了 or P2 がアイドル なら次へ
         //
+        // CMMC/CMMM: vuelve por SETUP2 (no por SRC_IN) para que DST_IN_COUNT y ena_enqueue se recalculen
+        // con el DST_X/DST_NX nuevos antes de decidir en STATE_SRC_IN si se pide otro byte o palabra
         else if(state == STATE_DST_WRITE_WAIT) begin
             if(!CMD_MEM.BUSY && !P2_VDP_TO_CPU.ACK) begin
                 // 残り回数
@@ -1166,7 +1207,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                         state <= STATE_COMPLETE;
                     end
                     else begin
-                        state <= STATE_SRC_IN;
+                        state <= src_is_bytechr ? STATE_SETUP2 : STATE_SRC_IN;
                     end
                 end
                 else if(dst_nx_over) begin
@@ -1178,12 +1219,12 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
                         state <= STATE_COMPLETE;
                     end
                     else begin
-                        state <= STATE_SRC_IN;
+                        state <= src_is_bytechr ? STATE_SETUP2 : STATE_SRC_IN;
                     end
                 end
                 else begin
                     DST_NX <= DST_NX - DST_POS_COUNT;
-                    state <= STATE_SRC_IN;
+                    state <= src_is_bytechr ? STATE_SETUP2 : STATE_SRC_IN;
                 end
 
                 // 座標更新
@@ -1316,7 +1357,7 @@ localparam state_t STATE_DST_WRITE_CPU_WAIT_BUSY         = STATE_DST_WRITE_WAIT;
         end
         else if(state == STATE_SEARCH_LOOP) begin
             // ピクセルを比較
-            work.srch.clr_neq <= ((SRC_DATA ^ {REG.FC,REG.FC}) & BIT_MASK) != 32'd0;
+            work.srch.clr_neq <= ((SRC_DATA ^ {fc_fifo, fc_fifo}) & BIT_MASK) != 32'd0;
 /*
             case(DST_CLRM)
                 T9990_REG::CLRM_2BPP:   work.srch.clr_neq <= (WRT_DATA[15:14] ^ REG.FC[15:14]) != 2'b00;
