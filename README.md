@@ -18,16 +18,27 @@ ROMs `TNCROM.COM` y una guía para quien lo prueba
 ([`bitstream/LEEME.md`](bitstream/LEEME.md), con la lista de pruebas en placa;
 [`bitstream/README.md`](bitstream/README.md) en inglés).
 
-### Versiones
+### Qué fichero grabar (0.3beta)
 
-| Versión | Fecha | Qué trae | Bitstreams | En placa |
-|---|---|---|---|---|
-| [**0.3beta**](https://github.com/Papipapito/V9990TANG/releases/tag/v0.3beta) | 13-11-2026 | Arreglos del V9990 traídos del MSXimus Z: comandos CMMC y CMMM (Chase H.Q.), orden de los bytes a 16 bpp, P#2 escrito sin mirar TR (SymbOS G9K), colores YJK/YUV, pantalla partida con R#17/R#21 (Xybots) y alineación horizontal de la imagen y del cursor (Dream Puzzle) | los seis, todos nuevos; el pack de Nextor es el de la 0.2beta | sin probar |
-| [0.2beta](https://github.com/Papipapito/V9990TANG/releases/tag/v0.2beta) | 28-10-2026 | Tercera configuración, `v9990_megaram_nextor`: V9990 + MegaRAM + Nextor arrancando desde la microSD de la Tang | dos nuevos (`megaram_nextor`, `xtal` y `sync`) y el pack de Nextor para `0x100000`; los cuatro de la 0.1beta, sin cambios | sin probar |
-| [0.1beta](https://github.com/Papipapito/V9990TANG/releases/tag/v0.1beta) | 28-10-2026 | Primera versión: V9990 (tiny9990 con parches de fidelidad y cuadro PAL) con HDMI a 720x480 y 720x576, sin bootloader, y MegaRAM SCC-I de 4 MB con `TNCROM.COM` | cuatro: `v9990` y `v9990_megaram`, cada una en `xtal` y `sync` | sin probar |
+Hay tres configuraciones y cada una sale con dos relojes. Se graba **un solo
+`.fs`**, en `0x000000`.
 
-Cada versión sustituye a la anterior: **la que hay que grabar es la 0.3beta**.
-El detalle de cada una, en [`docs/changelog.md`](docs/changelog.md).
+| Fichero | Qué lleva dentro | Reloj | Para qué |
+|---|---|---|---|
+| `v9990tang_wt202b_v9990_xtal_0.3beta.fs` | solo el V9990 | `xtal` | **la primera que hay que probar**: el cartucho de vídeo, sin nada más |
+| `v9990tang_wt202b_v9990_sync_0.3beta.fs` | solo el V9990 | `sync` | lo mismo, con el V9990 al ritmo del MSX |
+| `v9990tang_wt202b_megaram_xtal_0.3beta.fs` | V9990 + MegaRAM SCC-I de 4 MB | `xtal` | además cargar ROMs con `TNCROM.COM` (desde una unidad de disco que ya tenga el MSX) |
+| `v9990tang_wt202b_megaram_sync_0.3beta.fs` | V9990 + MegaRAM SCC-I de 4 MB | `sync` | lo mismo, con el reloj del slot |
+| `v9990tang_wt202b_megaram_nextor_xtal_0.3beta.fs` | V9990 + MegaRAM + Nextor en la microSD de la Tang | `xtal` | el cartucho completo: MSX-DOS arranca desde la microSD y `TNCROM.COM` se lanza desde ella. Necesita además `v9990tang_nextor_pack_0.2beta.bin` grabado en `0x100000` |
+| `v9990tang_wt202b_megaram_nextor_sync_0.3beta.fs` | V9990 + MegaRAM + Nextor en la microSD de la Tang | `sync` | lo mismo, con el reloj del slot |
+
+| Reloj | De dónde sale | Qué supone |
+|---|---|---|
+| `xtal` | del cristal de 27 MHz de la Tang (108,000 MHz) | arranca siempre y da HDMI aunque el MSX esté apagado. Es la que hay que probar primero y el respaldo si `sync` falla |
+| `sync` | del reloj del slot del MSX, x30 (107,386 MHz) | el V9990 va al ritmo exacto del MSX. **Sin el MSX encendido no hay HDMI**, y si el reloj del slot de esa máquina falta o está fuera de frecuencia el cartucho no arranca |
+
+Cómo grabarlos y qué esperar de cada uno, en
+[`bitstream/LEEME.md`](bitstream/LEEME.md).
 
 La 0.1beta reúne las seis áreas del plan sobre el hito 1 (ver
 [`docs/changelog.md`](docs/changelog.md) y
