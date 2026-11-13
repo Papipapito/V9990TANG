@@ -3,7 +3,7 @@
 Formato: un apartado por hito o versión, lo más reciente arriba. Las cifras de
 cada build están en [VERIFICATION.md](VERIFICATION.md).
 
-## 0.3beta (13 de noviembre de 2026, etiqueta local `v0.3beta`, sin publicar)
+## 0.3beta (13 de noviembre de 2026, etiqueta `v0.3beta`, publicada en GitHub el mismo día)
 
 Arreglos del V9990 del MSXimus Z llevados al tiny9990 de aquí
 ([notas/zynqfix.md](notas/zynqfix.md), con los descartados y su motivo).
