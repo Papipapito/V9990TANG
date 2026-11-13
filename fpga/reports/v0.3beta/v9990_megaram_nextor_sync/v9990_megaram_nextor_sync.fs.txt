@@ -1,0 +1,4 @@
+v9990_megaram_nextor_sync.fs, build del Fri Nov 13 13:12:52 2026
+CheckSum: 0x5105
+md5 del fichero: 451320304e3dda4d710b2be73ebfe6d7
+md5 sin las lineas de cabecera (//): 5ec430d794ff2a5d53a41a78f46cdfb8

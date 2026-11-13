@@ -83,110 +83,24 @@ module T9990_COLOR_DECODE (
 `endif
 
     /***************************************************************
-     * Y 値を保存
+     * Retardo extra del color directo (MSXimus Z 28/10/2026): el flujo de color directo (BD8, BD16, YJK/YUV)
+     * llega ANTES a la salida que el de paleta y su ventana visible en el selector es la de DA un punto mas
+     * tarde (la paleta pasa ademas por la mascara de MUX_HDE). Medido con un bitmap de 512 px (pixel 0 y 511
+     * de colores unicos, tb_v9990_chain +DOTS): ventana visible de 512 puntos = 28..539 (contando desde el
+     * flanco del DE) en color directo y 27..538 en paleta; el flujo en bruto llegaba con el pixel 0 en el
+     * punto 26 (BD8) o 24 (BD16 con doble densidad, B3): el pixel 511 caia 2 (BD8) o 4 (BD16) puntos antes
+     * del ultimo visible y por la derecha asomaban los 2-4 primeros pixeles de la linea siguiente (Dream
+     * Puzzle, B3 a 16 bpp). Se retrasa el flujo: +2 puntos (B1, BD8, YJK/YUV) o +4 (BD16 con doble densidad).
      ***************************************************************/
-`ifdef CLRDEC_USE_DPB
-    wire [4:0] in_y = REG.YAE ? { IN[7:4], IN[7] } : IN[7:3];
-    wire [7:0] in_y5 = { 1'b0, in_y[4:0], 2'b00 } + { 3'b000, in_y };
-    wire [4:0] out_y;
-    wire [7:0] out_y5;
-    wire [7:0] Y  = {3'b000,out_y};
-    wire [8:0] Y5 = {1'b0, out_y5};
-
-    T9990_COLOR_DECODE_Y_BUFF u_ybuff (
-        .RESET_n,
-        .CLK,
-        .DCLK_EN,
-        .ADDR(INDEX),
-        .IN(in_y),
-        .IN5(in_y5),
-        .OUT(out_y),
-        .OUT5(out_y5)
-    );
-`else
-    wire [7:0] in_y = REG.YAE ? { 3'b000, IN[7:4], IN[7] } : { 3'b000, IN[7:3] };
-    logic [7:0] buff_y[0:3] /* synthesis syn_ramstyle="block_ram" */;
-    wire [7:0] Y  = buff_y[INDEX];      // 0~31
-
-    always_ff @(posedge CLK or negedge RESET_n) begin
-        if(!RESET_n) begin
-            buff_y[0] <= 0;
-            buff_y[1] <= 0;
-            buff_y[2] <= 0;
-            buff_y[3] <= 0;
-        end
-        else if(DCLK_EN) begin
-            buff_y[INDEX] <= in_y;
-        end
+    // MSXimus Z 30/10/2026: con COLOR_DECODE_DELAY = 4 (t9990_timing) y el hueco del PRI alineado con la
+    // paleta (aqui: la transparencia de T9990_PALETTE alineada con su color), al color directo le basta UN punto en todos los modos (BD8, BD16 con doble densidad o
+    // sin ella, YJK/YUV).
+    logic [14:0] bd_s0;
+    always_ff @(posedge CLK) begin
+        if(DCLK_EN) bd_s0 <= delay[14:0];
     end
-
-    /***************************************************************
-     * Y*5 の計算値を保存
-     ***************************************************************/
-    logic [8:0] buff_y5[0:3] /* synthesis syn_ramstyle="block_ram" */;
-    wire [8:0] Y5 = buff_y5[INDEX];     // 0~155
-
-    always_ff @(posedge CLK or negedge RESET_n) begin
-        if(!RESET_n) begin
-            buff_y5[0] <= 0;
-            buff_y5[1] <= 0;
-            buff_y5[2] <= 0;
-            buff_y5[3] <= 0;
-        end
-        else if(DCLK_EN) begin
-            buff_y5[INDEX] <= { in_y[6:0], 2'b00 } + in_y;
-        end
-    end
-`endif
-
-    /***************************************************************
-     * UV/JK 値を保存
-     ***************************************************************/
-    logic [2:0] buff_ul;
-    logic [2:0] buff_uh;
-    logic [2:0] buff_vl;
-    logic [7:0] U;  // -32~31
-    logic [8:0] U2; // -64~62
-    logic [7:0] V;
-
-    always_ff @(posedge CLK or negedge RESET_n) begin
-        if(!RESET_n) begin
-            buff_ul <= 0;
-            buff_uh <= 0;
-            buff_vl <= 0;
-        end
-        else if(DCLK_EN) begin
-            case (INDEX)
-                2'd0:   buff_ul <= IN[2:0];
-                2'd1:   buff_uh <= IN[2:0];
-                2'd2:   buff_vl <= IN[2:0];
-                2'd3:   begin
-                            U  <= { buff_uh[2], buff_uh[2], buff_uh, buff_ul       };
-                            U2 <= { buff_uh[2], buff_uh[2], buff_uh, buff_ul, 1'b0 };
-                            V  <= { IN[2],      IN[2],      IN[2:0], buff_vl       };
-                        end
-            endcase
-        end
-    end
-
-    /***************************************************************
-     * YJK/YUV -> RGB 変換
-     ***************************************************************/
-    logic [7:0] YUV_R;  // -32~62
-    logic [7:0] YUV_B;  // -32~62
-    logic [8:0] YUV_G4; // -93~251
-
-    wire [4:0] YUV_R_LIMIT = YUV_R [7] ? 5'd0 : (YUV_R[6:5] ? 5'd31 : YUV_R [4:0]);   // 0~31
-    wire [4:0] YUV_B_LIMIT = YUV_B [7] ? 5'd0 : (YUV_B[6:5] ? 5'd31 : YUV_B [4:0]);   // 0~31
-    wire [4:0] YUV_G_LIMIT = YUV_G4[8] ? 5'd0 : (YUV_G4 [7] ? 5'd31 : YUV_G4[6:2]);   // 0~31
-
-    logic [7:0] YJK_R;  // -32~62
-    logic [7:0] YJK_G;  // -32~62
-    logic [8:0] YJK_B4; // -93~251
-
-    wire [4:0] YJK_R_LIMIT = YJK_R [7] ? 5'd0 : (YJK_R[6:5] ? 5'd31 : YJK_R [4:0]);   // 0~31
-    wire [4:0] YJK_G_LIMIT = YJK_G [7] ? 5'd0 : (YJK_G[6:5] ? 5'd31 : YJK_G [4:0]);   // 0~31
-    wire [4:0] YJK_B_LIMIT = YJK_B4[8] ? 5'd0 : (YJK_B4 [7] ? 5'd31 : YJK_B4[6:2]);   // 0~31
+    wire [14:0] bd8  = bd_s0;                   // +1 punto
+    wire [14:0] bd16 = bd_s0;
 
     /***************************************************************
      * 出力
@@ -197,31 +111,10 @@ module T9990_COLOR_DECODE (
         end
 
         //
-        // YUV
+        // YUV / YJK: el bitmap (T9990_BITMAP) ya entrega el color RGB decodificado (tnCart #31)
         //
-        else if(REG.PLTM == T9990_REG::PLTM_YUV) begin
-            if(!DCLK_EN) begin
-                YUV_R  <= Y + U;          // R = Y + U;
-                YUV_B  <= Y + V;          // B = Y + V;
-                YUV_G4 <= (Y5 - U2 - V);  // G = (5Y - 2U - V) / 4;
-            end
-            else begin
-                OUT <= {1'b0, YUV_G_LIMIT, YUV_R_LIMIT, YUV_B_LIMIT};
-            end
-        end
-
-        //
-        // YJK
-        //
-        else if(REG.PLTM == T9990_REG::PLTM_YJK) begin
-            if(!DCLK_EN) begin
-                YJK_R  <= Y + U;          // R = Y + J;
-                YJK_G  <= Y + V;          // G = Y + K;
-                YJK_B4 <= (Y5 - U2 - V);  // B = (5Y - 2J - K) / 4;
-            end
-            else begin
-                OUT <= {1'b0, YJK_G_LIMIT, YJK_R_LIMIT, YJK_B_LIMIT};
-            end
+        else if(REG.PLTM == T9990_REG::PLTM_YUV || REG.PLTM == T9990_REG::PLTM_YJK) begin
+            if(DCLK_EN) OUT <= { 1'b0, bd8 };    // con el mismo retardo que BD8
         end
 
         //
@@ -230,7 +123,7 @@ module T9990_COLOR_DECODE (
         else if(REG.CLRM == T9990_REG::CLRM_16BPP) begin
             // YS (bit 15) solo cuenta al superponer video externo; sin el, el pixel se ve igual
             // (openMSX rasterBD16 sin superimpose enmascara el bit). MSXimus Z 22/09/2026.
-            if(DCLK_EN) OUT <= { 1'b0, delay[14:0] };
+            if(DCLK_EN) OUT <= { 1'b0, bd16 };
         end
 
         //
@@ -238,10 +131,10 @@ module T9990_COLOR_DECODE (
         //
         else if(REG.CLRM == T9990_REG::CLRM_8BPP) begin
             if(DCLK_EN) OUT <= {
-                                delay[7:0] == 0 ? 1'b1 : 1'b0,
-                                delay[7:5], delay[7:6],
-                                delay[4:2], delay[4:3],
-                                delay[1:0], delay[1:0], delay[1] | delay[0]
+                                bd8[7:0] == 0 ? 1'b1 : 1'b0,
+                                bd8[7:5], bd8[7:6],
+                                bd8[4:2], bd8[4:3],
+                                bd8[1:0], bd8[1:0], bd8[1] | bd8[0]
                             };
         end
 
@@ -302,52 +195,4 @@ module T9990_COLOR_DECODE_DELAY (
     defparam dpb_inst_0.RESET_MODE = "SYNC";
 
 endmodule
-
-module T9990_COLOR_DECODE_Y_BUFF (
-    input wire              RESET_n,
-    input wire              CLK,
-    input wire              DCLK_EN,
-    input wire [1:0]        ADDR,
-    input wire [4:0]        IN,
-    input wire [7:0]        IN5,
-    output wire [4:0]       OUT,
-    output wire [7:0]       OUT5
-);
-    wire [1:0] ADDR_R = (ADDR + 2'd3) & 2'd3;
-    wire [15:0] dummy;
-    wire [2:0] dummy2;
-
-    DPB dpb_inst_0 (
-        .DOA({dummy2,OUT5,OUT}),
-        .DOB(dummy),
-        .CLKA(CLK),
-        .OCEA(1'b1),
-        .CEA(DCLK_EN),
-        .RESETA(!RESET_n),
-        .WREA(1'b0),
-        .CLKB(CLK),
-        .OCEB(1'b1),
-        .CEB(DCLK_EN),
-        .RESETB(!RESET_n),
-        .WREB(1'b1),
-        .BLKSELA(3'b000),
-        .BLKSELB(3'b000),
-        .ADA({8'b00000000,ADDR_R[1:0],4'b0011}),
-        .DIA(16'd0),
-        .ADB({8'b00000000,ADDR[1:0],4'b0011}),
-        .DIB({3'b000,IN5,IN})
-    );
-
-    defparam dpb_inst_0.READ_MODE0 = 1'b0;
-    defparam dpb_inst_0.READ_MODE1 = 1'b0;
-    defparam dpb_inst_0.WRITE_MODE0 = 2'b00;
-    defparam dpb_inst_0.WRITE_MODE1 = 2'b00;
-    defparam dpb_inst_0.BIT_WIDTH_0 = 16;
-    defparam dpb_inst_0.BIT_WIDTH_1 = 16;
-    defparam dpb_inst_0.BLK_SEL_0 = 3'b000;
-    defparam dpb_inst_0.BLK_SEL_1 = 3'b000;
-    defparam dpb_inst_0.RESET_MODE = "SYNC";
-
-endmodule
-
 `default_nettype wire

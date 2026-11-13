@@ -351,7 +351,8 @@ módulos tocados es mejor estimación del coste de cada parte.
   ninguna lectura (la *watchpoint* `read_io` no dispara; `mk_replay.py` lo
   trata así), así que P#0/P#2 en lectura no se comparan con openMSX por esta
   vía (sí en `+BLIT=1`).
-- **Desplazamientos horizontales del bitmap, sin tocar** (diagnóstico
+- **(Arreglado en la 0.3beta: [zynqfix.md](zynqfix.md), arreglo 7.)**
+  **Desplazamientos horizontales del bitmap, sin tocar** (diagnóstico
   `+HPOS=1`, scroll 0): el primer punto de la imagen es el X = 2 del bitmap en
   B1 BD16, X = 4 en B3 BD16, X = 1 en B1/B3 BP4 y X = 2 en B2 BP4 (openMSX:
   X = 0); y la capa de paleta (P1, P2, BPx) sale un punto adelantada frente a
@@ -362,12 +363,14 @@ módulos tocados es mejor estimación del coste de cada parte.
   los modos de color directo, y un punto a la izquierda (con el bitmap, como en
   el hito 1) en BP2/BP4/BP6. Arreglarlo es tocar la cadena de lectura del
   bitmap y la paleta en todos los modos: otra tarea, con `hito1` como red.
-- **B2 a 16 bpp repite cada pareja de puntos** (`+HPOS=1` y el primer intento
+- **(Sigue igual en la 0.3beta.)**
+  **B2 a 16 bpp repite cada pareja de puntos** (`+HPOS=1` y el primer intento
   de la prueba EOR en B2 BD16: 1, 4, 5, 4, 5, 8, 9, 8, 9...). Está en la
   lectura del bitmap, que este hito no toca (el parche de BD16 solo cruza los
   dos bytes de cada punto); con el core del hito 1 no se ve porque BD16 salía
   con el color 0. Sin tocar; la prueba de overscan usa B2 BP4.
-- **B4 BP4 sale 4 puntos tarde** (lo vio la revisión del área al probar el
+- **(Arreglado en la 0.3beta: [zynqfix.md](zynqfix.md), arreglo 7.)**
+  **B4 BP4 sale 4 puntos tarde** (lo vio la revisión del área al probar el
   cursor en B4 con `+EOR=2` en una copia del banco): los 4 primeros puntos de
   cada línea de la imagen muestran el fondo o restos de la línea anterior. Es
   otro caso de los desplazamientos de arriba, en la lectura del bitmap, que

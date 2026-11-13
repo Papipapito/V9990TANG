@@ -19,5 +19,8 @@ set VARIANT sync
 # Con la guardia revisada (c8e4fd2), place 2 / route 1 da 109,50 MHz (al
 # limite); place 2 / route 2 da 125,93 MHz y setup +1,095 ns (place 0 /
 # route 2: 119,29 MHz), y tarda bastante menos.
-set BUILD_OPTS {-place_option 2 -route_option 2}
+# 0.3beta (core con los arreglos del MSXimus Z, docs/notas/zynqfix.md): place 2 /
+# route 2 se queda en 107,42 MHz (falla, camino del bus u_nwr -> mux_cs_ff);
+# place 0 / route 2 da 109,52 MHz y setup +0,182 ns (pasa, justo).
+set BUILD_OPTS {-place_option 0 -route_option 2}
 source build_common.tcl

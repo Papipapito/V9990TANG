@@ -214,6 +214,7 @@ module TINY9990_BITMAP_GEN (
     logic [0:0] R_NUM;
     logic [4:0] R_POS;
     logic [15:0] R_DATA;
+    logic [31:0] R_WORD;
 
     T9990_BITMAP_BUFFER u_buff (
         .CLK,
@@ -225,8 +226,43 @@ module TINY9990_BITMAP_GEN (
         .W_STROBE,
         .R_NUM,
         .R_POS,
-        .R_DATA
+        .R_DATA,
+        .R_WORD
     );
+
+    /***************************************************************
+     * YJK / YUV (MSXimus Z 27/10/2026, tnCart #31)
+     *  A 8 bpp el dword de R_WORD son 4 pixeles alineados a 4 en la VRAM, es decir el grupo entero
+     *  de YJK/YUV: se decodifica aqui, antes del desplazamiento horizontal, con los 4 bytes a la vez
+     *  (T9990_COLOR_DECODE lo hacia sobre el flujo ya desplazado, con el grupo en fase con la pantalla
+     *  y no con la VRAM, y con los pares J/K cambiados). Como openMSX (V9990BitmapConverter,
+     *  draw_YJK_YUV_PAL): v = pixeles 0,1 (K / V), u = pixeles 2,3 (J / U), 6 bits con signo;
+     *  Y = byte[7:3]; YUV: R = Y+u, G = (5Y-2u-v)/4, B = Y+v; YJK: igual con G y B cambiados.
+     *  Dos etapas registradas en cada CLK: R_POS y R_WORD cambian como mucho una vez por DCLK_EN y el
+     *  siguiente esta a >= 6 clk, asi que el resultado esta listo antes de usarse.
+     ***************************************************************/
+    wire [7:0] gpx = (R_POS[1:0] == 2'd0) ? R_WORD[31:24] :
+                     (R_POS[1:0] == 2'd1) ? R_WORD[23:16] :
+                     (R_POS[1:0] == 2'd2) ? R_WORD[15: 8] : R_WORD[ 7: 0];
+    logic signed [5:0] ycc_u;
+    logic signed [5:0] ycc_v;
+    logic [4:0]        ycc_y;
+    logic signed [7:0] ycc_a;       // Y + u           (R)
+    logic signed [7:0] ycc_b;       // Y + v
+    logic signed [8:0] ycc_c;       // 5Y - 2u - v     (x4)
+    always_ff @(posedge CLK) begin
+        ycc_y <= gpx[7:3];
+        ycc_u <= { R_WORD[ 2:0], R_WORD[10:8] };
+        ycc_v <= { R_WORD[18:16], R_WORD[26:24] };
+        ycc_a <= $signed({3'b000, ycc_y}) + ycc_u;
+        ycc_b <= $signed({3'b000, ycc_y}) + ycc_v;
+        ycc_c <= $signed({4'b0000, ycc_y}) + $signed({2'b00, ycc_y, 2'b00}) - (ycc_u <<< 1) - ycc_v;
+    end
+    wire [4:0] ycc_a_lim = ycc_a[7] ? 5'd0 : (ycc_a[6:5] != 2'b00 ? 5'd31 : ycc_a[4:0]);
+    wire [4:0] ycc_b_lim = ycc_b[7] ? 5'd0 : (ycc_b[6:5] != 2'b00 ? 5'd31 : ycc_b[4:0]);
+    wire [4:0] ycc_c_lim = ycc_c[8] ? 5'd0 : (ycc_c[7]            ? 5'd31 : ycc_c[6:2]);
+    wire [15:0] YCC_RGB = (REG.PLTM == T9990_REG::PLTM_YJK) ? {1'b0, ycc_b_lim, ycc_a_lim, ycc_c_lim}    // {Ys, G, R, B}
+                                                            : {1'b0, ycc_c_lim, ycc_a_lim, ycc_b_lim};
 
     /***************************************************************
      * 読み出しデータ格納
@@ -367,7 +403,20 @@ module TINY9990_BITMAP_GEN (
                 CLR <= 0;
             end
             else if(REG.CLRM == T9990_REG::CLRM_8BPP) begin
-                if(REG.YAE) begin
+                if(REG.PLTM[1]) begin
+                    // YJK / YUV (PLTM = 10 / 11), con YAE el bit 3 (A) elige paleta para ese pixel
+                    if(REG.YAE && R_DATA[3]) begin
+                        PRI <= (R_DATA[7:4] == 0);
+                        PA  <= { REG.PLT[3:2], R_DATA[7:4] };
+                        CLR <= 0;
+                    end
+                    else begin
+                        PRI <= 1;
+                        PA  <= 0;
+                        CLR <= YCC_RGB;
+                    end
+                end
+                else if(REG.YAE) begin
                     if(R_DATA[3]) begin
                         PRI <= (R_DATA[7:4] == 0);
                         PA  <= { REG.PLT[3:2], R_DATA[7:4] };
@@ -436,13 +485,15 @@ module T9990_BITMAP_BUFFER (
 
     input wire [0:0]    R_NUM,
     input wire [4:0]    R_POS,
-    output reg [15:0]   R_DATA
+    output reg [15:0]   R_DATA,
+    output wire [31:0]  R_WORD      // MSXimus Z 27/10/2026: el dword entero (YJK/YUV)
 );
     logic w_strobe_0;
     logic w_strobe_1;
     logic [31:0] r_data_0;
     logic [31:0] r_data_1;
     wire [31:0] r_data = R_NUM ? r_data_1 : r_data_0;
+    assign R_WORD = r_data;
     wire [3:0] r_addr = (CLRM == T9990_REG::CLRM_2BPP) ? R_POS[4] :
                         (CLRM == T9990_REG::CLRM_4BPP) ? R_POS[4:3] :
                         (CLRM == T9990_REG::CLRM_8BPP) ? R_POS[4:2] : R_POS[4:1];

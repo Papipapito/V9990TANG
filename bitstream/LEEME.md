@@ -1,4 +1,4 @@
-# V9990TANG 0.2beta para la WonderTANG 2.02b
+# V9990TANG 0.3beta para la WonderTANG 2.02b
 
 V9990TANG es un cartucho V9990 (el VDP del GFX9000) para MSX. Corre en la
 **WonderTANG 2.02b**, con su Tang Nano 20K. Usa el core tiny9990 de buppu3
@@ -12,21 +12,38 @@ en placa es el hito 1 (el core sin parches, con el bootloader de tnCart), y
 según el usuario funciona. Al final hay una [lista de pruebas](#lista-de-pruebas-en-placa)
 con una tabla para apuntar los resultados.
 
-Novedad de la 0.2beta: las dos variantes **`megaram_nextor_*`**, el cartucho
-"multi todo": V9990 + MegaRAM SCC-I de 4 MB + **Nextor arrancando desde la
-microSD de la Tang**. Las cuatro variantes de la 0.1beta son las mismas (mismo
-cuerpo de `.fs`, mismos CheckSum); se repiten aquí para tenerlo todo junto.
+Novedad de la 0.3beta: **los seis bitstreams son nuevos**. Llevan los arreglos
+del V9990 que el mismo core recibió en el MSXimus Z
+([`../docs/notas/zynqfix.md`](../docs/notas/zynqfix.md)):
+
+- **CMMC y CMMM** a 2/4/8/16 bpp (Chase H.Q. se quedaba en negro y sin
+  retrato ni letras).
+- **Orden de los bytes a 16 bpp** en LMMV, PSET, LINE, LMMC y SRCH (colores
+  cruzados al pintar con comandos en BD16).
+- **P#2 escrito sin mirar TR** durante un LMMC o un CMMC: el cartucho retiene
+  al Z80 con /WAIT hasta que toma el byte, en vez de perderlo (SymbOS G9K).
+- **YJK y YUV** con los colores bien.
+- **Xybots**: escribir R#17/R#21 a mitad de pantalla reinicia la cuenta de
+  líneas (la mitad de abajo enseñaba el atlas de letras).
+- **Alineación horizontal**: el primer punto de la imagen es el punto 0 del
+  bitmap en todos los modos (antes el 1, el 2 o el 4, con restos de la línea
+  siguiente por la derecha: Dream Puzzle) y el cursor queda en su X.
+
+El pack de Nextor **no cambia** (`v9990tang_nextor_pack_0.2beta.bin`): quien ya
+lo tenga grabado en `0x100000` solo tiene que regrabar el `.fs`. Las
+variantes son las mismas seis: V9990 solo, con MegaRAM, y con MegaRAM y
+**Nextor arrancando desde la microSD de la Tang**, cada una en `xtal` y `sync`.
 
 ## Ficheros
 
 | Fichero | Qué es | Tamaño | SHA-256 (12 primeros) | CheckSum de Gowin |
 |---|---|---|---|---|
-| `v9990tang_wt202b_v9990_xtal_0.1beta.fs` | V9990 solo, reloj del cristal de la Tang | 7 264 153 | `f668f7abbfc8` | `0x345D` |
-| `v9990tang_wt202b_v9990_sync_0.1beta.fs` | V9990 solo, reloj del slot | 7 264 153 | `5f5369227e3e` | `0x7B75` |
-| `v9990tang_wt202b_megaram_xtal_0.1beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del cristal | 7 264 153 | `eca3b40eba33` | `0x95F1` |
-| `v9990tang_wt202b_megaram_sync_0.1beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del slot | 7 264 153 | `3812094d40d5` | `0x4693` |
-| `v9990tang_wt202b_megaram_nextor_xtal_0.2beta.fs` | **V9990 + MegaRAM SCC-I de 4 MB + Nextor en la microSD de la Tang**, reloj del cristal | 7 264 153 | `47ed9b813c81` | `0x0BA7` |
-| `v9990tang_wt202b_megaram_nextor_sync_0.2beta.fs` | lo mismo, reloj del slot | 7 264 153 | `3c52b74b0bdb` | `0x1D3F` |
+| `v9990tang_wt202b_v9990_xtal_0.3beta.fs` | V9990 solo, reloj del cristal de la Tang | 7 264 153 | `8bae0158b588` | `0x5A17` |
+| `v9990tang_wt202b_v9990_sync_0.3beta.fs` | V9990 solo, reloj del slot | 7 264 153 | `f569613443eb` | `0xF710` |
+| `v9990tang_wt202b_megaram_xtal_0.3beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del cristal | 7 264 153 | `eab15aed5250` | `0x78D0` |
+| `v9990tang_wt202b_megaram_sync_0.3beta.fs` | V9990 + MegaRAM SCC-I de 4 MB, reloj del slot | 7 264 153 | `511b0136c667` | `0xC95B` |
+| `v9990tang_wt202b_megaram_nextor_xtal_0.3beta.fs` | **V9990 + MegaRAM SCC-I de 4 MB + Nextor en la microSD de la Tang**, reloj del cristal | 7 264 153 | `4dd1a79c26f2` | `0x7E29` |
+| `v9990tang_wt202b_megaram_nextor_sync_0.3beta.fs` | lo mismo, reloj del slot | 7 264 153 | `cfcd960039aa` | `0x5105` |
 | `v9990tang_nextor_pack_0.2beta.bin` | **solo para `megaram_nextor_*`**: el kernel oficial `Nextor-2.1.2.MegaFlashSDSCC.1-slot.ROM` sin cambios, para grabar en la flash en **`0x100000`**. Las otras cuatro `.fs` no lo usan. Licencia: `NEXTOR_LICENSE.md` | 131 072 | `b2394dfca88e` | — |
 | `TNCROM.COM` | cargador de ROMs para la MegaRAM (r3, `v0.07 (V9990TANG r3)`), para MSX-DOS 2 o Nextor | 13 700 | `5f40a90d4918` | — |
 | `NEXTOR_LICENSE.md` | licencia de Nextor (no es MIT: sin uso comercial) | | | |
@@ -115,7 +132,7 @@ contrario (son zonas distintas de la flash):
 
 | Qué | Dirección | Gowin Programmer |
 |---|---|---|
-| `v9990tang_wt202b_megaram_nextor_<xtal\|sync>_0.2beta.fs` | `0x000000` | **exFlash Erase,Program thru GAO-Bridge**, *Start Address* `0x000000` |
+| `v9990tang_wt202b_megaram_nextor_<xtal\|sync>_0.3beta.fs` | `0x000000` | **exFlash Erase,Program thru GAO-Bridge**, *Start Address* `0x000000` |
 | `v9990tang_nextor_pack_0.2beta.bin` | **`0x100000`** | **exFlash C Bin Erase,Program thru GAO-Bridge**, *Start Address* `0x100000` (en *User Code / File name* el `.bin`) |
 
 Por línea de órdenes: `openFPGALoader -b tangnano20k -f <fichero.fs>` para el
@@ -340,10 +357,9 @@ Apunta cada resultado en la tabla del final.
   build, los bancos de simulación y la matriz de monitores.
 - [`../docs/notas/nextor.md`](../docs/notas/nextor.md): cómo está hecho
   Nextor (arranque, mapa de la SDRAM y de la flash, pack, builds).
-- [`../docs/changelog.md`](../docs/changelog.md): lo que entra en la 0.1beta y
-  en la 0.2beta.
+- [`../docs/changelog.md`](../docs/changelog.md): lo que entra en cada versión.
 - Evidencia de cada build (recursos, timing, salida de la puerta):
-  `../fpga/reports/v0.1beta/<variante>/` y `../fpga/reports/nextor/<variante>/`.
+  `../fpga/reports/v0.3beta/<variante>/`.
 
 Licencia BSD 3-Clause (ver [`../LICENSE`](../LICENSE)). El IP DVI_TX de Gowin
 que va dentro del bitstream es del fabricante.

@@ -2,3 +2,4 @@
 hito1_src/
 # trazas de openMSX y volcados de VRAM (se regeneran con replay_openmsx.sh; no van al repo)
 trace/
+main_src/

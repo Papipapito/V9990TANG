@@ -1,0 +1,4 @@
+v9990_megaram_xtal.fs, build del Fri Nov 13 12:37:13 2026
+CheckSum: 0x78D0
+md5 del fichero: 4f03d1081325b707862c1cfb66ded4b5
+md5 sin las lineas de cabecera (//): 683f80c583ab6fb2954371db7d179302

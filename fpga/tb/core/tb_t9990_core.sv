@@ -35,6 +35,18 @@
 //   +PALT=1    cuadro PAL de 313 lineas en B1 y B2 y vuelta a NTSC -> PALT_OK
 //   +BDBP=1    puntos transparentes (indice 0) de BP4 desde el reset y despues
 //              de BD16: color de fondo (R#15) -> BDBP_OK
+//   +CMMC=1    CMMC a 2/4/8/16 bpp (8 pixeles por byte de P#2, bits seguidos entre
+//              filas, sobrantes tirados, ningun byte de mas) contra el modelo del
+//              manual y de openMSX; con +P2NOTR=1 los bytes se mandan sin mirar TR
+//              (SymbOS G9K) y ademas un LMMC 16x2 seguido y R#6 -> comando/P#0
+//              inmediato -> CMMC_OK (y P2NOTR_OK)
+//   +CMMM=1    CMMM a 2/4/8/16 bpp (bytes de la VRAM lineal desde SA, SA en las 4
+//              posiciones de la palabra, lecturas contadas) -> CMMM_OK
+//   +ORDEN=1   orden de los bytes del color a 16 bpp (R#48 = byte bajo = direccion
+//              par) en LMMV/LMMC/PSET/LINE/LMCM/SRCH/CMMC y CMMM con SA = 7FFFEh
+//              a 8 bpp (vuelta de 512 KB) -> ORDEN_OK
+//   +YCC=1     YJK y YUV en B1 contra el modelo de openMSX (grupo de 4 pixeles de
+//              la VRAM), con el desfase calibrado con BD8 -> YCC_OK
 //   +REPLAY=f  traza de openMSX (mk_replay.py) con +VRAMOUT=f volcado de la VRAM
 //   +CH0=1     carga en el canal 0 del UMA (lecturas en todas sus ranuras)
 //   +ACKDLY=n  retrasa n ciclos el ACK de la VRAM: la asercion tiene que saltar
@@ -539,6 +551,371 @@ module tb_t9990_core;
     endtask
 
     // ------------------------------------------------------------------
+    // +CMMC=1: CMMC (R#52 = 50h) en B, XIMM 512, a 2/4/8/16 bpp (R#6 = 84h..87h) contra un
+    // modelo de la semantica del V9990 (manual de aplicacion y openMSX V9990CmdEngine::executeCMMC):
+    // cada byte de P#2 son 8 pixeles, bit 7 primero; 1 -> FC (R#48/49), 0 -> BC (R#50/51). Los
+    // bits siguen de una fila a la siguiente (NX no multiplo de 8) y los que sobran del ultimo
+    // byte se tiran: la orden pide ceil(NX*NY/8) bytes. A 2/4/8 bpp el manual pide FC/BC repetidos
+    // en todo el registro; a 16 bpp R#48/R#50 son el byte bajo del pixel (direccion par, VRAM0).
+    // Con TP (LOP 1Ch) el pixel de color 0 no se escribe. Casos por modo: DX 144..147 con NX 8 y
+    // 12 (NY 8), NX 5 x NY 3 (15 bits -> 2 bytes), NX 1 x NY 10 (2 bytes), NX 33 x NY 3 (99 bits ->
+    // 13 bytes), 1 x 1 (sobran 7 bits) seguido de DX 155 (a 2 bpp, 11 pixeles dentro de la palabra),
+    // DIX=1 y TP con BC = 0. Espera TR antes de cada
+    // byte; CE tiene que bajar justo tras el ultimo, sin pedir ninguno de mas, y fuera del
+    // rectangulo no se toca nada. Chase H.Q. (DiHalt) dibuja el marcador con CMMC 8x8 a 8 bpp.
+    // ------------------------------------------------------------------
+    integer cmmc_arg = 0, p2notr = 0;
+    reg [7:0] cmmc_pat [0:15];
+    function integer cmmc_px(input integer bpp, input integer x, input integer y);   // pixel (x,y), 512 px de ancho
+        integer a;
+        begin
+            case (bpp)
+                2:  begin a = y * 128 + x / 4; cmmc_px = (u_vram.mem[a] >> (6 - 2 * (x % 4))) & 3; end
+                4:  begin a = y * 256 + x / 2; cmmc_px = (x & 1) ? (u_vram.mem[a] & 8'h0F) : (u_vram.mem[a] >> 4); end
+                8:  cmmc_px = u_vram.mem[y * 512 + x];
+                default: begin a = y * 1024 + 2 * x; cmmc_px = {u_vram.mem[a + 1], u_vram.mem[a]}; end
+            endcase
+        end
+    endfunction
+    task cmmc_wait_ce(input integer tmo, output integer ok);
+        integer w;
+        begin
+            w = 0; while (dut.STATUS.CE && w < tmo) begin @(posedge clk); w = w + 1; end
+            ok = !dut.STATUS.CE;
+        end
+    endtask
+    // un caso: fondo bgr (LMMV 256x32), CMMC de NX x NY en (DX, 8); fail = 1 si algo no cuadra
+    task cmmc_one(input integer bpp, input integer dx, input integer nx, input integer ny, input integer dix, input integer tp,
+                  input [15:0] fcr, input [15:0] bcr, input [15:0] bgr, input integer fcp, input integer bcp, input integer bgp,
+                  output integer fail);
+        integer y, x, k, w, ok, nbytes, lost, extra, bad, outb, got, col, expv, lo, hi;
+        begin
+            nbytes = (nx * ny + 7) / 8;
+            wr_cmd(0, 0, 0, 0, 256, 32, 0, 8'h0C, 16'hFFFF, bgr, 0, 8'h20); cmmc_wait_ce(4000000, ok);
+            wr_cmd(0, 0, dx, 8, nx, ny, dix ? 8'h04 : 8'h00, tp ? 8'h1C : 8'h0C, 16'hFFFF, fcr, bcr, 8'h50);
+            lost = 0;
+            for (k = 0; k < nbytes; k = k + 1) begin
+                if (p2notr) wr_port(4'd2, cmmc_pat[k]);     // +P2NOTR=1: sin mirar TR (SymbOS G9K); el puerto retiene
+                else begin
+                w = 0; while (!dut.STATUS.TR && dut.STATUS.CE && w < 400000) begin @(posedge clk); w = w + 1; end
+                if (dut.STATUS.TR) wr_port(4'd2, cmmc_pat[k]);
+                else lost = lost + 1;                       // CE bajo antes de tiempo o TR no sube
+                end
+            end
+            cmmc_wait_ce(200000, ok);
+            extra = 0;                                      // bytes que el motor pide de mas (se le dan ceros)
+            while (!ok && extra < 40) begin
+                w = 0; while (!dut.STATUS.TR && w < 200000) begin @(posedge clk); w = w + 1; end
+                if (!dut.STATUS.TR) extra = 99;
+                else begin wr_port(4'd2, 8'h00); extra = extra + 1; cmmc_wait_ce(20000, ok); end
+            end
+            if (!ok) begin wr_reg(6'd52, 8'h00); repeat (200) @(posedge clk); end      // STOP
+            bad = 0;
+            for (y = 0; y < ny; y = y + 1) for (x = 0; x < nx; x = x + 1) begin
+                k = y * nx + x;
+                col = cmmc_pat[k / 8][7 - (k % 8)] ? fcp : bcp;
+                expv = (tp && col == 0) ? bgp : col;
+                got = cmmc_px(bpp, dix ? dx - x : dx + x, 8 + y);
+                if (got != expv) bad = bad + 1;
+            end
+            // alrededor del rectangulo (una columna y una fila a cada lado) sigue el fondo
+            lo = dix ? dx - nx + 1 : dx; hi = dix ? dx : dx + nx - 1;
+            outb = 0;
+            for (y = 7; y <= 8 + ny; y = y + 1) for (x = lo - 1; x <= hi + 1; x = x + 1)
+                if ((y == 7 || y == 8 + ny || x == lo - 1 || x == hi + 1) && cmmc_px(bpp, x, y) != bgp) outb = outb + 1;
+            fail = (lost != 0 || extra != 0 || !ok || bad != 0 || outb != 0);
+            $display("  %2d bpp DX=%0d NX=%0d NY=%0d DIX=%0d TP=%0d: %0d bytes, CE %0s; bytes de mas=%0d; sin TR=%0d; pixeles mal=%0d; fuera=%0d%0s",
+                     bpp, dx, nx, ny, dix, tp, nbytes, ok ? "baja" : "NO baja", extra, lost, bad, outb, fail ? "  <-- MAL" : "");
+            if (fail) for (y = 0; y < 2 && y < ny; y = y + 1) begin
+                $write("     fila %0d (leido):  ", y);
+                for (x = 0; x < nx; x = x + 1) $write(" %0h", cmmc_px(bpp, dix ? dx - x : dx + x, 8 + y));
+                $write("\n     fila %0d (modelo): ", y);
+                for (x = 0; x < nx; x = x + 1) begin
+                    k = y * nx + x; col = cmmc_pat[k / 8][7 - (k % 8)] ? fcp : bcp;
+                    $write(" %0h", (tp && col == 0) ? bgp : col);
+                end
+                $write("\n");
+            end
+        end
+    endtask
+    task cmmc_test;
+        integer c, bpp, d, n, f, nfail, ncase, fcp, bcp, tbg;
+        reg [15:0] fcr, bcr, tbgr;
+        begin
+            cmmc_pat[0] = 8'hF0; cmmc_pat[1] = 8'h0F; cmmc_pat[2] = 8'hAA; cmmc_pat[3] = 8'h55;
+            cmmc_pat[4] = 8'hFF; cmmc_pat[5] = 8'h00; cmmc_pat[6] = 8'h81; cmmc_pat[7] = 8'h7E;
+            cmmc_pat[8] = 8'hC3; cmmc_pat[9] = 8'h3C; cmmc_pat[10] = 8'h96; cmmc_pat[11] = 8'h69;
+            cmmc_pat[12] = 8'h12; cmmc_pat[13] = 8'h34; cmmc_pat[14] = 8'h56; cmmc_pat[15] = 8'h78;
+            wr_reg(6'd17, 8'h00); wr_reg(6'd18, 8'h00); wr_reg(6'd19, 8'h00); wr_reg(6'd20, 8'h00);
+            nfail = 0; ncase = 0;
+            for (c = 0; c < 4; c = c + 1) begin
+                case (c)
+                    0: begin bpp = 2;  fcr = 16'hAAAA; bcr = 16'h5555; fcp = 2;       bcp = 1;       tbgr = 16'hFFFF; tbg = 3; end
+                    1: begin bpp = 4;  fcr = 16'hDDDD; bcr = 16'h2222; fcp = 4'hD;    bcp = 2;       tbgr = 16'h7777; tbg = 7; end
+                    2: begin bpp = 8;  fcr = 16'h2F2F; bcr = 16'h2020; fcp = 8'h2F;   bcp = 8'h20;   tbgr = 16'h5A5A; tbg = 8'h5A; end
+                    default: begin bpp = 16; fcr = 16'hABCD; bcr = 16'h1234; fcp = 16'hABCD; bcp = 16'h1234; tbgr = 16'h5AC3; tbg = 16'h5AC3; end
+                endcase
+                wr_reg(6'd6, 8'h84 | c[7:0]);              // B, XIMM 512, CLRM = c
+                $display("---- CMMC %0d bpp (R#6=%02h) ----", bpp, 8'h84 | c[7:0]);
+                for (n = 8; n <= 12; n = n + 4)
+                    for (d = 144; d <= 147; d = d + 1) begin
+                        cmmc_one(bpp, d, n, 8, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                    end
+                cmmc_one(bpp, 145, 5, 3, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmc_one(bpp, 147, 1, 10, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmc_one(bpp, 141, 33, 3, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmc_one(bpp, 150, 1, 1, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmc_one(bpp, 155, 12, 8, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmc_one(bpp, 150, 12, 8, 1, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmc_one(bpp, 146, 12, 8, 0, 1, fcr, 16'h0000, tbgr, fcp, 0, tbg, f); nfail = nfail + f; ncase = ncase + 1;
+            end
+            $display("CMMC: %0d casos, %0d mal", ncase, nfail);
+            if (nfail == 0) $display("CMMC_OK"); else $display("CMMC_FAIL %0d", nfail);
+        end
+    endtask
+    // ------------------------------------------------------------------
+    // +P2NOTR=1 (con +CMMC=1): rampa069/v9990 a3ee809. SymbOS G9K manda los bytes del CMMC/LMMC sin
+    // mirar TR y escribe R#6 justo antes de lanzar un comando. (1) El CMMC de arriba sin sondear TR y un
+    // LMMC 16x2 a 8 bpp de 32 bytes seguidos: el puerto tiene que retener (WAIT_n) el P#2 hasta que el
+    // motor lo pueda tomar, sin perder ni pisar bytes. (2) R#6 -> comando / P#0 enseguida: el mapeo de
+    // VRAM y el modo del motor siguen a R#6 al instante (P1 <-> bitmap, con desfases distintos respecto
+    // a la linea de pantalla). Imprime P2NOTR_OK.
+    // ------------------------------------------------------------------
+    task p2notr_extra;
+        integer i, j, x, y, k, bad, ok, ph, bad_lmmc, bad_map, bad_cmd;
+        reg [18:0] a;
+        begin
+            bad_lmmc = 0; bad_map = 0; bad_cmd = 0;
+            wr_reg(6'd6, 8'h86);                           // B, XIMM 512, 8 bpp
+            wr_cmd(0, 0, 100, 100, 16, 2, 0, 8'h0C, 16'hFFFF, 0, 0, 8'h10);   // LMMC 16x2
+            for (k = 0; k < 32; k = k + 1) wr_port(4'd2, 8'h40 + k[7:0]);     // sin mirar TR
+            cmmc_wait_ce(200000, ok);
+            if (!ok) begin wr_reg(6'd52, 8'h00); repeat (200) @(posedge clk); end      // STOP: que no contagie al resto
+            for (y = 0; y < 2; y = y + 1) for (x = 0; x < 16; x = x + 1)
+                if (u_vram.mem[(100 + y) * 512 + 100 + x] !== (8'h40 + y * 16 + x)) bad_lmmc = bad_lmmc + 1;
+            $display("  LMMC 16x2 sin TR: CE %0s, pixeles mal=%0d%0s", ok ? "baja" : "NO baja", bad_lmmc, (bad_lmmc != 0 || !ok) ? "  <-- MAL" : "");
+            for (i = 0; i < 24; i = i + 1) begin
+                repeat (i * 137) @(posedge clk);
+                a = 19'h01000 + i * 19'h111;
+                wr_reg(6'd6, 8'h00);                       // P1
+                wr_reg(6'd0, a[7:0]); wr_reg(6'd1, a[15:8]); wr_reg(6'd2, {5'd0, a[18:16]});
+                wr_port(4'd0, 8'hA0 + i[7:0]); repeat (60) @(posedge clk);
+                ph = (a & 19'h3FFFF) * 2 + a[18];          // mapa P1 de t9990_ram.sv
+                if (u_vram.mem[ph] !== 8'hA0 + i[7:0]) bad_map = bad_map + 1;
+                wr_reg(6'd6, 8'h86);                       // bitmap, y el comando enseguida
+                wr_cmd(0, 0, i * 8, 40 + i, 8, 1, 0, 8'h0C, 16'hFFFF, 16'h5A5A, 0, 8'h20); cmmc_wait_ce(200000, ok);
+                for (j = 0; j < 8; j = j + 1) if (u_vram.mem[(40 + i) * 512 + i * 8 + j] !== 8'h5A) bad_cmd = bad_cmd + 1;
+                wr_reg(6'd0, a[7:0]); wr_reg(6'd1, a[15:8]); wr_reg(6'd2, {5'd0, a[18:16]});
+                wr_port(4'd0, 8'hC0 + i[7:0]); repeat (60) @(posedge clk);
+                if (u_vram.mem[a] !== 8'hC0 + i[7:0]) bad_map = bad_map + 1;
+            end
+            $display("  R#6 inmediato: mapeo P#0 mal=%0d, comando mal=%0d", bad_map, bad_cmd);
+            if (bad_lmmc == 0 && bad_map == 0 && bad_cmd == 0 && ok) $display("P2NOTR_OK"); else $display("P2NOTR_FAIL");
+        end
+    endtask
+    // ------------------------------------------------------------------
+    // +CMMM=1: CMMM (R#52 = 70h) en B, XIMM 512, a 2/4/8/16 bpp (R#6 = 84h..87h) contra un modelo de
+    // la semantica del V9990 (manual de aplicacion y openMSX V9990CmdEngine::executeCMMM): igual que el
+    // CMMC, pero los bytes salen de la VRAM lineal desde SA (R#32, R#34, R#35[2:0]; R#33 no cuenta), uno
+    // detras de otro: 8 pixeles por byte, bit 7 primero, los bits siguen de una fila a la siguiente y
+    // los que sobran del ultimo byte se tiran. La fuente (80 bytes en 60000h) se escribe por P#0 una
+    // sola vez. Casos por modo: NX 8 x NY 7 (el marcador de Chase H.Q.) y NX 12 x NY 5 con SA en las
+    // 4 posiciones dentro de la palabra de 32 bits y DX 144..147, 5x3, 1x10, 33x3, 32x12 (el retrato),
+    // 1x1, DIX=1 y TP con BC = 0. Ademas de los pixeles y del borde, cuenta las lecturas del motor en
+    // 60000h-6FFFFh: tienen que ser justo las palabras que cubren los ceil(NX*NY/8) bytes.
+    // ------------------------------------------------------------------
+    integer cmmm_arg = 0, cmmm_rd = 0;
+    reg     cmmm_mon = 0, cm_oe_q = 1;
+    reg [7:0] cmmm_src [0:79];
+    localparam [18:0] CMMM_BASE = 19'h60000;
+    always @(posedge clk) begin
+        cm_oe_q <= dut.CMD_MEM.OE_n;
+        if (cmmm_mon && cm_oe_q && !dut.CMD_MEM.OE_n && dut.CMD_MEM.ADDR[18:16] == 3'd6) cmmm_rd = cmmm_rd + 1;
+    end
+    task cmmm_one(input integer bpp, input integer sa, input integer dx, input integer nx, input integer ny, input integer dix,
+                  input integer tp, input [15:0] fcr, input [15:0] bcr, input [15:0] bgr, input integer fcp, input integer bcp,
+                  input integer bgp, output integer fail);
+        integer y, x, k, ok, nbytes, nwords, bad, outb, got, col, expv, lo, hi, a0;
+        begin
+            nbytes = (nx * ny + 7) / 8;
+            a0 = sa - CMMM_BASE;
+            nwords = ((sa + nbytes - 1) >> 2) - (sa >> 2) + 1;
+            wr_cmd(0, 0, 0, 0, 256, 32, 0, 8'h0C, 16'hFFFF, bgr, 0, 8'h20); cmmc_wait_ce(4000000, ok);
+            cmmm_rd = 0; cmmm_mon = 1;
+            // SX alto (R#33) = 5: el CMMM no lo usa
+            wr_cmd({8'h05, sa[7:0]}, {5'd0, sa[18:8]}, dx, 8, nx, ny, dix ? 8'h04 : 8'h00, tp ? 8'h1C : 8'h0C, 16'hFFFF, fcr, bcr, 8'h70);
+            cmmc_wait_ce(400000, ok);
+            cmmm_mon = 0;
+            if (!ok) begin wr_reg(6'd52, 8'h00); repeat (200) @(posedge clk); end      // STOP
+            bad = 0;
+            for (y = 0; y < ny; y = y + 1) for (x = 0; x < nx; x = x + 1) begin
+                k = y * nx + x;
+                col = cmmm_src[a0 + k / 8][7 - (k % 8)] ? fcp : bcp;
+                expv = (tp && col == 0) ? bgp : col;
+                got = cmmc_px(bpp, dix ? dx - x : dx + x, 8 + y);
+                if (got != expv) bad = bad + 1;
+            end
+            lo = dix ? dx - nx + 1 : dx; hi = dix ? dx : dx + nx - 1;
+            outb = 0;
+            for (y = 7; y <= 8 + ny; y = y + 1) for (x = lo - 1; x <= hi + 1; x = x + 1)
+                if ((y == 7 || y == 8 + ny || x == lo - 1 || x == hi + 1) && cmmc_px(bpp, x, y) != bgp) outb = outb + 1;
+            fail = (!ok || bad != 0 || outb != 0 || cmmm_rd != nwords);
+            $display("  %2d bpp SA=%05h DX=%0d NX=%0d NY=%0d DIX=%0d TP=%0d: %0d bytes, CE %0s; lecturas=%0d (esperadas %0d); pixeles mal=%0d; fuera=%0d%0s",
+                     bpp, sa, dx, nx, ny, dix, tp, nbytes, ok ? "baja" : "NO baja", cmmm_rd, nwords, bad, outb, fail ? "  <-- MAL" : "");
+            if (fail) for (y = 0; y < 2 && y < ny; y = y + 1) begin
+                $write("     fila %0d (leido):  ", y);
+                for (x = 0; x < nx; x = x + 1) $write(" %0h", cmmc_px(bpp, dix ? dx - x : dx + x, 8 + y));
+                $write("\n     fila %0d (modelo): ", y);
+                for (x = 0; x < nx; x = x + 1) begin
+                    k = y * nx + x; col = cmmm_src[a0 + k / 8][7 - (k % 8)] ? fcp : bcp;
+                    $write(" %0h", (tp && col == 0) ? bgp : col);
+                end
+                $write("\n");
+            end
+        end
+    endtask
+    task cmmm_test;
+        integer c, bpp, d, n, f, nfail, ncase, fcp, bcp, tbg, j;
+        reg [15:0] fcr, bcr, tbgr;
+        begin
+            for (j = 0; j < 80; j = j + 1) cmmm_src[j] = ((j * 73) ^ (j >> 1) ^ 8'hA5) & 8'hFF;
+            cmmm_src[5] = 8'h00; cmmm_src[6] = 8'hFF; cmmm_src[21] = 8'h80; cmmm_src[22] = 8'h01;
+            wr_reg(6'd17, 8'h00); wr_reg(6'd18, 8'h00); wr_reg(6'd19, 8'h00); wr_reg(6'd20, 8'h00);
+            wr_reg(6'd0, CMMM_BASE[7:0]); wr_reg(6'd1, CMMM_BASE[15:8]); wr_reg(6'd2, {5'd0, CMMM_BASE[18:16]});
+            for (j = 0; j < 80; j = j + 1) wr_port(4'd0, cmmm_src[j]);
+            nfail = 0; ncase = 0;
+            for (c = 0; c < 4; c = c + 1) begin
+                case (c)
+                    0: begin bpp = 2;  fcr = 16'hAAAA; bcr = 16'h5555; fcp = 2;       bcp = 1;       tbgr = 16'hFFFF; tbg = 3; end
+                    1: begin bpp = 4;  fcr = 16'hDDDD; bcr = 16'h2222; fcp = 4'hD;    bcp = 2;       tbgr = 16'h7777; tbg = 7; end
+                    2: begin bpp = 8;  fcr = 16'h2323; bcr = 16'h2121; fcp = 8'h23;   bcp = 8'h21;   tbgr = 16'h5A5A; tbg = 8'h5A; end
+                    default: begin bpp = 16; fcr = 16'hABCD; bcr = 16'h1234; fcp = 16'hABCD; bcp = 16'h1234; tbgr = 16'h5AC3; tbg = 16'h5AC3; end
+                endcase
+                wr_reg(6'd6, 8'h84 | c[7:0]);              // B, XIMM 512, CLRM = c
+                $display("---- CMMM %0d bpp (R#6=%02h) ----", bpp, 8'h84 | c[7:0]);
+                for (n = 8; n <= 12; n = n + 4)
+                    for (d = 0; d < 4; d = d + 1) begin       // SA % 4 = 0, 1, 2, 3 (d*5) con DX 144..147
+                        cmmm_one(bpp, CMMM_BASE + d * 5 + (n == 12 ? 20 : 0), 144 + d, n, n == 8 ? 7 : 5, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f);
+                        nfail = nfail + f; ncase = ncase + 1;
+                    end
+                cmmm_one(bpp, CMMM_BASE + 3,  145, 5, 3, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmm_one(bpp, CMMM_BASE + 2,  147, 1, 10, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmm_one(bpp, CMMM_BASE + 9,  141, 33, 3, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmm_one(bpp, CMMM_BASE + 28, 176, 32, 12, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmm_one(bpp, CMMM_BASE + 7,  150, 1, 1, 0, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmm_one(bpp, CMMM_BASE + 6,  150, 12, 8, 1, 0, fcr, bcr, 16'h0000, fcp, bcp, 0, f); nfail = nfail + f; ncase = ncase + 1;
+                cmmm_one(bpp, CMMM_BASE + 1,  146, 12, 8, 0, 1, fcr, 16'h0000, tbgr, fcp, 0, tbg, f); nfail = nfail + f; ncase = ncase + 1;
+            end
+            $display("CMMM: %0d casos, %0d mal", ncase, nfail);
+            if (nfail == 0) $display("CMMM_OK"); else $display("CMMM_FAIL %0d", nfail);
+        end
+    endtask
+
+    // ------------------------------------------------------------------
+    // +ORDEN=1 (R#6 = 87h y 86h): orden de los bytes del color contra el manual y openMSX
+    // (V9990CmdEngine Bpp16::psetColor, executeLMMC/LMCM): a 16 bpp R#48 es el byte bajo del pixel y va a
+    // la direccion par (VRAM0), igual que lee la pantalla BD16. LMMV con fondo asimetrico (5AC3h) y WM
+    // 00FFh, LMMC (1er byte = bajo), PSET, LINE, LMCM (byte bajo primero), SRCH (encuentra 1234h y no
+    // 3412h) y CMMC. A 8 bpp: CMMM con SA = 7FFFEh (los bytes siguen en 00000h, vuelta de 512 KB) y NX*NY
+    // = 40, y un diagnostico de CMMC con R#48 != R#49 (el manual pide repetirlos; no cuenta como error).
+    // ------------------------------------------------------------------
+    integer orden_arg = 0;
+    task orden_px16(input integer x, input integer y, input [15:0] exp, input [8*12-1:0] what);
+        begin
+            if (cmmc_px(16, x, y) != exp) begin
+                $display("ERROR %0s: (%0d,%0d) = %04h (par %02h, impar %02h), esperado %04h", what, x, y,
+                         cmmc_px(16, x, y), u_vram.mem[y * 1024 + 2 * x], u_vram.mem[y * 1024 + 2 * x + 1], exp);
+                nerr = nerr + 1;
+            end
+        end
+    endtask
+    task orden_test;
+        integer x, y, k, ok, bad, n0;
+        reg [7:0] b0, b1;
+        reg [7:0] osrc [0:4];
+        begin
+            wr_reg(6'd17, 8'h00); wr_reg(6'd18, 8'h00); wr_reg(6'd19, 8'h00); wr_reg(6'd20, 8'h00);
+            wr_reg(6'd6, 8'h87);
+            $display("---- ORDEN 16 bpp (R#6=87h): R#48 = byte bajo = direccion par ----");
+            wr_cmd(0, 0, 0, 40, 64, 8, 0, 8'h0C, 16'hFFFF, 16'h5AC3, 0, 8'h20); wait_ce("LMMV bg");
+            n0 = nerr;
+            bad = 0;
+            for (y = 40; y < 48; y = y + 1) for (x = 0; x < 64; x = x + 1) if (cmmc_px(16, x, y) != 16'h5AC3) bad = bad + 1;
+            if (bad) begin $display("ERROR LMMV fondo 64x8 FC=5AC3h: %0d pixeles mal", bad); nerr = nerr + 1; end
+            chk(19'd40960, 8'hC3, "LMMV par"); chk(19'd40961, 8'h5A, "LMMV impar");
+            // WM = 00FFh: solo el byte bajo (direccion par)
+            wr_cmd(0, 0, 4, 41, 3, 1, 0, 8'h0C, 16'h00FF, 16'h1234, 0, 8'h20); wait_ce("LMMV wm");
+            for (x = 4; x < 7; x = x + 1) orden_px16(x, 41, 16'h5A34, "LMMV wm");
+            orden_px16(3, 41, 16'h5AC3, "LMMV wm izq"); orden_px16(7, 41, 16'h5AC3, "LMMV wm der");
+            // LMMC 2x1: 34 12 78 56 -> 1234h 5678h
+            wr_cmd(0, 0, 8, 42, 2, 1, 0, 8'h0C, 16'hFFFF, 0, 0, 8'h10);
+            wait_tr("LMMC16"); wr_port(4'd2, 8'h34); wait_tr("LMMC16"); wr_port(4'd2, 8'h12);
+            wait_tr("LMMC16"); wr_port(4'd2, 8'h78); wait_tr("LMMC16"); wr_port(4'd2, 8'h56);
+            wait_ce("LMMC16");
+            orden_px16(8, 42, 16'h1234, "LMMC16"); orden_px16(9, 42, 16'h5678, "LMMC16");
+            orden_px16(7, 42, 16'h5AC3, "LMMC16 izq"); orden_px16(10, 42, 16'h5AC3, "LMMC16 der");
+            // PSET
+            wr_cmd(0, 0, 20, 43, 0, 0, 0, 8'h0C, 16'hFFFF, 16'hABCD, 0, 8'hE0); wait_ce("PSET16");
+            orden_px16(20, 43, 16'hABCD, "PSET16"); orden_px16(21, 43, 16'h5AC3, "PSET16 der");
+            // LINE horizontal desde (24,44), NX = 4
+            wr_cmd(0, 0, 24, 44, 4, 0, 0, 8'h0C, 16'hFFFF, 16'hBEEF, 0, 8'hB0); wait_ce("LINE16");
+            for (x = 24; x < 28; x = x + 1) orden_px16(x, 44, 16'hBEEF, "LINE16");
+            // LMCM 1 pixel desde (8,42) = 1234h: P#2 da 34h y luego 12h
+            wr_cmd(8, 42, 0, 0, 1, 1, 0, 8'h0C, 16'hFFFF, 0, 0, 8'h30);
+            wait_tr("LMCM16"); rd_port(4'd2, b0); wait_tr("LMCM16"); rd_port(4'd2, b1); wait_ce("LMCM16");
+            chk8(b0, 8'h34, "LMCM16 1o"); chk8(b1, 8'h12, "LMCM16 2o");
+            // SRCH desde (30,45) a la derecha: 1234h esta en (40,45); 3412h no esta
+            wr_p0(19'd46160, 8'h34); wr_p0(19'd46161, 8'h12);     // (40,45) = 1234h por P#0, sin pasar por el motor
+            wr_cmd(30, 45, 0, 0, 0, 0, 8'h00, 8'h0C, 16'hFFFF, 16'h1234, 0, 8'hC0); wait_ce("SRCH16");
+            if (!dut.STATUS.BD || dut.STATUS.BX != 11'd40) begin
+                $display("ERROR SRCH16 1234h: BD=%0d BX=%0d, esperado BD=1 BX=40", dut.STATUS.BD, dut.STATUS.BX); nerr = nerr + 1;
+            end
+            wr_cmd(30, 45, 0, 0, 0, 0, 8'h00, 8'h0C, 16'hFFFF, 16'h3412, 0, 8'hC0); wait_ce("SRCH16x");
+            if (dut.STATUS.BD) begin
+                $display("ERROR SRCH16 3412h: BD=1 BX=%0d (bytes cruzados)", dut.STATUS.BX); nerr = nerr + 1;
+            end
+            // CMMC 8x1 con un byte A5h: FC = ABCDh, BC = 1357h
+            wr_cmd(0, 0, 32, 46, 8, 1, 0, 8'h0C, 16'hFFFF, 16'hABCD, 16'h1357, 8'h50);
+            wait_tr("CMMC16"); wr_port(4'd2, 8'hA5); wait_ce("CMMC16");
+            for (x = 0; x < 8; x = x + 1) orden_px16(32 + x, 46, (8'hA5 >> (7 - x)) & 1 ? 16'hABCD : 16'h1357, "CMMC16");
+            orden_px16(31, 46, 16'h5AC3, "CMMC16 izq"); orden_px16(40, 46, 16'h5AC3, "CMMC16 der");
+
+            wr_reg(6'd6, 8'h86);
+            $display("---- ORDEN 8 bpp (R#6=86h): CMMM con SA = 7FFFEh ----");
+            osrc[0] = 8'hAA; osrc[1] = 8'h55; osrc[2] = 8'hF0; osrc[3] = 8'h0F; osrc[4] = 8'h3C;
+            wr_p0(19'h7FFFE, osrc[0]); wr_p0(19'h7FFFF, osrc[1]);
+            wr_p0(19'h00000, osrc[2]); wr_p0(19'h00001, osrc[3]); wr_p0(19'h00002, osrc[4]);
+            wr_cmd(0, 0, 190, 50, 40, 10, 0, 8'h0C, 16'hFFFF, 16'h5A5A, 0, 8'h20); wait_ce("LMMV bg8");
+            wr_cmd({8'h00, 8'hFE}, 16'h07FF, 200, 52, 8, 5, 0, 8'h0C, 16'hFFFF, 16'h2323, 16'h2121, 8'h70);
+            cmmc_wait_ce(400000, ok);
+            if (!ok) begin $display("ERROR CMMM 7FFFEh: CE no baja"); nerr = nerr + 1; wr_reg(6'd52, 8'h00); repeat (200) @(posedge clk); end
+            bad = 0;
+            for (y = 0; y < 5; y = y + 1) for (x = 0; x < 8; x = x + 1)
+                if (cmmc_px(8, 200 + x, 52 + y) != (osrc[y][7 - x] ? 8'h23 : 8'h21)) bad = bad + 1;
+            for (x = 198; x < 210; x = x + 1) begin
+                if (cmmc_px(8, x, 51) != 8'h5A) bad = bad + 1;
+                if (cmmc_px(8, x, 57) != 8'h5A) bad = bad + 1;
+            end
+            for (y = 52; y < 57; y = y + 1) begin
+                if (cmmc_px(8, 199, y) != 8'h5A) bad = bad + 1;
+                if (cmmc_px(8, 208, y) != 8'h5A) bad = bad + 1;
+            end
+            $display("  CMMM SA=7FFFEh 8x5 (40 bits por la vuelta de 512 KB): CE %0s, pixeles mal %0d", ok ? "baja" : "NO baja", bad);
+            if (bad) nerr = nerr + 1;
+            // diagnostico (no cuenta): CMMC FC = 1234h, BC = 0, DX = 0, NX = 5, NY = 2, bytes FFh FFh.
+            // openMSX elige el byte por la paridad de la direccion (X par -> R#48 = 34h)
+            wr_cmd(0, 0, 0, 60, 5, 2, 0, 8'h0C, 16'hFFFF, 16'h1234, 0, 8'h50);
+            wait_tr("CMMC8d"); wr_port(4'd2, 8'hFF); wait_tr("CMMC8d"); wr_port(4'd2, 8'hFF); wait_ce("CMMC8d");
+            for (y = 0; y < 2; y = y + 1) begin
+                $write("  INFO CMMC 8 bpp FC=1234h fila %0d:", y);
+                for (x = 0; x < 5; x = x + 1) $write(" %02h", cmmc_px(8, x, 60 + y));
+                $write("   (openMSX: 34 12 34 12 34)\n");
+            end
+            if (nerr == 0) $display("ORDEN_OK"); else $display("ORDEN_FAIL %0d", nerr);
+        end
+    endtask
+
+    // ------------------------------------------------------------------
     // +PORTS=1: puertos sin uso (openMSX V9990.cc peekIO)
     // ------------------------------------------------------------------
     task ports_test;
@@ -621,7 +998,6 @@ module tb_t9990_core;
                     else begin v = palc[(dut.REG.CSP << 2) + (ca[c] >> 6)]; if (ca[c] & 8'h20) v = v ^ 15'h7FFF; end
                 end
             end
-            if (e_bp && x == e_w - 1) v = palc[0];
             exp_px = v;
         end
     endfunction
@@ -646,7 +1022,8 @@ module tb_t9990_core;
                 for (x = 0; x < 16; x = x + 1) if (fb[ll][dd + x] !== bgcol(x + o, bline(0))) ok = 0;
                 if (ok) boff = o;
             end
-            if (boff < 0) ll = -1;
+            // 0.3beta: el primer punto de la imagen tiene que ser el X = 0 del bitmap (alineacion del MSXimus Z)
+            if (boff != 0) ll = -1;
         end
     endtask
     // compara el cuadro capturado con el modelo; devuelve los pixeles malos
@@ -790,7 +1167,7 @@ module tb_t9990_core;
             $display("---- EOR: B1 256x212 BP4 (R#6=81h) ----");
             bp_fill(256, 212);
             wr_reg(6'd6, 8'h81);
-            e_bp = 1; e_hx = -1;
+            e_bp = 1; e_hx = 0;
             cx[0] = 40;  cy[0] = 50; ca[0] = 8'h20;
             cx[1] = 120; cy[1] = 60; ca[1] = 8'hE0;
             eor_case("BP4 CC0+EOR / CC3+EOR", -1);
@@ -806,7 +1183,7 @@ module tb_t9990_core;
             $display("---- EOR: B2 384x240 BP4 (R#6=95h, MCS=1) ----");
             bp_fill(512, 300);
             wr_port(4'd7, 8'h01); wr_reg(6'd6, 8'h95);
-            e_bp = 1; e_hx = -1;
+            e_bp = 1; e_hx = 0;
             e_w = 384; e_h = 240; e_ofs = 14;
             cx[0] = 40;  cy[0] = 20;  ca[0] = 8'h20;
             cx[1] = 330; cy[1] = 500; ca[1] = 8'h40;    // -12: entra por arriba (lineas 3..34)
@@ -1235,6 +1612,105 @@ module tb_t9990_core;
         end
     endtask
 
+
+    // ------------------------------------------------------------------
+    // +YCC=1 (tnCart #31): YJK y YUV: color de los bitmaps YJK / YUV en B1
+    // (256 px, 8 bpp, R#6 = 82h; PLTM = R#13[7:6]) contra el modelo de openMSX V9990BitmapConverter
+    // (draw_YJK_YUV_PAL): cada grupo de 4 bytes comparte K/V = {byte1[2:0], byte0[2:0]} (pixeles 0,1) y
+    // J/U = {byte3[2:0], byte2[2:0]} (pixeles 2,3), con signo de 6 bits; Y = byte[7:3]. YUV: R = Y+U,
+    // G = (5Y-2U-V)/4, B = Y+V; YJK = lo mismo con G y B cambiados. Se captura la salida RGB en DE
+    // (4 lineas del cuadro, columnas 40..229) y se compara con la VRAM. El desfase (dx, dy) entre la
+    // salida (con bordes) y la VRAM se calibra con BD8 (modelo de t9990_color_decode.sv, sin grupos de 4);
+    // YJK y YUV tienen que dar 0 pixeles mal con ese mismo desfase. Imprime YCC_OK / YCC_FAIL.
+    // ------------------------------------------------------------------
+    integer ycc_arg = 0;       // 1 = YJK, 2 = YUV, 3 = BD8: el test los corre los tres (BD8 calibra el desfase)
+    localparam YCC_W = 320, YCC_H = 48;
+    reg [14:0] ycc_cap [0:YCC_W*YCC_H-1];
+    reg        ycc_en = 0;
+    integer    ycc_y = -1, ycc_x = 0;
+    always @(posedge clk) if (dclk_en && ycc_en) begin
+        if (vs && !vs_p) ycc_y = -1;
+        if (de && !de_p) begin ycc_y = ycc_y + 1; ycc_x = 0; end
+        else if (de) ycc_x = ycc_x + 1;
+        if (de && ycc_y >= 0 && ycc_y < YCC_H && ycc_x < YCC_W) ycc_cap[ycc_y * YCC_W + ycc_x] = {g, r, b};
+    end
+    function integer ycc_clamp(input integer v);
+        begin ycc_clamp = (v < 0) ? 0 : ((v > 31) ? 31 : v); end
+    endfunction
+    function [14:0] ycc_model(input integer kind, input integer a);   // a = direccion del pixel en B1
+        integer gb, i, u, v, y, rr, gg, bb;
+        reg [7:0] d0, d1, d2, d3, dd;
+        begin
+            gb = a & ~3; i = a & 3;
+            d0 = u_vram.mem[gb]; d1 = u_vram.mem[gb + 1]; d2 = u_vram.mem[gb + 2]; d3 = u_vram.mem[gb + 3]; dd = u_vram.mem[a];
+            u = (d2 & 7) + ((d3 & 3) << 3) - ((d3 & 4) << 3);
+            v = (d0 & 7) + ((d1 & 3) << 3) - ((d1 & 4) << 3);
+            y = (dd & 8'hF8) >> 3;
+            rr = ycc_clamp(y + u); gg = ycc_clamp((5 * y - 2 * u - v) / 4); bb = ycc_clamp(y + v);
+            if (kind == 1) begin i = gg; gg = bb; bb = i; end            // YJK: G y B cambiados
+            if (kind == 3) begin                                         // BD8 como t9990_color_decode.sv
+                gg = {dd[7], dd[6], dd[5], dd[7], dd[6]}; rr = {dd[4], dd[3], dd[2], dd[4], dd[3]};
+                bb = {dd[1], dd[0], dd[1], dd[0], dd[1] | dd[0]};
+            end
+            ycc_model = {gg[4:0], rr[4:0], bb[4:0]};
+        end
+    endfunction
+    // pixeles malos de 4 lineas (cy0..cy0+3) x columnas 40..229 de la captura contra el modelo desplazado (dx, dy)
+    function integer ycc_bad(input integer kind, input integer cy0, input integer dx, input integer dy);
+        integer cy, cx, n;
+        begin
+            n = 0;
+            for (cy = cy0; cy < cy0 + 4; cy = cy + 1) for (cx = 40; cx < 230; cx = cx + 1)
+                if (!(kind == 3 && u_vram.mem[(cy + dy) * 256 + cx + dx] == 8'h00) && ycc_cap[cy * YCC_W + cx] !== ycc_model(kind, (cy + dy) * 256 + cx + dx)) n = n + 1;   // BD8: el color 0 es transparente
+            ycc_bad = n;
+        end
+    endfunction
+    task ycc_one(input integer kind, input integer calib, inout integer cdx, inout integer cdy, output integer nbad);
+        integer dx, dy, best, bdx, bdy, nb0, cx;
+        begin
+            @(posedge clk); while (!(dclk_en && vs && !vs_p)) @(posedge clk);
+            ycc_y = -1; ycc_en = 1;
+            @(posedge clk); while (!(dclk_en && vs && !vs_p)) @(posedge clk);       // un cuadro completo
+            @(posedge clk); ycc_en = 0;
+            best = 1 << 30; bdx = 0; bdy = 0;
+            if (calib) begin
+                for (dy = -30; dy <= 0; dy = dy + 1) for (dx = -40; dx <= 8; dx = dx + 1) begin
+                    nb0 = ycc_bad(kind, 24, dx, dy);
+                    if (nb0 < best) begin best = nb0; bdx = dx; bdy = dy; end
+                end
+                cdx = bdx; cdy = bdy;
+            end
+            else begin
+                nbad = ycc_bad(kind, 24, cdx, cdy);
+                // y su mejor desfase propio (cerca del de calibracion), solo informativo
+                for (dy = cdy - 1; dy <= cdy + 1; dy = dy + 1) for (dx = cdx - 6; dx <= cdx + 6; dx = dx + 1) begin
+                    nb0 = ycc_bad(kind, 24, dx, dy);
+                    if (nb0 < best) begin best = nb0; bdx = dx; bdy = dy; end
+                end
+            end
+            if (calib) nbad = best;
+            $display("  %0s: desfase de calibracion dx=%0d dy=%0d -> pixeles mal=%0d de %0d (mejor propio dx=%0d dy=%0d: %0d)",
+                     (kind == 1) ? "YJK" : ((kind == 2) ? "YUV" : "BD8"), cdx, cdy, nbad, 4 * 190, bdx, bdy, best);
+            if (nbad != 0) for (cx = 40; cx < 52; cx = cx + 1)
+                $display("     cx=%0d vram=%02h leido GRB=%04h modelo=%04h", cx, u_vram.mem[(24 + cdy) * 256 + cx + cdx], ycc_cap[24 * YCC_W + cx], ycc_model(kind, (24 + cdy) * 256 + cx + cdx));
+        end
+    endtask
+    task ycc_test;
+        integer kk, h, cdx, cdy, nb, tot;
+        begin
+            for (kk = 0; kk < 64 * 256 + 16; kk = kk + 1) begin
+                h = kk * 32'h9E3779B1; h = h ^ (h >>> 15); h = h * 32'h85EBCA6B; h = h ^ (h >>> 13);
+                u_vram.mem[kk] = h[23:16];
+            end
+            wr_reg(6'd17, 8'h00); wr_reg(6'd18, 8'h00); wr_reg(6'd19, 8'h00); wr_reg(6'd20, 8'h00);
+            tot = 0; cdx = 0; cdy = 0;
+            wr_reg(6'd13, 8'h40); ycc_one(3, 1, cdx, cdy, nb); tot = tot + nb;      // PLTM = RGB 256 (BD8): calibra
+            wr_reg(6'd13, 8'h80); ycc_one(1, 0, cdx, cdy, nb); tot = tot + nb;      // PLTM = YJK
+            wr_reg(6'd13, 8'hC0); ycc_one(2, 0, cdx, cdy, nb); tot = tot + nb;      // PLTM = YUV
+            if (tot == 0) $display("YCC_OK"); else $display("YCC_FAIL %0d", tot);
+        end
+    endtask
+
     // ------------------------------------------------------------------
     // secuencia
     // ------------------------------------------------------------------
@@ -1256,12 +1732,19 @@ module tb_t9990_core;
         if (!$value$plusargs("PALT=%d", palt_arg)) palt_arg = 0;
         if (!$value$plusargs("HPOS=%d", hpos_arg)) hpos_arg = 0;
         if (!$value$plusargs("BDBP=%d", bdbp_arg)) bdbp_arg = 0;
+        if (!$value$plusargs("CMMC=%d", cmmc_arg)) cmmc_arg = 0;
+        if (!$value$plusargs("CMMM=%d", cmmm_arg)) cmmm_arg = 0;
+        if (!$value$plusargs("ORDEN=%d", orden_arg)) orden_arg = 0;
+        if (!$value$plusargs("P2NOTR=%d", p2notr)) p2notr = 0;      // 1 = P#2 sin sondear TR (con +CMMC=1)
+        if (!$value$plusargs("YCC=%d", ycc_arg)) ycc_arg = 0;        // 1 = YJK, 2 = YUV, 3 = BD8 (calibracion) en B1
         if (!$value$plusargs("CH0=%d", ch0_arg)) ch0_arg = 0;
         if (!$value$plusargs("ACKDLY=%d", ackdly)) ackdly = 0;
         if ($value$plusargs("REPLAY=%s", rp_file)) replay_arg = 1;
         if (!$value$plusargs("VRAMOUT=%s", vram_out)) vram_out = "";
         ch0 = (ch0_arg != 0);
         if (blit_arg) r6 = 130;
+        if (ycc_arg) r6 = 130;
+        if (cmmc_arg || cmmm_arg || orden_arg) r6 = 132;   // 84h: B, XIMM 512, 2 bpp (el test cambia CLRM)
         // VRAM de partida: patron (como el banco de la Zynq) salvo en el replay (openMSX arranca a 0)
         if (!replay_arg && !eor_arg && !hpos_arg) for (k = 0; k < 524288; k = k + 1) u_vram.mem[k] = (k * 7 + (k >> 8) * 13 + 5) & 8'hFF;
         $display("tb_t9990_core: ENABLE_PAL=%0d ENABLE_CURSOR_EOR=%0d ENABLE_R16=%0d R#6=%02h R#7=%02h R#16=%02h MCS=%0d frames=%0d ch0=%0d ackdly=%0d",
@@ -1291,12 +1774,17 @@ module tb_t9990_core;
         if (palt_arg)  palt_test;
         if (hpos_arg)  hpos_test;
         if (bdbp_arg)  bdbp_test;
+        if (cmmc_arg)  begin cmmc_test; if (p2notr) p2notr_extra; end
+        if (cmmm_arg)  cmmm_test;
+        if (orden_arg) orden_test;
+        if (ycc_arg)   ycc_test;
         if (replay_arg) begin
             replay_run(rp_file);
             $display("registros tras el replay: R#6=%02h R#7=%02h R#8=%02h R#13=%02h RESO=%0d", dut.u_port.vdp_reg[6], dut.u_port.vdp_reg[7], dut.u_port.vdp_reg[8], dut.u_port.vdp_reg[13], reso);
             if (vram_out != "") vram_dump(vram_out);
         end
-        if (!blit_arg && !ports_arg && !eor_arg && !r16t_arg && !r16chg_arg && !palt_arg && !replay_arg && !hpos_arg && !bdbp_arg) begin
+        if (!blit_arg && !ports_arg && !eor_arg && !r16t_arg && !r16chg_arg && !palt_arg && !replay_arg && !hpos_arg && !bdbp_arg
+            && !cmmc_arg && !cmmm_arg && !orden_arg && !ycc_arg) begin
             if ($value$plusargs("VIDDUMP=%s", vid_name)) begin
                 vid_fh = $fopen(vid_name, "wb");
                 if (vid_fh == 0) begin $display("ERROR: no puedo crear %0s", vid_name); $finish; end

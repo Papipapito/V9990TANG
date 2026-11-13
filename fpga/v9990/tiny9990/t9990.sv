@@ -250,6 +250,21 @@ module T9990 #(
     logic BG_START;
     logic [9:0] BG_X;
     logic [9:0] BG_Y;
+
+    // MSXimus Z 21/10/2026: scroll vertical efectivo de cada plano = SCAY - VOFS (los planos hacen
+    // Y = SCY + BG_Y, asi que la linea L muestra SCAY + L - VOFS). Con entrelazado BG_Y = 2*linea+EO
+    // y el desplazamiento cuenta doble. Registrado: 1 ciclo tras la escritura (los fetch van cada 16).
+    // Sprites, cursores y PRY siguen con BG_Y/SPR_Y crudos, como en openMSX (displayY).
+    logic [8:0]  VOFS_A, VOFS_B;
+    logic [4:0]  SCAY_HI;
+    logic        SCBY_HI;
+    wire         IL_BG = REG.ILM && REG.EO && !REG.HSCN;    // misma condicion que BG_Y en T9990_TIMING
+    logic [12:0] SCAY_EFF;
+    logic [8:0]  SCBY_EFF;
+    always_ff @(posedge CLK) begin
+        SCAY_EFF <= {SCAY_HI, REG.SCAY[7:0]} - (IL_BG ? {3'd0, VOFS_A, 1'b0} : {4'd0, VOFS_A});
+        SCBY_EFF <= {SCBY_HI, REG.SCBY[7:0]} - (IL_BG ? {VOFS_B[7:0], 1'b0} : VOFS_B);
+    end
     logic field;
     logic pal_frame;
     logic pal_win;
@@ -285,6 +300,10 @@ module T9990 #(
         .BG_Y,
         .MUX_VDE,
         .MUX_HDE,
+        .VOFS_A,
+        .VOFS_B,
+        .SCAY_HI,
+        .SCBY_HI,
 
         // メモリタイミング
         .MEM(MEM_TIMING),
@@ -471,7 +490,7 @@ module T9990 #(
         // レジスタ
         .REG,
         .SCX(REG.SCAX),
-        .SCY(REG.SCAY),
+        .SCY(SCAY_EFF),
 
         // 座標
         .START(BG_START),
@@ -510,7 +529,7 @@ module T9990 #(
         // レジスタ
         .REG,
         .SCX({2'b00, REG.SCBX}),
-        .SCY({4'b0000, REG.SCBY}),
+        .SCY({4'b0000, SCBY_EFF}),
 
         // 座標
         .START(BG_START),
@@ -546,7 +565,7 @@ module T9990 #(
         // レジスタ
         .REG,
         .SCX(REG.SCAX),
-        .SCY(REG.SCAY),
+        .SCY(SCAY_EFF),
 
         // 座標
         .START(BG_START),

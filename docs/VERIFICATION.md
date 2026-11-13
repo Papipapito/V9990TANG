@@ -228,6 +228,59 @@ este árbol dan el mismo cuerpo de `.fs` que los de `bitstream/` y pasan la
 puerta con las referencias de la 0.1beta
 (`fpga/reports/nextor/regresion_0.1beta.txt`).
 
+## Builds de la 0.3beta
+
+Rama `hito/zynqfix` ([notas/zynqfix.md](notas/zynqfix.md)), Gowin 1.9.12.03,
+RTL de `f96508c`, compiladas el 13 de noviembre de 2026 desde el árbol
+commiteado en una ruta corta. El core cambia, así que la puerta va con
+`--sin-ref` y `--compara` frente a la misma variante de la versión anterior;
+todo lo demás (grupos de reloj, endpoints, Fmax, CLS) se exige igual. Evidencia
+en `fpga/reports/v0.3beta/<variante>/` (`check_build.txt` es la salida de la
+puerta sobre lo archivado). **Pasan las seis. Sin probar en placa.**
+
+```
+python tools/check_build.py fpga/impl/pnr/<variante> --sin-ref "0.3beta: el core cambia (arreglos del MSXimus Z, docs/notas/zynqfix.md)" --compara <logica,CLS,BSRAM de la version anterior> --max-bsram 46 --max-cls 9331 --warn-cls 9250 --rpll 2 --fmax CLK_BASE=109 --log fpga/impl/gwsynthesis/<variante>.log --log fpga/impl/pnr/<variante>.log --sdc fpga/constraints/<variante>.sdc
+```
+
+| Variante | Opciones (place / route) | Lógica | CLS (máx. 9 331) | BSRAM | Fmax `CLK_BASE` | Peor slack setup / hold | Endpoints violados | CheckSum |
+|---|---|---|---|---|---|---|---|---|
+| `v9990_xtal` | 2 / 1 | 13 818 (+165) | 8 493 (+72) | 23 | 121,572 MHz | +0,898 / +0,077 ns | 0 | `0x5A17` |
+| `v9990_sync` | 2 / 1 | 14 060 (+186) | 8 663 (+174) | 23 | 109,343 MHz | +0,167 / +0,076 ns | 0 | `0xF710` |
+| `v9990_megaram_xtal` | 2 / 1 | 15 250 (+82) | 9 003 (−16) | 28 | 116,612 MHz | +0,217 / +0,074 ns | 0 | `0x78D0` |
+| `v9990_megaram_sync` | **0 / 2** | 15 525 (+272) | 9 025 (+52) | 28 | 109,523 MHz | +0,182 / +0,074 ns | 0 | `0xC95B` |
+| `v9990_megaram_nextor_xtal` | 2 / 1 | 15 834 (+256) | 9 187 (+59) | 28 | 113,017 MHz | +0,411 / +0,074 ns | 0 | `0x7E29` |
+| `v9990_megaram_nextor_sync` | **2 / 1** | 15 891 (+244) | 9 177 (−27) | 28 | 112,956 MHz | +0,459 / +0,074 ns | 0 | `0x5105` |
+
+Las diferencias entre paréntesis son frente a la misma variante de la 0.1beta
+(o de la 0.2beta en las de Nextor). Un BSRAM menos en todas: los buffers de
+YJK de `T9990_COLOR_DECODE` desaparecen.
+
+Barrido de opciones (mismo RTL): `v9990_megaram_sync` con las de la 0.1beta
+(place 2 / route 2) da 107,422 MHz y falla (camino del bus `u_nwr` →
+`mux_cs_ff`); place 0 / route 2, 109,523 MHz. `v9990_megaram_nextor_sync`
+con las de la 0.2beta (place 0 / route 1) da 108,878 MHz y falla por poco
+(0 endpoints violados, `u_megarom_clear` → `u_uma`); place 0 / route 0
+107,524, place 0 / route 2 107,603, place 1 / route 2 y place 2 / route 2
+108,195; place 2 / route 1, 112,956 MHz. `v9990_sync` y `v9990_megaram_sync`
+pasan con poco margen (0,3 y 0,5 MHz sobre el mínimo): tras otro cambio de
+RTL habrá que volver a barrer.
+
+### Bancos sobre el árbol de la 0.3beta
+
+Los bancos que dependen del core, sobre el RTL de `f96508c`; los demás (bus,
+sdram, integ, video, megaram) no compilan el tiny9990 y no se repiten.
+
+| Banco | Orden | Resultado |
+|---|---|---|
+| core | `cd fpga && bash tb/core/run_t9990_core.sh` | pasan todas: los 15 casos de `geom`, `PALT_OK`, `BLIT_OK`, `CMMC_OK` (60 casos), `CMMM_OK` (60), `ORDEN_OK`, `P2NOTR_OK`, `YCC_OK`, `VSCROLL_OK` (12 casos), `PORTS_OK`, `EOR_OK`, `R16_OK`, `R16CHG_OK`, `BDBP_OK`, `ASSERT_SELFTEST_OK` y sincronismo idéntico al hito 1 en los 7 casos; `LOST_SLOTS=0`. Diagnóstico `+HPOS=1`: el primer punto de la imagen es el X = 0 y el último el X final en B1 y B3 (BD16 y BP4), B2 BP4 y B4 BP4; B2 a 16 bpp sigue repitiendo parejas de puntos (límite de core.md, sin tocar) |
+| core, paleta | `bash tb/core/run_t9990_palette.sh` | `PAL_OK` |
+| placa entera | `bash fpga/tb/top/run.sh` (Git Bash; seis variantes) | 18 de 18 (6 variantes por `full`, `io` y `nomsx`), 0 fallos en las comprobaciones |
+
+Las pruebas nuevas del core fallan con el RTL de la 0.2beta (`cmmc` 56 de 60
+casos, `cmmm` 57 de 60, `orden` 37 errores, `p2notr` no acaba el LMMC, `ycc`
+754 de 760 puntos en YJK y en YUV, `vscroll` los 12 casos) y pasan con el de
+la 0.3beta.
+
 ## Builds de la fusión
 
 Gowin 1.9.12.03, rama `hito/fusion` en `c8e4fd2` (la fusión, el NOP de la
