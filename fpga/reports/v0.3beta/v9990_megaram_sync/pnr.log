@@ -1,0 +1,33 @@
+Reading netlist file: "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\gwsynthesis\v9990_megaram_sync.vg"
+Parsing netlist file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\gwsynthesis\v9990_megaram_sync.vg" completed
+Processing netlist completed
+Reading constraint file: "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\src\board\wt200b\board_wt200b.cst"
+Physical Constraint parsed completed
+Running placement......
+[10%] Placement Phase 0 completed
+[20%] Placement Phase 1 completed
+[30%] Placement Phase 2 completed
+[50%] Placement Phase 3 completed
+Running routing......
+[60%] Routing Phase 0 completed
+[70%] Routing Phase 1 completed
+[80%] Routing Phase 2 completed
+WARN  (PR1014) : Generic routing resource will be used to clock signal 'CLK_27M_d' by the specified constraint. And then it may lead to the excessive delay or skew
+WARN  (PR1014) : Generic routing resource will be used to clock signal 'CART_CLOCK_d' by the specified constraint. And then it may lead to the excessive delay or skew
+[90%] Routing Phase 3 completed
+Running timing analysis......
+[95%] Timing analysis completed
+Placement and routing completed
+Bitstream generation in progress......
+Bitstream generation completed
+Running power analysis......
+[100%] Power analysis completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.power.html" completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.pin.html" completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.rpt.html" completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.rpt.txt" completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.sdf" completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.tr.html" completed
+Generate file "C:\Users\alber\AppData\Local\Temp\v99wt\z4_v9990_megaram_sync_p0r2\fpga\impl\pnr\v9990_megaram_sync.tr" completed
+Fri Nov 13 12:59:19 2026
+

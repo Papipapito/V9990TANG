@@ -1,0 +1,4 @@
+v9990_megaram_nextor_xtal.fs, build del Fri Nov 13 12:49:21 2026
+CheckSum: 0x7E29
+md5 del fichero: 88eb6b05580ec9f52a86262de7838f7f
+md5 sin las lineas de cabecera (//): 2a20f5fdac6e683a4629778a70408eac

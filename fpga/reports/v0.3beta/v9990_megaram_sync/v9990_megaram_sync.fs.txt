@@ -1,0 +1,4 @@
+v9990_megaram_sync.fs, build del Fri Nov 13 12:59:11 2026
+CheckSum: 0xC95B
+md5 del fichero: 82b41819594ac94ba1a6327d2cdf9051
+md5 sin las lineas de cabecera (//): eed3a0d2698b1e8199cdca41d26db86e

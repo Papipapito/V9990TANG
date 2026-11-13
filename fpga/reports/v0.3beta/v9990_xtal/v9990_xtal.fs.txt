@@ -1,0 +1,4 @@
+v9990_xtal.fs, build del Fri Nov 13 12:48:14 2026
+CheckSum: 0x5A17
+md5 del fichero: a33ac6cc0b547725a76ace8670f636a6
+md5 sin las lineas de cabecera (//): 284907e45b3d57ceed5964ca35a25a34
