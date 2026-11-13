@@ -75,7 +75,7 @@ cifras de las seis builds.
   un punto más tarde, alineada con la ventana).
 - Diagnóstico `+HPOS=1`: punto 0 del bitmap en el primer punto de la imagen
   en B1 y B3 (BD16 y BP4), B2 BP4 y B4 BP4. **Queda sin arreglar** que B2 a
-  16 bpp repite cada pareja de puntos (límite de [core.md](core.md), tampoco
-  lo arregla el MSXimus Z).
+  16 bpp repite cada pareja de puntos (límite de [core.md](core.md); no se ha
+  mirado si el MSXimus Z lo tiene).
 - Banco de placa entera: 18 de 18 en las seis variantes.
 - **Nada de esto está probado en placa.**
